@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+body {
+  /* font-family: 'Playfair Display', sans-serif; */
+  /* font-family: 'Poppins', sans-serif; */
+    font-family: 'Inter', sans-serif;
+}
+
+.elegant-font {
+  font-family: 'Playfair Display', serif;
+}
+
+@keyframes loadingBar {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 70%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.animate-loadingBar {
+  animation: loadingBar 1.5s ease-in-out infinite;
+}
