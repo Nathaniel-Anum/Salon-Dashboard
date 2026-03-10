@@ -2,6 +2,7 @@ import React from "react";
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import {  Outlet } from "react-router-dom";
+import { Header } from "./Header";
 
 
 const DashboardLayout = ({ children }) => {
@@ -14,7 +15,9 @@ const DashboardLayout = ({ children }) => {
       {/* Main Section */}
       <div className="flex-1 flex flex-col">
         
-        <Navbar />
+        {/* <Navbar /> */}
+
+        <Header/>
 
         {/* Page Content */}
         <div className="p-8">

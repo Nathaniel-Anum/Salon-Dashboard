@@ -16,7 +16,7 @@ const SalonLogin = ({setIsAuthenticated}) => {
     console.log(values);
      // mark as logged in
     setIsAuthenticated(true);
-
+ localStorage.setItem("isAuthenticated", "true"); // persist
     // go to dashboard
     navigate("/");
   };
@@ -28,6 +28,7 @@ const SalonLogin = ({setIsAuthenticated}) => {
       w-full 
       max-w-md 
       bg-[#E5D3B3] 
+      
       p-6 sm:p-8 md:p-10 
       rounded-2xl sm:rounded-3xl 
      

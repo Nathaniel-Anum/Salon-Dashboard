@@ -4,9 +4,10 @@ import { FiSearch } from "react-icons/fi";
 
 const Navbar = () => {
   return (
-    <div className="h-[80px] bg-white flex items-center justify-between px-8 shadow-sm border-b border-[#E5D3B3]">
+    
+    <div className="h-[80px] flex items-center  justify-between px-8 shadow-sm border-b border-[#e5d3b3]">
       
-      <h2 className="elegant-font text-2xl text-[#272727]">
+      <h2 className="elegant-font text-2xl ">
         Dashboard
       </h2>
 

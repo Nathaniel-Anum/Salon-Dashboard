@@ -13,7 +13,9 @@ import SalonLogin from '../Pages/Login';
 function App() {
 
 const [loading, setLoading] = useState(true);
- const [isAuthenticated, setIsAuthenticated] = useState(false);
+ const [isAuthenticated, setIsAuthenticated] = useState(() => {
+  return localStorage.getItem("isAuthenticated") === "true";
+});
 
 
   useEffect(() => {
