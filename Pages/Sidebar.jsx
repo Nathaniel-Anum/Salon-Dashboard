@@ -32,7 +32,7 @@ const Sidebar = () => {
   const handleLogout = () => {
     console.log("Logging out...")
     navigate('/login')
-      setIsAuthenticated(false);
+      // setIsAuthenticated(false);
   localStorage.removeItem("isAuthenticated");
   }
 

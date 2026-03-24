@@ -1,74 +1,44 @@
-
 import './App.css'
 
-import Loader from '../Pages/Loader'
-import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-import DashboardLayout from '../Pages/DashboardLayout'
-
-import DashboardPage from '../Pages/DashboardPage'
+import DashboardLayout from '../Pages/DashboardLayout';
+import DashboardPage from '../Pages/DashboardPage';
 import SalonLogin from '../Pages/Login';
+import Loader from '../Pages/Loader';
 
-function App() {
-
-const [loading, setLoading] = useState(true);
- const [isAuthenticated, setIsAuthenticated] = useState(() => {
-  return localStorage.getItem("isAuthenticated") === "true";
-});
-
+export default function App() {
+  const [loading, setLoading] = useState(() => {
+    return sessionStorage.getItem("hasLoaded") !== "true";
+  });
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 1400);// seconds loading
+    if (loading) {
+      const timer = setTimeout(() => {
+        setLoading(false);
+        sessionStorage.setItem("hasLoaded", "true");
+      }, 1400);
 
-    return () => clearTimeout(timer);
-  }, []);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
 
-  
-    
-    if (loading) return <Loader />;
+  if (loading) return <Loader />;
 
-      return (
-   <BrowserRouter>
-  <Routes>
+  return (
+    <BrowserRouter>
+      <Routes>
 
-    {/* Login */}
-    <Route
-      path="/login"
-      element={
-        !isAuthenticated ? (
-          <SalonLogin setIsAuthenticated={setIsAuthenticated} />
-        ) : (
-          <Navigate to="/" />
-        )
-      }
-    />
+        {/* Login page */}
+        <Route path="/login" element={<SalonLogin />} />
 
-    {/* Protected Layout */}
-    <Route
-      path="/"
-      element={
-        isAuthenticated ? (
-          <DashboardLayout />
-        ) : (
-          <Navigate to="/login" />
-        )
-      }
-    >
-      {/* Nested Routes */}
-      <Route index element={<DashboardPage />} />
-      {/* Future routes */}
-      {/* <Route path="appointments" element={<Appointments />} /> */}
-      {/* <Route path="clients" element={<Clients />} /> */}
-    </Route>
+        {/* Dashboard with layout */}
+        <Route element={<DashboardLayout />}>
+          <Route index element={<DashboardPage />} />
+        </Route>
 
-  </Routes>
-</BrowserRouter>
+      </Routes>
+    </BrowserRouter>
   );
-    
-
 }
-
-export default App

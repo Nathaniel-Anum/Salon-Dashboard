@@ -1,24 +1,41 @@
 import React from "react";
-import { Form, Input, Button, Checkbox } from "antd";
+import { Form, Input, Button, Checkbox, message } from "antd";
 import { FaUserAlt, FaLock } from "react-icons/fa";
 import { GiHairStrands } from "react-icons/gi";
-import pic1 from '../src/9.svg'
+import pic1 from "../src/9.svg";
 import { useNavigate } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
+import { loginUser } from "../src/api/auth";
 
-
-
-const SalonLogin = ({setIsAuthenticated}) => {
-
+const SalonLogin = ({ setIsAuthenticated }) => {
   const navigate = useNavigate();
 
+  const { mutate, isPending, error } = useMutation({
+    mutationFn: loginUser,
+
+    onSuccess: (data) => {
+      console.log("Login success:", data);
+
+      // OPTIONAL: store auth
+      localStorage.setItem("isAuthenticated", "true");
+      localStorage.setItem("access", data.access);
+
+      navigate("/");
+    },
+
+    onError: (err) => {
+    message.error(
+      err.response?.data?.message || "Unauthorized"
+    );
+    // console.log(err)
+  },
+  });
+
   const onFinish = (values) => {
-    console.log("I am logged in");
+    console.log("I am logging in");
     console.log(values);
-     // mark as logged in
-    setIsAuthenticated(true);
- localStorage.setItem("isAuthenticated", "true"); // persist
-    // go to dashboard
-    navigate("/");
+
+    mutate(values);
   };
 
   return (
@@ -38,8 +55,7 @@ const SalonLogin = ({setIsAuthenticated}) => {
         {/* Icon */}
         <div className="flex justify-center  sm:mb-6">
           <div className=" w-28">
-            
-          <img src={pic1} alt="" />
+            <img src={pic1} alt="" />
           </div>
 
           {/* <GiHairStrands
@@ -113,6 +129,7 @@ const SalonLogin = ({setIsAuthenticated}) => {
           {/* Button */}
           <Form.Item>
             <Button
+            loading={isPending}
               htmlType="submit"
               block
               size="large"
