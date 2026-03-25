@@ -5,6 +5,7 @@ import {  Outlet } from "react-router-dom";
 import { Header } from "./Header";
 
 
+
 const DashboardLayout = ({ children }) => {
   return (
     <div className="flex min-h-screen bg-[#ECE6DB]">
@@ -23,6 +24,8 @@ const DashboardLayout = ({ children }) => {
         <div className="p-8">
            <Outlet />
         </div>
+
+       
 
       </div>
     </div>

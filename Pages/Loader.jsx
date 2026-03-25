@@ -1,6 +1,7 @@
 import React from "react";
 import { GiHairStrands } from "react-icons/gi";
 import pic1 from '../src/9.svg'
+import pic2 from '../src/cbk.png'
 
 
 const SalonLoader = () => {
@@ -12,7 +13,8 @@ const SalonLoader = () => {
 
         <div className=" w-28">
                   
-                <img src={pic1} alt="" />
+                {/* <img src={pic1} alt="" /> */}
+                <img src={pic2} alt="" />
                 </div>
 
       {/* Custom Loading Line */}

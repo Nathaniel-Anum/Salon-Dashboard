@@ -19,6 +19,7 @@ const SalonLogin = ({ setIsAuthenticated }) => {
       // OPTIONAL: store auth
       localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("access", data.access);
+      localStorage.setItem("refresh", data.refresh);
 
       navigate("/");
     },
