@@ -15,6 +15,7 @@ import { useMutation } from "@tanstack/react-query";
 import { LoadingOutlined } from "@ant-design/icons";
 import _axios from "../src/api/_axios";
 import { Spin } from "antd";
+import { MdManageAccounts } from "react-icons/md";
 
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
@@ -28,6 +29,7 @@ const Sidebar = () => {
     { name: "Services", icon: <FiScissors />, path: "/services" },
     { name: "Analytics", icon: <FiBarChart2 />, path: "/analytics" },
     { name: "Settings", icon: <FiSettings />, path: "/settings" },
+    { name: "Role Management", icon: <MdManageAccounts />, path: "/role-management" },
   ];
 
   const logoutMutation = useMutation({
@@ -55,6 +57,7 @@ const Sidebar = () => {
   return (
     <div
       className={`
+        relative
         ${collapsed ? "w-[90px]" : "w-[270px]"}
         transition-all duration-500 ease-in-out
         flex flex-col justify-between
@@ -92,25 +95,25 @@ const Sidebar = () => {
               title={collapsed ? item.name : ""}
               className={({ isActive }) =>
                 `group flex items-center relative
-  ${collapsed ? "justify-center" : "gap-4"}
-  px-4 py-3 rounded-xl 
-  transition-all duration-300 ease-in-out
-  font-medium tracking-wide text-sm
-  text-white no-underline
-  ${
-    isActive
-      ? "bg-[#c6a96b] text-white border-l-4 border-black shadow-sm"
-      : "hover:bg-white/30 hover:text-white hover:no-underline"
-  }`
+                ${collapsed ? "justify-center" : "gap-4"}
+                px-4 py-3 rounded-xl 
+                transition-all duration-300 ease-in-out
+                font-medium tracking-wide text-sm
+                text-white no-underline
+                ${
+                  isActive
+                    ? "bg-[#c6a96b] text-white border-l-4 border-black shadow-sm"
+                    : "hover:bg-white/30 hover:text-white hover:no-underline"
+                }`
               }
             >
-              {/* Subtle Hover Glow */}
+              {/* Hover Glow */}
               <span
-                className={`
+                className="
                   absolute inset-0 rounded-xl
                   opacity-0 group-hover:opacity-100
                   bg-white/20 transition duration-300
-                `}
+                "
               />
 
               {/* Icon */}
@@ -123,7 +126,9 @@ const Sidebar = () => {
 
               {/* Text */}
               {!collapsed && (
-                <span className="transition-all duration-200">{item.name}</span>
+                <span className="transition-all duration-200">
+                  {item.name}
+                </span>
               )}
             </NavLink>
           ))}
@@ -132,14 +137,6 @@ const Sidebar = () => {
 
       {/* Bottom Section */}
       <div className="px-6 py-8 border-t border-[#e4d9c6] flex flex-col items-center gap-6">
-        {/* Collapse Button */}
-        <div
-          onClick={() => setCollapsed(!collapsed)}
-          className="cursor-pointer text-[#7a766f] hover:text-[#bfa46f] transition duration-300"
-        >
-          {collapsed ? <FaArrowRight /> : <FaArrowLeft />}
-        </div>
-
         {/* Logout */}
         <div
           onClick={handleLogout}
@@ -156,9 +153,29 @@ const Sidebar = () => {
           )}
 
           {!collapsed && (
-            <span className="text-sm font-medium tracking-wide">Logout</span>
+            <span className="text-sm font-medium tracking-wide">
+              Logout
+            </span>
           )}
         </div>
+      </div>
+
+      
+      <div
+        onClick={() => setCollapsed(!collapsed)}
+        className="
+          absolute -right-0 top-8
+          w-9 h-9
+          flex items-center justify-center
+          rounded-full
+          bg-gradient-to-br from-[#c6a96b] to-[#bfa46f]
+          text-white
+          shadow-md
+          cursor-pointer
+          hover:scale-105 transition-all duration-300
+        "
+      >
+        {collapsed ? <FaArrowRight size={12} /> : <FaArrowLeft size={12} />}
       </div>
     </div>
   );

@@ -3,12 +3,22 @@ import DashboardLayout from "./DashboardLayout";
 import WelcomeBack from "./WelcomeBack";
 import { GlassCard } from "./GlassCard";
 import { FaCalendarAlt, FaDollarSign, FaUsers } from "react-icons/fa";
+import { useQuery } from "@tanstack/react-query";
+import _axios from "../src/api/_axios";
+import axios from "axios";
 
 
 const DashboardPage = () => {
+
+
+
+
+
   return (
     <>
       <WelcomeBack />
+
+      
 
       {/* Example Cards */}
       {/* <div className="grid grid-cols-4 gap-6">

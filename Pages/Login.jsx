@@ -4,8 +4,9 @@ import { FaUserAlt, FaLock } from "react-icons/fa";
 import { GiHairStrands } from "react-icons/gi";
 import pic1 from "../src/9.svg";
 import { useNavigate } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { loginUser } from "../src/api/auth";
+import _axios from "../src/api/_axios";
 
 const SalonLogin = ({ setIsAuthenticated }) => {
   const navigate = useNavigate();
@@ -38,6 +39,8 @@ const SalonLogin = ({ setIsAuthenticated }) => {
 
     mutate(values);
   };
+
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#ECE6DB] px-4">
