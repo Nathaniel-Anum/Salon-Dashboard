@@ -10,7 +10,7 @@ import {
   FiLogOut,
 } from "react-icons/fi";
 import pic1 from "../src/9.svg";
-import { FaArrowLeft, FaArrowRight } from "react-icons/fa";
+import { FaArrowLeft, FaArrowRight, FaUserAlt } from "react-icons/fa";
 import { useMutation } from "@tanstack/react-query";
 import { LoadingOutlined } from "@ant-design/icons";
 import _axios from "../src/api/_axios";
@@ -29,6 +29,7 @@ const Sidebar = () => {
     { name: "Services", icon: <FiScissors />, path: "/services" },
     { name: "Analytics", icon: <FiBarChart2 />, path: "/analytics" },
     { name: "Settings", icon: <FiSettings />, path: "/settings" },
+        { name: "Staff", icon: <FaUserAlt  />, path: "/staff" },
     { name: "Role Management", icon: <MdManageAccounts />, path: "/role-management" },
   ];
 
@@ -77,7 +78,7 @@ const Sidebar = () => {
           {!collapsed && (
             <div className="leading-tight">
               <h1 className="text-[18px] font-medium text-[#2a2a2a] tracking-wide">
-                Salon
+                CBK Beauty
               </h1>
               <p className="text-[11px] tracking-[0.25em] text-[#bfa46f] uppercase">
                 Dashboard

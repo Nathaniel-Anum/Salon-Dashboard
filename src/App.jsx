@@ -10,6 +10,7 @@ import Loader from "../Pages/Loader";
 import ProtectedRoute from "../Components/ProtectedRoute";
 import PublicRoute from "../Components/PublicRoute";
 import RoleManagement from "../Pages/RoleManagement";
+import Staff from "../Pages/Staff";
 
 export default function App() {
   const [loading, setLoading] = useState(() => {
@@ -47,6 +48,7 @@ export default function App() {
           <Route element={<DashboardLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="/role-management" element={<RoleManagement/>}/>
+            <Route path="/staff" element={<Staff/>}/>
           </Route>
         </Route>
       </Routes>
