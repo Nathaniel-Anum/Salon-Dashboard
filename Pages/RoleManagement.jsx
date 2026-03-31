@@ -6,7 +6,17 @@ import _axios from "../src/api/_axios";
 
 const RoleManagement = () => {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", permissions: [] });
+  const [form, setForm] = useState({
+    name: "",
+    permission_ids: [],
+  });
+  const [editOpen, setEditOpen] = useState(false);
+
+  const [editForm, setEditForm] = useState({
+    id: null,
+    name: "",
+    permission_ids: [],
+  });
 
   const queryClient = useQueryClient();
 
@@ -22,14 +32,29 @@ const RoleManagement = () => {
     queryFn: () => _axios.get("/api/portal/v1/accounts/permissions/"),
   });
 
-//   console.log(permissionsData?.data);
+  
+
+  //   console.log(permissionsData?.data);
   //  Create role
   const createRole = useMutation({
     mutationFn: (data) => _axios.post("/api/portal/v1/accounts/roles/", data),
     onSuccess: () => {
       queryClient.invalidateQueries(["roles"]);
       setOpen(false);
-      setForm({ name: "", permissions: [] });
+      setForm({ name: "", permission_ids: [] });
+    },
+  });
+
+  const updateRole = useMutation({
+    mutationFn: (data) =>
+      _axios.patch(`/api/portal/v1/accounts/roles/${data.id}/`, {
+        name: data.name,
+        permission_ids: data.permission_ids,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(["roles"]);
+      setEditOpen(false);
+      setEditForm({ id: null, name: "", permission_ids: [] });
     },
   });
 
@@ -40,6 +65,22 @@ const RoleManagement = () => {
       queryClient.invalidateQueries(["roles"]);
     },
   });
+
+  const handleEdit = (role) => {
+      console.log("ROLE:", role);
+  console.log("PERMISSIONS:", role.permissions);
+    const cleanPermissions = (role.permissions || [])
+      .map((p) => p?.id)
+      .filter(Boolean); 
+
+    setEditForm({
+      id: role.id,
+      name: role.name,
+      permission_ids: cleanPermissions,
+    });
+
+    setEditOpen(true);
+  };
 
   const roles = rolesData?.data || [];
   const permissions = permissionsData?.data || [];
@@ -96,7 +137,10 @@ const RoleManagement = () => {
       title: "Action",
       render: (_, record) => (
         <div className="flex gap-4 text-lg">
-          <FiEdit2 className="cursor-pointer hover:text-[#bfa46f]" />
+          <FiEdit2
+            className="cursor-pointer hover:text-[#bfa46f]"
+            onClick={() => handleEdit(record)}
+          />
           <FiTrash2
             onClick={() => deleteRole.mutate(record.id)}
             className="cursor-pointer hover:text-red-500"
@@ -139,18 +183,17 @@ const RoleManagement = () => {
       </div>
 
       {/* Modal */}
-      
+
       <Modal
         open={open}
         onCancel={() => setOpen(false)}
         footer={null}
         centered
-       
-         wrapClassName="modal"
-           maskStyle={{
-    backdropFilter: "blur(4px)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-  }}
+        wrapClassName="modal"
+        maskStyle={{
+          backdropFilter: "blur(4px)",
+          backgroundColor: "rgba(0,0,0,0.3)",
+        }}
       >
         <div className="p-4">
           <h3 className="text-lg font-semibold mb-6 text-[#2a2a2a]">
@@ -174,8 +217,8 @@ const RoleManagement = () => {
               mode="multiple"
               placeholder="Select permissions"
               className="w-full mt-1"
-              value={form.permissions}
-              onChange={(value) => setForm({ ...form, permissions: value })}
+              value={form.permission_ids}
+              onChange={(value) => setForm({ ...form, permission_ids: value })}
               options={permissions.map((p) => ({
                 label: p.description,
                 value: p.id,
@@ -194,6 +237,71 @@ const RoleManagement = () => {
               className="bg-[#c6a96b] hover:bg-[#bfa46f] border-none"
             >
               Save
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={editOpen} onCancel={() => setEditOpen(false)} footer={null}>
+        <div className="p-4">
+          <h3 className="text-lg font-semibold mb-6 text-[#2a2a2a]">
+            Edit Role
+          </h3>
+
+          {/* Name */}
+          <div className="mb-4">
+            <label className="text-sm text-gray-600">Role Name</label>
+            <Input
+              value={editForm.name}
+              onChange={(e) =>
+                setEditForm({
+                  ...editForm,
+                  name: e.target.value,
+                })
+              }
+              className="mt-1 rounded-lg border-black/20 focus:border-black"
+            />
+          </div>
+
+          {/* Permissions */}
+          <div className="mb-6">
+            <label className="text-sm text-gray-600">Permissions</label>
+            <Select
+              mode="multiple"
+              placeholder="Select permissions"
+              className="w-full mt-1"
+              value={editForm.permission_ids} 
+              onChange={(value) =>
+                setEditForm({
+                  ...editForm,
+                  permission_ids: value,
+                })
+              }
+              options={permissionsData?.data?.map((p) => ({
+                label: p.description,
+                value: p.id,
+              }))}
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3">
+            <Button onClick={() => setEditOpen(false)}>Cancel</Button>
+
+            <Button
+              type="primary"
+              loading={updateRole.isPending}
+              onClick={() => {
+                const cleanData = {
+                  ...editForm,
+                  permission_ids: editForm.permission_ids.filter(Boolean), 
+                };
+
+                updateRole.mutate(cleanData);
+              }}
+              className="bg-[#c6a96b] hover:bg-[#bfa46f] border-none"
+            >
+              Update
             </Button>
           </div>
         </div>

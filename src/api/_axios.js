@@ -33,7 +33,7 @@ const _axios = axios.create({
   },
 });
 
-// 🔹 Attach access token
+//  Attach access token
 _axios.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("access");
@@ -45,7 +45,7 @@ _axios.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// 🔹 Handle refresh on 401
+// Handle refresh on 401
 _axios.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -58,7 +58,7 @@ _axios.interceptors.response.use(
       try {
         const refresh = localStorage.getItem("refresh");
 
-        // 🔁 Call refresh endpoint
+        //  Call refresh endpoint
         const res = await axios.post(
           "https://api.cbkbeauty.expertech.dev/api/app/v1/accounts/refresh/",
           { refresh }
@@ -66,15 +66,15 @@ _axios.interceptors.response.use(
 
         const newAccess = res.data.access;
 
-        // 💾 Save new token
+        // Save new token
         localStorage.setItem("access", newAccess);
 
-        // 🔁 Retry original request with new token
+        //  Retry original request with new token
         originalRequest.headers.Authorization = `Bearer ${newAccess}`;
 
         return _axios(originalRequest);
       } catch (refreshError) {
-        // ❌ Refresh failed → logout
+        //  Refresh failed → logout
         localStorage.removeItem("access");
         localStorage.removeItem("refresh");
         window.location.href = "/login";
