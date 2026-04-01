@@ -8,30 +8,34 @@ import {
   FiBarChart2,
   FiSettings,
   FiLogOut,
+  FiChevronLeft,
+  FiChevronRight,
+  FiX,
+  FiMenu,
 } from "react-icons/fi";
+import { FaUserAlt } from "react-icons/fa";
+import { MdManageAccounts } from "react-icons/md";
 import pic1 from "../src/9.svg";
-import { FaArrowLeft, FaArrowRight, FaUserAlt } from "react-icons/fa";
 import { useMutation } from "@tanstack/react-query";
 import { LoadingOutlined } from "@ant-design/icons";
 import _axios from "../src/api/_axios";
-import { Spin } from "antd";
-import { MdManageAccounts } from "react-icons/md";
+import { Spin, Tooltip } from "antd";
+
+const menuItems = [
+  { name: "Dashboard", icon: <FiHome />, path: "/" },
+  { name: "Appointments", icon: <FiCalendar />, path: "/appointments" },
+  { name: "Clients", icon: <FiUsers />, path: "/clients" },
+  { name: "Services", icon: <FiScissors />, path: "/services" },
+  { name: "Analytics", icon: <FiBarChart2 />, path: "/analytics" },
+  { name: "Staff", icon: <FaUserAlt />, path: "/staff" },
+  { name: "Role Management", icon: <MdManageAccounts />, path: "/role-management" },
+  { name: "Settings", icon: <FiSettings />, path: "/settings" },
+];
 
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
-
+  const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
-
-  const menuItems = [
-    { name: "Dashboard", icon: <FiHome />, path: "/" },
-    { name: "Appointments", icon: <FiCalendar />, path: "/appointments" },
-    { name: "Clients", icon: <FiUsers />, path: "/clients" },
-    { name: "Services", icon: <FiScissors />, path: "/services" },
-    { name: "Analytics", icon: <FiBarChart2 />, path: "/analytics" },
-    { name: "Settings", icon: <FiSettings />, path: "/settings" },
-        { name: "Staff", icon: <FaUserAlt  />, path: "/staff" },
-    { name: "Role Management", icon: <MdManageAccounts />, path: "/role-management" },
-  ];
 
   const logoutMutation = useMutation({
     mutationFn: (refresh) =>
@@ -50,135 +54,205 @@ const Sidebar = () => {
     },
   });
 
-  const handleLogout = () => {
-    const refresh = localStorage.getItem("refresh");
-    logoutMutation.mutate(refresh);
-  };
+  const handleLogout = () => logoutMutation.mutate(localStorage.getItem("refresh"));
 
-  return (
-    <div
-      className={`
-        relative
-        ${collapsed ? "w-[90px]" : "w-[270px]"}
-        transition-all duration-500 ease-in-out
-        flex flex-col justify-between
-        bg-gradient-to-b from-[#f5efe6] via-[#efe6d8] to-[#e6dccb]
-        border-r border-[#e4d9c6]
-        min-h-screen
-      `}
-    >
-      {/* Top Section */}
-      <div>
-        {/* Logo */}
-        <div className="px-6 py-8 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full overflow-hidden shadow-sm">
-            <img src={pic1} alt="logo" className="object-cover w-full h-full" />
-          </div>
-
-          {!collapsed && (
-            <div className="leading-tight">
-              <h1 className="text-[18px] font-medium text-[#2a2a2a] tracking-wide">
-                CBK Beauty
-              </h1>
-              <p className="text-[11px] tracking-[0.25em] text-[#bfa46f] uppercase">
-                Dashboard
-              </p>
-            </div>
-          )}
+  const SidebarContent = ({ isMobile = false }) => (
+    <div className="flex flex-col h-full">
+      {/* ── Logo ── */}
+      <div
+        className={`flex items-center  gap-3 px-5 py-6 border-b`}
+        style={{ borderColor: "rgba(187,161,79,0.2)" }}
+      >
+        <div
+          className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
+          style={{ background: "#fff", border: "1.5px solid rgba(187,161,79,0.5)" }}
+        >
+          <img src={pic1} alt="logo" className="w-7 h-7 object-contain" />
         </div>
-
-        {/* Menu */}
-        <div className="mt-8 flex flex-col gap-2 px-3">
-          {menuItems.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.path}
-              title={collapsed ? item.name : ""}
-              className={({ isActive }) =>
-                `group flex items-center relative
-                ${collapsed ? "justify-center" : "gap-4"}
-                px-4 py-3 rounded-xl 
-                transition-all duration-300 ease-in-out
-                font-medium tracking-wide text-sm
-                text-white no-underline
-                ${
-                  isActive
-                    ? "bg-[#c6a96b] text-white border-l-4 border-black shadow-sm"
-                    : "hover:bg-white/30 hover:text-white hover:no-underline"
-                }`
-              }
+        {(!collapsed || isMobile) && (
+          <div className="overflow-hidden">
+            <h1
+              className="text-base font-semibold leading-none text-white"
+              style={{ fontFamily: "'Playfair Display', serif", letterSpacing: "0.03em" }}
             >
-              {/* Hover Glow */}
-              <span
-                className="
-                  absolute inset-0 rounded-xl
-                  opacity-0 group-hover:opacity-100
-                  bg-white/20 transition duration-300
-                "
-              />
-
-              {/* Icon */}
-              <span
-                className={`text-[18px] transition-all duration-300
-                  ${collapsed ? "" : "group-hover:translate-x-[2px]"}`}
-              >
-                {item.icon}
-              </span>
-
-              {/* Text */}
-              {!collapsed && (
-                <span className="transition-all duration-200">
-                  {item.name}
-                </span>
-              )}
-            </NavLink>
-          ))}
-        </div>
+              CBK Beauty
+            </h1>
+            <p
+              className="text-[10px] mt-0.5 tracking-[0.28em] uppercase"
+              style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
+            >
+              Dashboard
+            </p>
+          </div>
+        )}
+        {isMobile && (
+          <button
+            className="ml-auto  text-white/60 hover:text-white"
+            onClick={() => setMobileOpen(false)}
+          >
+            <FiX size={18} />
+          </button>
+        )}
       </div>
 
-      {/* Bottom Section */}
-      <div className="px-6 py-8 border-t border-[#e4d9c6] flex flex-col items-center gap-6">
-        {/* Logout */}
-        <div
+      {/* ── Menu ── */}
+      <nav className="flex-1 overflow-y-auto py-4 px-3">
+        <div className="flex  flex-col gap-1">
+          {menuItems.map((item) => (
+            <Tooltip
+              key={item.name}   
+              title={collapsed && !isMobile ? item.name : ""}
+              placement="right"
+            >
+              <NavLink
+                to={item.path}
+                onClick={() => isMobile && setMobileOpen(false)}
+                className={({ isActive }) =>
+                  `group relative flex items-center rounded-xl transition-all duration-250 no-underline
+                  ${collapsed && !isMobile ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"}`
+                }
+                style={({ isActive }) =>
+                  isActive
+                    ? {
+                        background: "linear-gradient(90deg, #BBA14F 0%, #c9ae5e 100%)",
+                        boxShadow: "0 4px 14px rgba(187,161,79,0.35)",
+                        fontWeight: 600,
+                        color: "#272727",
+                      }
+                    : {
+                        background: "transparent",
+                        color: "rgba(255,255,255,0.78)",
+                      }
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    {/* left accent bar */}
+                    {isActive && (
+                      <span
+                        className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full"
+                        style={{ background: "#272727", opacity: 0.4 }}
+                      />
+                    )}
+
+                    <span
+                      className={`text-[17px] flex-shrink-0 transition-transform duration-200 ${
+                        !isActive ? "group-hover:scale-110" : ""
+                      }`}
+                    >
+                      {item.icon}
+                    </span>
+
+                    {(!collapsed || isMobile) && (
+                      <span
+                        className="text-sm tracking-wide"
+                        style={{ fontFamily: "'Poppins', sans-serif" }}
+                      >
+                        {item.name}
+                      </span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+            </Tooltip>
+          ))}
+        </div>
+      </nav>
+
+      {/* ── Bottom ── */}
+      <div
+        className="px-3 py-5 border-t"
+        style={{ borderColor: "rgba(187,161,79,0.2)" }}
+      >
+        <button
           onClick={handleLogout}
-          className="flex items-center gap-2 hover:text-[#bfa46f] 
-                     transition-all duration-300 cursor-pointer"
+          className={`w-full cursor-pointer flex items-center rounded-xl transition-all duration-200
+            hover:bg-white/10 px-4 py-2.5 gap-3
+            ${collapsed && !isMobile ? "justify-center px-0" : ""}`}
+          style={{ color: "rgba(255,255,255,0.7)" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
         >
           {logoutMutation.isPending ? (
-            <Spin
-              indicator={<LoadingOutlined spin style={{ color: "#bfa46f" }} />}
-              size="small"
-            />
+            <Spin indicator={<LoadingOutlined spin style={{ color: "#BBA14F" }} />} size="small" />
           ) : (
-            <FiLogOut />
+            <FiLogOut size={17} />
           )}
-
-          {!collapsed && (
-            <span className="text-sm font-medium tracking-wide">
+          {(!collapsed || isMobile) && (
+            <span className="text-sm" style={{ fontFamily: "'Poppins', sans-serif" }}>
               Logout
             </span>
           )}
-        </div>
-      </div>
-
-      
-      <div
-        onClick={() => setCollapsed(!collapsed)}
-        className="
-          absolute -right-0 top-8
-          w-9 h-9
-          flex items-center justify-center
-          rounded-full
-          bg-gradient-to-br from-[#c6a96b] to-[#bfa46f]
-          text-white
-          shadow-md
-          cursor-pointer
-          hover:scale-105 transition-all duration-300
-        "
-      >
-        {collapsed ? <FaArrowRight size={12} /> : <FaArrowLeft size={12} />}
+        </button>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* ── Mobile hamburger ── */}
+      <button
+        className="fixed top-4 left-4 z-50 lg:hidden flex items-center justify-center w-9 h-9 rounded-full shadow-lg"
+        style={{ background: "#272727", border: "1px solid rgba(187,161,79,0.4)" }}
+        onClick={() => setMobileOpen(true)}
+      >
+        <FiMenu size={16} style={{ color: "#BBA14F" }} />
+      </button>
+
+      {/* ── Mobile drawer overlay ── */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          style={{ background: "rgba(0,0,0,0.55)" }}
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* ── Mobile drawer ── */}
+      <div
+        className="fixed top-0 left-0 h-full z-50 lg:hidden transition-transform duration-300"
+        style={{
+          width: 270,
+          background: "linear-gradient(180deg, #1c1a15 0%, #272727 60%, #2e2318 100%)",
+          transform: mobileOpen ? "translateX(0)" : "translateX(-100%)",
+        }}
+      >
+        <SidebarContent isMobile />
+      </div>
+
+      {/* ── Desktop sidebar ── */}
+      <div
+        className="hidden lg:flex flex-col relative transition-all duration-400"
+        style={{
+          width: collapsed ? 80 : 260,
+          height: "100vh",
+          position: "sticky",
+          top: 0,
+          flexShrink: 0,
+          background: "linear-gradient(180deg, #1c1a15 0%, #272727 60%, #2e2318 100%)",
+          borderRight: "1px solid rgba(187,161,79,0.15)",
+          zIndex: 40,
+        }}
+      >
+        <SidebarContent />
+
+        {/* collapse toggle */}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="absolute -right-3.5 top-16 w-7 h-7 cursor-pointer rounded-full flex items-center justify-center shadow-lg z-50 transition-all duration-200 hover:scale-110"
+          style={{
+            background: "linear-gradient(135deg, #BBA14F, #a08340)",
+            border: "2px solid #1c1a15",
+          } }
+        >
+          {collapsed ? (
+            <FiChevronRight size={12} color="#fff" />
+          ) : (
+            <FiChevronLeft size={12} color="#fff" />
+          )}
+        </button>
+      </div>
+    </>
   );
 };
 
