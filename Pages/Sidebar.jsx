@@ -12,6 +12,7 @@ import {
   FiChevronRight,
   FiX,
   FiMenu,
+  FiSlash,
 } from "react-icons/fi";
 import { FaUserAlt } from "react-icons/fa";
 import { MdManageAccounts } from "react-icons/md";
@@ -23,12 +24,13 @@ import { Spin, Tooltip } from "antd";
 
 const menuItems = [
   { name: "Dashboard", icon: <FiHome />, path: "/" },
-  { name: "Appointments", icon: <FiCalendar />, path: "/appointments" },
+  { name: "Calendar", icon: <FiCalendar />, path: "/calendar" },
   { name: "Clients", icon: <FiUsers />, path: "/clients" },
   { name: "Services", icon: <FiScissors />, path: "/services" },
   { name: "Analytics", icon: <FiBarChart2 />, path: "/analytics" },
   { name: "Staff", icon: <FaUserAlt />, path: "/staff" },
   { name: "Role Management", icon: <MdManageAccounts />, path: "/role-management" },
+  { name: "Blocked Days", icon: <FiSlash />, path: "/blocked-days" },
   { name: "Settings", icon: <FiSettings />, path: "/settings" },
 ];
 

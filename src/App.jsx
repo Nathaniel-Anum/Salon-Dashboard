@@ -11,6 +11,11 @@ import ProtectedRoute from "../Components/ProtectedRoute";
 import PublicRoute from "../Components/PublicRoute";
 import RoleManagement from "../Pages/RoleManagement";
 import Staff from "../Pages/Staff";
+import CalendarPage from "../Pages/CalendarPage";
+import ServicesPage from "../Pages/ServicesPage";
+import CustomersPage from "../Pages/CustomersPage";
+import BlockedDaysPage from "../Pages/BlockedDaysPage";
+import ClientProfilePage from "../Pages/ClientProfilePage";
 
 export default function App() {
   const [loading, setLoading] = useState(() => {
@@ -49,6 +54,11 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="/role-management" element={<RoleManagement/>}/>
             <Route path="/staff" element={<Staff/>}/>
+            <Route path="/calendar" element={<CalendarPage/>}/>
+            <Route path="/services" element={<ServicesPage/>}/>
+            <Route path="/clients" element={<CustomersPage/>}/>
+            <Route path="/clients/:id" element={<ClientProfilePage/>}/>
+            <Route path="/blocked-days" element={<BlockedDaysPage/>}/>
           </Route>
         </Route>
       </Routes>

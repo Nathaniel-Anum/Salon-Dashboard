@@ -5,7 +5,6 @@ import {
   FaDollarSign,
   FaUsers,
   FaStar,
-  FaCut,
   FaCheckCircle,
 } from "react-icons/fa";
 import { FiClock, FiArrowRight } from "react-icons/fi";
@@ -26,12 +25,13 @@ const statusConfig = {
   completed:    { label: "Completed",    bg: "rgba(34,160,80,0.12)",   color: "#1a8a40" },
 };
 
-/* ── popular services ── */
+/* ── popular services with ratings ── */
 const services = [
-  { name: "Hair Treatment", pct: 82 },
-  { name: "Nail Art",       pct: 67 },
-  { name: "Facials",        pct: 54 },
-  { name: "Hair Coloring",  pct: 48 },
+  { name: "Hair Treatment",  bookings: 124, rating: 4.9, pct: 82 },
+  { name: "Nail Art",        bookings: 98,  rating: 4.7, pct: 67 },
+  { name: "Facial & Massage",bookings: 76,  rating: 4.8, pct: 54 },
+  { name: "Hair Coloring",   bookings: 65,  rating: 4.6, pct: 48 },
+  { name: "Eyebrow Shaping", bookings: 52,  rating: 4.5, pct: 38 },
 ];
 
 const DashboardPage = () => {
@@ -136,6 +136,7 @@ const DashboardPage = () => {
         />
       </div>
 
+      {/* ── Second stat row: Services ── */}
       {/* ── Bottom row ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         {/* Recent bookings — takes 2 cols */}
@@ -233,71 +234,147 @@ const DashboardPage = () => {
             boxShadow: "0 4px 20px rgba(39,39,39,0.05)",
           }}
         >
-          <h2
-            className="text-base font-semibold text-[#272727] mb-5"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
-            Popular Services
-          </h2>
-
-          <div className="space-y-5">
-            {services.map((s, i) => (
-              <div key={i}>
-                <div className="flex justify-between items-center mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <FaCut size={12} style={{ color: "#BBA14F" }} />
-                    <span
-                      className="text-sm text-[#272727]"
-                      style={{ fontFamily: "'Poppins', sans-serif" }}
-                    >
-                      {s.name}
-                    </span>
-                  </div>
-                  <span
-                    className="text-xs font-semibold"
-                    style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
-                  >
-                    {s.pct}%
-                  </span>
-                </div>
-                <div
-                  className="h-2 rounded-full overflow-hidden"
-                  style={{ background: "rgba(187,161,79,0.15)" }}
-                >
-                  <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{
-                      width: `${s.pct}%`,
-                      background: "linear-gradient(90deg, #BBA14F, #c9ae5e)",
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-5">
+            <h2
+              className="text-base font-semibold text-[#272727]"
+              style={{ fontFamily: "'Playfair Display', serif" }}
+            >
+              Popular Services
+            </h2>
+            <span
+              className="text-[10px] px-2.5 py-1 rounded-full font-medium"
+              style={{
+                background: "rgba(187,161,79,0.12)",
+                color: "#987554",
+                fontFamily: "'Poppins', sans-serif",
+              }}
+            >
+              This month
+            </span>
           </div>
 
-          {/* quick summary */}
-          <div
-            className="mt-6 pt-5 border-t space-y-3"
-            style={{ borderColor: "rgba(187,161,79,0.15)" }}
-          >
-            {[
-              { icon: <FaCheckCircle />, label: "Completed today", val: "14" },
-              { icon: <FiClock />,       label: "Pending",         val: "4"  },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[#987554] text-sm" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                  <span style={{ color: "#BBA14F" }}>{item.icon}</span>
-                  {item.label}
+          <div className="space-y-4">
+            {services.map((s, i) => {
+              /* render filled stars */
+              const stars = Array.from({ length: 5 }, (_, idx) => {
+                const filled = idx < Math.floor(s.rating);
+                const half   = !filled && idx < s.rating;
+                return (
+                  <span
+                    key={idx}
+                    style={{
+                      color: filled || half ? "#BBA14F" : "rgba(187,161,79,0.25)",
+                      fontSize: 11,
+                    }}
+                  >
+                    ★
+                  </span>
+                );
+              });
+
+              return (
+                <div key={i}>
+                  {/* Service row */}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {/* rank badge */}
+                      <span
+                        className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                        style={{
+                          background: i === 0
+                            ? "linear-gradient(135deg,#BBA14F,#987554)"
+                            : "rgba(187,161,79,0.12)",
+                          color: i === 0 ? "#fff" : "#987554",
+                          fontFamily: "'Poppins', sans-serif",
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span
+                        className="text-sm text-[#272727] truncate"
+                        style={{ fontFamily: "'Poppins', sans-serif" }}
+                      >
+                        {s.name}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      {/* star rating */}
+                      <div className="flex items-center gap-0.5">
+                        {stars}
+                        <span
+                          className="ml-1 text-[11px] font-semibold"
+                          style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
+                        >
+                          {s.rating}
+                        </span>
+                      </div>
+                      {/* booking count */}
+                      <span
+                        className="text-[11px]"
+                        style={{ color: "#b5a47a", fontFamily: "'Poppins', sans-serif" }}
+                      >
+                        {s.bookings} bk
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* progress bar */}
+                  <div
+                    className="h-1.5 rounded-full overflow-hidden"
+                    style={{ background: "rgba(187,161,79,0.13)" }}
+                  >
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${s.pct}%`,
+                        background: i === 0
+                          ? "linear-gradient(90deg, #BBA14F, #c9ae5e)"
+                          : "rgba(187,161,79,0.45)",
+                        transition: "width 0.7s ease",
+                      }}
+                    />
+                  </div>
                 </div>
-                <span
-                  className="font-semibold text-[#272727] text-sm"
-                  style={{ fontFamily: "'Poppins', sans-serif" }}
-                >
-                  {item.val}
-                </span>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+
+          {/* Footer totals */}
+          <div
+            className="mt-5 pt-4 flex items-center justify-between"
+            style={{ borderTop: "1px solid rgba(187,161,79,0.15)" }}
+          >
+            <div className="flex items-center gap-1.5">
+              <FaCheckCircle size={11} style={{ color: "#1a8a40" }} />
+              <span
+                className="text-xs text-[#987554]"
+                style={{ fontFamily: "'Poppins', sans-serif" }}
+              >
+                Completed today
+              </span>
+              <span
+                className="text-xs font-semibold text-[#272727] ml-1"
+                style={{ fontFamily: "'Poppins', sans-serif" }}
+              >
+                14
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <FiClock size={11} style={{ color: "#c97d10" }} />
+              <span
+                className="text-xs text-[#987554]"
+                style={{ fontFamily: "'Poppins', sans-serif" }}
+              >
+                Pending
+              </span>
+              <span
+                className="text-xs font-semibold text-[#272727] ml-1"
+                style={{ fontFamily: "'Poppins', sans-serif" }}
+              >
+                4
+              </span>
+            </div>
           </div>
         </div>
       </div>

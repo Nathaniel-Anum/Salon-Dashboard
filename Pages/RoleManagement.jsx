@@ -5,8 +5,37 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import _axios from "../src/api/_axios";
 
 /* ─── tiny helpers ─────────────────────────────────────── */
+/**
+ * Extract a human-readable label from a permission object.
+ * The API returns { id, label, code } — fall through common field names
+ * so it works even if the backend shape changes.
+ */
 const permLabel = (p) =>
-  typeof p === "object" ? p.description || p.name || p.codename || `#${p.id}` : String(p);
+  typeof p === "object" && p !== null
+    ? p.label || p.name || p.description || p.codename || p.code || `#${p.id}`
+    : String(p);
+
+/**
+ * Resolve a permission value (id, codename/code string, or object) to a
+ * human-readable label using the full permissions list as a lookup.
+ */
+const resolvePermLabel = (p, allPerms = []) => {
+  if (typeof p === "object" && p !== null) {
+    return p.label || p.name || p.description || p.codename || p.code || `#${p.id}`;
+  }
+  // p is a raw id or code/codename string — look it up
+  const found = allPerms.find(
+    (perm) =>
+      String(perm.id) === String(p) ||
+      perm.code === p ||
+      perm.codename === p ||
+      perm.name === p ||
+      perm.label === p
+  );
+  return found
+    ? found.label || found.name || found.description || found.codename || found.code || `#${found.id}`
+    : String(p);
+};
 
 /* ─── Role Card ────────────────────────────────────────── */
 const RoleCard = ({ role, onView, onEdit, onDelete }) => {
@@ -62,7 +91,7 @@ const RoleCard = ({ role, onView, onEdit, onDelete }) => {
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(role.id); }}
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:!bg-red-500/20 hover:!text-red-400"
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-red-500/20! hover:text-red-400!"
               style={{ background: "rgba(39,39,39,0.06)", color: "#aaa" }}
               title="Delete role"
             >
@@ -127,6 +156,48 @@ const RoleCard = ({ role, onView, onEdit, onDelete }) => {
     </div>
   );
 };
+
+/* ─── Shared Form Modal Body ───────────────────────────── */
+const FormBody = ({ values, setValues, onSave, saving, onClose, saveLabel, permissionOptions }) => (
+  <div className="pt-4 pb-2">
+    <div className="mb-4">
+      <label className="text-sm font-medium text-[#272727] block mb-1.5" style={{ fontFamily: "'Poppins', sans-serif" }}>
+        Role Name
+      </label>
+      <Input
+        value={values.name}
+        onChange={(e) => setValues({ ...values, name: e.target.value })}
+        placeholder="e.g. Senior Stylist"
+        className="rounded-xl"
+      />
+    </div>
+    <div className="mb-6">
+      <label className="text-sm font-medium text-[#272727] block mb-1.5" style={{ fontFamily: "'Poppins', sans-serif" }}>
+        Permissions
+      </label>
+      <Select
+        mode="multiple"
+        placeholder="Select permissions"
+        className="w-full"
+        value={values.permission_ids}
+        onChange={(value) => setValues({ ...values, permission_ids: value })}
+        options={permissionOptions}
+        allowClear
+      />
+    </div>
+    <div className="flex justify-end gap-3">
+      <Button onClick={onClose}>Cancel</Button>
+      <Button
+        type="primary"
+        loading={saving}
+        onClick={onSave}
+        className="bg-[#BBA14F]! border-none! hover:bg-[#a08340]!"
+      >
+        {saveLabel}
+      </Button>
+    </div>
+  </div>
+);
 
 /* ─── Main Component ───────────────────────────────────── */
 const RoleManagement = () => {
@@ -198,8 +269,12 @@ const RoleManagement = () => {
         if (typeof p === "object" && p !== null) return Number(p.id);
         const found = permissions.find(
           (perm) =>
-            perm.codename === p || perm.name === p ||
-            perm.description === p || String(perm.id) === String(p)
+            String(perm.id) === String(p) ||
+            perm.code === p ||
+            perm.codename === p ||
+            perm.name === p ||
+            perm.label === p ||
+            perm.description === p
         );
         return found ? Number(found.id) : null;
       })
@@ -213,47 +288,17 @@ const RoleManagement = () => {
     setViewOpen(true);
   };
 
-  /* shared form modal body */
-  const FormBody = ({ values, setValues, onSave, saving, onClose, saveLabel }) => (
-    <div className="pt-4 pb-2">
-      <div className="mb-4">
-        <label className="text-sm font-medium text-[#272727] block mb-1.5" style={{ fontFamily: "'Poppins', sans-serif" }}>
-          Role Name
-        </label>
-        <Input
-          value={values.name}
-          onChange={(e) => setValues({ ...values, name: e.target.value })}
-          placeholder="e.g. Senior Stylist"
-          className="rounded-xl"
-        />
-      </div>
-      <div className="mb-6">
-        <label className="text-sm font-medium text-[#272727] block mb-1.5" style={{ fontFamily: "'Poppins', sans-serif" }}>
-          Permissions
-        </label>
-        <Select
-          mode="multiple"
-          placeholder="Select permissions"
-          className="w-full"
-          value={values.permission_ids}
-          onChange={(value) => setValues({ ...values, permission_ids: value })}
-          options={permissionOptions}
-          allowClear
-        />
-      </div>
-      <div className="flex justify-end gap-3">
-        <Button onClick={onClose}>Cancel</Button>
-        <Button
-          type="primary"
-          loading={saving}
-          onClick={onSave}
-          className="!bg-[#BBA14F] !border-none hover:!bg-[#a08340]"
-        >
-          {saveLabel}
-        </Button>
-      </div>
-    </div>
-  );
+  const handleDeleteRole = (id) => {
+    Modal.confirm({
+      title: "Delete Role",
+      content: "Are you sure you want to delete this role? This cannot be undone.",
+      okText: "Delete",
+      okButtonProps: { danger: true },
+      cancelText: "Cancel",
+      centered: true,
+      onOk: () => deleteRole.mutate(id),
+    });
+  };
 
   return (
     <div>
@@ -307,7 +352,7 @@ const RoleManagement = () => {
               role={role}
               onView={handleView}
               onEdit={handleEdit}
-              onDelete={(id) => deleteRole.mutate(id)}
+              onDelete={handleDeleteRole}
             />
           ))}
         </div>
@@ -348,7 +393,7 @@ const RoleManagement = () => {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
                   <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0"
                     style={{
                       background: "rgba(187,161,79,0.12)",
                       border: "1px solid rgba(187,161,79,0.35)",
@@ -420,7 +465,7 @@ const RoleManagement = () => {
                       }}
                     >
                       <div
-                        className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                        className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
                         style={{ background: "rgba(187,161,79,0.15)", color: "#BBA14F" }}
                       >
                         <FiLock size={11} />
@@ -429,7 +474,7 @@ const RoleManagement = () => {
                         className="text-sm leading-snug"
                         style={{ color: "#4a3b1f", fontFamily: "'Poppins', sans-serif", fontWeight: 500 }}
                       >
-                        {permLabel(p)}
+                        {resolvePermLabel(p, permissions)}
                       </span>
                     </div>
                   ))}
@@ -486,6 +531,7 @@ const RoleManagement = () => {
           saving={createRole.isPending}
           onClose={() => setAddOpen(false)}
           saveLabel="Save Role"
+          permissionOptions={permissionOptions}
         />
       </Modal>
 
@@ -514,6 +560,7 @@ const RoleManagement = () => {
           saving={updateRole.isPending}
           onClose={() => setEditOpen(false)}
           saveLabel="Update Role"
+          permissionOptions={permissionOptions}
         />
       </Modal>
     </div>

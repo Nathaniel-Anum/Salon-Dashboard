@@ -3,64 +3,94 @@
 body {
   /* font-family: 'Playfair Display', sans-serif; */
   /* font-family: 'Poppins', sans-serif; */
-    font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
 }
 
 /* ── Salon Login Animations ── */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(28px); }
-  to   { opacity: 1; transform: translateY(0);    }
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes fadeInLeft {
-  from { opacity: 0; transform: translateX(-28px); }
-  to   { opacity: 1; transform: translateX(0);     }
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes fadeInRight {
-  from { opacity: 0; transform: translateX(28px); }
-  to   { opacity: 1; transform: translateX(0);    }
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes shimmer {
-  0%   { background-position: -200% center; }
-  100% { background-position:  200% center; }
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
 }
 
 /* ── Salon Ant Design Input overrides ── */
 .salon-input.ant-input-affix-wrapper,
-.salon-input.ant-input-affix-wrapper:not(.ant-input-affix-wrapper-disabled):hover {
+.salon-input.ant-input-affix-wrapper:not(
+    .ant-input-affix-wrapper-disabled
+  ):hover {
   border-color: #d4c4a0 !important;
   border-radius: 10px !important;
-  background-color: #FDFAF5 !important;
+  background-color: #fdfaf5 !important;
   box-shadow: none !important;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease !important;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease !important;
 }
 
 .salon-input.ant-input-affix-wrapper-focused,
 .salon-input.ant-input-affix-wrapper:focus-within {
-  border-color: #BBA14F !important;
+  border-color: #bba14f !important;
   box-shadow: 0 0 0 3px rgba(187, 161, 79, 0.18) !important;
 }
 
 .salon-input .ant-input {
   background-color: transparent !important;
-  font-family: 'Poppins', sans-serif;
+  font-family: "Poppins", sans-serif;
   font-size: 14px;
 }
 
 /* ── Salon Login Button ── */
 .salon-btn.ant-btn {
-  background: linear-gradient(135deg, #BBA14F 0%, #a5903f 100%) !important;
+  background: linear-gradient(135deg, #bba14f 0%, #a5903f 100%) !important;
   border: none !important;
   border-radius: 10px !important;
-  color: #FDFAF5 !important;
-  font-family: 'Poppins', sans-serif !important;
+  color: #fdfaf5 !important;
+  font-family: "Poppins", sans-serif !important;
   font-weight: 600 !important;
   letter-spacing: 0.08em !important;
   height: 50px !important;
@@ -70,7 +100,7 @@ body {
 }
 
 .salon-btn.ant-btn:not(:disabled):hover {
-  background: linear-gradient(135deg, #c9ae5e 0%, #BBA14F 100%) !important;
+  background: linear-gradient(135deg, #c9ae5e 0%, #bba14f 100%) !important;
   box-shadow: 0 6px 24px rgba(187, 161, 79, 0.5) !important;
   transform: translateY(-1px) !important;
   color: #fff !important;
@@ -81,7 +111,7 @@ body {
 }
 
 .elegant-font {
-  font-family: 'Playfair Display', serif;
+  font-family: "Playfair Display", serif;
 }
 
 @keyframes loadingBar {
@@ -112,3 +142,9 @@ body {
   }
 }
 
+/* ── Hide scrollbars (calendar grid + services panels) ── */
+#cal-scroll::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar,
+.sp-scroll::-webkit-scrollbar {
+  display: none;
+}

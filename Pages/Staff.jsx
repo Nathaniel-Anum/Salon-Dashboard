@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Modal, Form, Input, Select, Button, Switch, message, Tag, Avatar } from "antd";
-import { FiPlus, FiEdit2, FiTrash2, FiSearch } from "react-icons/fi";
+import { Modal, Form, Input, Select, Button, Switch, message, Tag, Tooltip } from "antd";
+import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiGrid, FiList } from "react-icons/fi";
 import { FaUserAlt } from "react-icons/fa";
 import _axios from "../src/api/_axios";
 
@@ -25,7 +25,7 @@ function StaffAvatar({ name, size = 42 }) {
   const [from, to] = AVATAR_COLORS[idx];
   return (
     <div
-      className="flex-shrink-0 flex items-center justify-center rounded-full font-semibold text-white"
+      className="shrink-0 flex items-center justify-center rounded-full font-semibold text-white"
       style={{
         width: size,
         height: size,
@@ -40,12 +40,58 @@ function StaffAvatar({ name, size = 42 }) {
   );
 }
 
+/* ── Staff form fields (module-level to avoid focus-steal bug) ── */
+function StaffFormFields({ isEdit = false, roleOptions = [], rolesLoading = false }) {
+  return (
+    <>
+      <Form.Item name="full_name" label="Full Name" rules={[{ required: true, message: "Required" }]}>
+        <Input placeholder="e.g. Amara Johnson" className="rounded-xl" />
+      </Form.Item>
+      <Form.Item name="email" label="Email" rules={[{ required: true, type: "email" }]}>
+        <Input placeholder="name@example.com" className="rounded-xl" />
+      </Form.Item>
+      <Form.Item name="phone" label="Phone">
+        <Input placeholder="+234 000 000 0000" className="rounded-xl" />
+      </Form.Item>
+      <Form.Item
+        name="password"
+        label="Password"
+        rules={isEdit ? [] : [{ required: true, message: "Required" }]}
+      >
+        <Input.Password
+          placeholder={isEdit ? "Leave empty to keep current" : "Set password"}
+          className="rounded-xl"
+        />
+      </Form.Item>
+      <Form.Item name="role_ids" label="Roles">
+        <Select
+          mode="multiple"
+          placeholder="Assign roles"
+          options={roleOptions}
+          loading={rolesLoading}
+          className="w-full"
+          allowClear
+        />
+      </Form.Item>
+      <div className="flex gap-6">
+        <Form.Item name="is_active" label="Active" valuePropName="checked" className="flex-1 mb-2">
+          <Switch />
+        </Form.Item>
+        <Form.Item name="is_verified" label="Verified" valuePropName="checked" className="flex-1 mb-2">
+          <Switch />
+        </Form.Item>
+      </div>
+    </>
+  );
+}
+
 export default function Staff() {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editStaff, setEditStaff] = useState(null);
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState("cards"); // "cards" | "table"
   const [addForm] = Form.useForm();
   const [editForm] = Form.useForm();
 
@@ -61,10 +107,19 @@ export default function Staff() {
     queryFn: () => _axios.get("/api/portal/v1/accounts/roles/").then((r) => r.data),
   });
 
-  const staffData = Array.isArray(staffRaw) ? staffRaw : staffRaw?.results || [];
-  const rolesData = Array.isArray(rolesRaw) ? rolesRaw : rolesRaw?.results || [];
+  const staffData = useMemo(
+    () => (Array.isArray(staffRaw) ? staffRaw : staffRaw?.results || []),
+    [staffRaw]
+  );
+  const rolesData = useMemo(
+    () => (Array.isArray(rolesRaw) ? rolesRaw : rolesRaw?.results || []),
+    [rolesRaw]
+  );
 
-  const roleOptions = rolesData.map((r) => ({ label: r.name, value: r.id }));
+  const roleOptions = useMemo(
+    () => rolesData.map((r) => ({ label: r.name, value: r.id })),
+    [rolesData]
+  );
 
   // --- SEARCH filter ---
   const filtered = useMemo(() => {
@@ -119,6 +174,19 @@ export default function Staff() {
     },
   });
 
+  // --- HANDLE DELETE (with confirm) ---
+  const handleDeleteStaff = (id, name) => {
+    Modal.confirm({
+      title: "Remove Staff Member",
+      content: `Are you sure you want to remove ${name || "this staff member"}? This cannot be undone.`,
+      okText: "Remove",
+      okButtonProps: { danger: true },
+      cancelText: "Cancel",
+      centered: true,
+      onOk: () => deleteStaff.mutate(id),
+    });
+  };
+
   // --- HANDLE EDIT ---
   const handleEdit = (staff) => {
     setEditStaff(staff);
@@ -136,48 +204,6 @@ export default function Staff() {
   };
 
   /* ── shared modal form fields ── */
-  const StaffFormFields = ({ isEdit = false }) => (
-    <>
-      <Form.Item name="full_name" label="Full Name" rules={[{ required: true, message: "Required" }]}>
-        <Input placeholder="e.g. Amara Johnson" className="rounded-xl" />
-      </Form.Item>
-      <Form.Item name="email" label="Email" rules={[{ required: true, type: "email" }]}>
-        <Input placeholder="name@example.com" className="rounded-xl" />
-      </Form.Item>
-      <Form.Item name="phone" label="Phone">
-        <Input placeholder="+234 000 000 0000" className="rounded-xl" />
-      </Form.Item>
-      <Form.Item
-        name="password"
-        label="Password"
-        rules={isEdit ? [] : [{ required: true, message: "Required" }]}
-      >
-        <Input.Password
-          placeholder={isEdit ? "Leave empty to keep current" : "Set password"}
-          className="rounded-xl"
-        />
-      </Form.Item>
-      <Form.Item name="role_ids" label="Roles">
-        <Select
-          mode="multiple"
-          placeholder="Assign roles"
-          options={roleOptions}
-          loading={rolesLoading}
-          className="w-full"
-          allowClear
-        />
-      </Form.Item>
-      <div className="flex gap-6">
-        <Form.Item name="is_active" label="Active" valuePropName="checked" className="flex-1 mb-2">
-          <Switch />
-        </Form.Item>
-        <Form.Item name="is_verified" label="Verified" valuePropName="checked" className="flex-1 mb-2">
-          <Switch />
-        </Form.Item>
-      </div>
-    </>
-  );
-
   const modalTitle = (text) => (
     <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: "#272727" }}>
       {text}
@@ -222,6 +248,41 @@ export default function Staff() {
             />
           </div>
 
+          {/* view toggle */}
+          <div
+            className="flex items-center rounded-full p-1 gap-1"
+            style={{
+              background: "#FDFAF5",
+              border: "1px solid rgba(187,161,79,0.25)",
+            }}
+          >
+            {[
+              { key: "cards", icon: <FiGrid size={14} />, label: "Cards" },
+              { key: "table", icon: <FiList size={14} />, label: "Table" },
+            ].map(({ key, icon, label }) => {
+              const active = viewMode === key;
+              return (
+                <Tooltip key={key} title={label} placement="bottom">
+                  <button
+                    onClick={() => setViewMode(key)}
+                    className="flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200"
+                    style={{
+                      background: active
+                        ? "linear-gradient(135deg, #BBA14F, #987554)"
+                        : "transparent",
+                      color: active ? "#fff" : "#987554",
+                      border: "none",
+                      cursor: "pointer",
+                      boxShadow: active ? "0 2px 8px rgba(187,161,79,0.35)" : "none",
+                    }}
+                  >
+                    {icon}
+                  </button>
+                </Tooltip>
+              );
+            })}
+          </div>
+
           {/* add button */}
           <button
             onClick={() => setAddOpen(true)}
@@ -238,7 +299,7 @@ export default function Staff() {
         </div>
       </div>
 
-      {/* ── Staff grid / cards ── */}
+      {/* ── Staff body ── */}
       {staffLoading ? (
         <div className="flex items-center justify-center h-48 text-[#987554]" style={{ fontFamily: "'Poppins', sans-serif" }}>
           Loading staff…
@@ -257,7 +318,9 @@ export default function Staff() {
             {search ? `No staff matching "${search}"` : "No staff members yet"}
           </p>
         </div>
-      ) : (
+
+      ) : viewMode === "cards" ? (
+        /* ── Cards grid ── */
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((staff) => (
             <div
@@ -289,7 +352,7 @@ export default function Staff() {
 
                 {/* active badge */}
                 <span
-                  className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                  className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0"
                   style={{
                     background: staff.is_active ? "rgba(34,160,80,0.12)" : "rgba(200,50,50,0.1)",
                     color: staff.is_active ? "#1a8a40" : "#c43232",
@@ -311,7 +374,7 @@ export default function Staff() {
               )}
 
               {/* roles */}
-              <div className="flex flex-wrap gap-1.5 mb-4 min-h-[22px]">
+              <div className="flex flex-wrap gap-1.5 mb-4 min-h-5.5">
                 {staff.roles?.length > 0 ? (
                   staff.roles.map((r) => (
                     <Tag
@@ -351,7 +414,7 @@ export default function Staff() {
                   Edit
                 </button>
                 <button
-                  onClick={() => deleteStaff.mutate(staff.id)}
+                  onClick={() => handleDeleteStaff(staff.id, staff.full_name)}
                   className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
                   style={{
                     color: "#c43232",
@@ -365,6 +428,174 @@ export default function Staff() {
               </div>
             </div>
           ))}
+        </div>
+
+      ) : (
+        /* ── Table view ── */
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{
+            background: "#FDFAF5",
+            border: "1px solid rgba(187,161,79,0.18)",
+            boxShadow: "0 3px 16px rgba(39,39,39,0.06)",
+          }}
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 680 }}>
+              <thead>
+                <tr
+                  style={{
+                    background: "linear-gradient(90deg, rgba(187,161,79,0.1), rgba(152,117,84,0.06))",
+                    borderBottom: "1px solid rgba(187,161,79,0.2)",
+                  }}
+                >
+                  {["#", "Staff Member", "Email", "Phone", "Roles", "Status", "Actions"].map((col) => (
+                    <th
+                      key={col}
+                      className="px-4 py-3 text-left text-[11px] uppercase tracking-wider"
+                      style={{
+                        color: "#987554",
+                        fontFamily: "'Poppins', sans-serif",
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((staff, idx) => (
+                  <tr
+                    key={staff.id}
+                    style={{
+                      borderBottom: "1px solid rgba(187,161,79,0.1)",
+                      background: idx % 2 === 0 ? "#FDFAF5" : "rgba(187,161,79,0.03)",
+                      transition: "background 0.15s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(187,161,79,0.07)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = idx % 2 === 0 ? "#FDFAF5" : "rgba(187,161,79,0.03)")}
+                  >
+                    {/* # */}
+                    <td className="px-4 py-3 text-xs text-[#c8b890]" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                      {idx + 1}
+                    </td>
+
+                    {/* Staff member */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <StaffAvatar name={staff.full_name} size={34} />
+                        <span
+                          className="text-sm font-semibold text-[#272727] whitespace-nowrap"
+                          style={{ fontFamily: "'Poppins', sans-serif" }}
+                        >
+                          {staff.full_name}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Email */}
+                    <td
+                      className="px-4 py-3 text-xs text-[#987554]"
+                      style={{ fontFamily: "'Poppins', sans-serif", maxWidth: 180 }}
+                    >
+                      <span className="truncate block">{staff.email || "—"}</span>
+                    </td>
+
+                    {/* Phone */}
+                    <td className="px-4 py-3 text-xs text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                      {staff.phone || "—"}
+                    </td>
+
+                    {/* Roles */}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {staff.roles?.length > 0 ? (
+                          staff.roles.map((r) => (
+                            <Tag
+                              key={r.id}
+                              className="text-[10px] rounded-full border-0 m-0 px-2 py-0"
+                              style={{
+                                background: "rgba(187,161,79,0.12)",
+                                color: "#8a6f2e",
+                                fontFamily: "'Poppins', sans-serif",
+                              }}
+                            >
+                              {r.name}
+                            </Tag>
+                          ))
+                        ) : (
+                          <span className="text-[10px] text-[#c8b890]" style={{ fontFamily: "'Poppins', sans-serif" }}>—</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <span
+                        className="text-[10px] px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                        style={{
+                          background: staff.is_active ? "rgba(34,160,80,0.12)" : "rgba(200,50,50,0.1)",
+                          color: staff.is_active ? "#1a8a40" : "#c43232",
+                          fontFamily: "'Poppins', sans-serif",
+                        }}
+                      >
+                        {staff.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEdit(staff)}
+                          className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full transition-all duration-200 hover:opacity-80 whitespace-nowrap"
+                          style={{
+                            color: "#987554",
+                            background: "rgba(152,117,84,0.1)",
+                            fontFamily: "'Poppins', sans-serif",
+                            border: "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <FiEdit2 size={11} />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteStaff(staff.id, staff.full_name)}
+                          className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full transition-all duration-200 hover:opacity-80 whitespace-nowrap"
+                          style={{
+                            color: "#c43232",
+                            background: "rgba(196,50,50,0.08)",
+                            fontFamily: "'Poppins', sans-serif",
+                            border: "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <FiTrash2 size={11} />
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer */}
+          <div
+            className="px-4 py-3"
+            style={{
+              borderTop: "1px solid rgba(187,161,79,0.12)",
+              background: "rgba(187,161,79,0.04)",
+            }}
+          >
+            <p className="text-[11px]" style={{ color: "rgba(152,117,84,0.7)", fontFamily: "'Poppins', sans-serif" }}>
+              Showing {filtered.length} of {staffData.length} staff member{staffData.length !== 1 ? "s" : ""}
+            </p>
+          </div>
         </div>
       )}
 
@@ -384,7 +615,7 @@ export default function Staff() {
           initialValues={{ is_active: true, is_verified: true, is_staff: true }}
           className="pt-3"
         >
-          <StaffFormFields isEdit={false} />
+          <StaffFormFields isEdit={false} roleOptions={roleOptions} rolesLoading={rolesLoading} />
           <Form.Item className="flex justify-end gap-2 mt-5 mb-0">
             <div className="flex justify-end gap-3">
               <Button onClick={() => setAddOpen(false)}>Cancel</Button>
@@ -416,7 +647,7 @@ export default function Staff() {
           onFinish={(values) => updateStaff.mutate({ id: editStaff?.id, ...values })}
           className="pt-3"
         >
-          <StaffFormFields isEdit />
+          <StaffFormFields isEdit roleOptions={roleOptions} rolesLoading={rolesLoading} />
           <Form.Item className="flex justify-end gap-2 mt-5 mb-0">
             <div className="flex justify-end gap-3">
               <Button onClick={() => setEditOpen(false)}>Cancel</Button>
