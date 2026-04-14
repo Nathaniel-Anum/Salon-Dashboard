@@ -39,7 +39,7 @@ const SalonLogin = ({ setIsAuthenticated }) => {
   const { mutate, isPending } = useMutation({
     mutationFn: loginUser,
     onSuccess: (data) => {
-      message.success("Welcome back! Logged in successfully");
+      message.success("Logged in successfully, Welcome back!");
       localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("access", data.access);
       localStorage.setItem("refresh", data.refresh);

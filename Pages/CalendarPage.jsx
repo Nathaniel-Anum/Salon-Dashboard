@@ -113,6 +113,9 @@ const STATUS_CFG = {
   in_progress:  { label: "In Progress", border: "#5282FF", dot: "#5282ff"  },
   pending:      { label: "Pending",      border: "#F0A830", dot: "#f5b43c"  },
   completed:    { label: "Completed",    border: "#2EAA60", dot: "#22a050"  },
+  arrived:      { label: "Arrived",      border: "#22a050", dot: "#22a050"  },
+  "no-show":    { label: "No Show",      border: "#e05050", dot: "#e05050"  },
+  no_show:      { label: "No Show",      border: "#e05050", dot: "#e05050"  },
 };
 
 /* ─────────────────────────────────────────────
@@ -350,7 +353,7 @@ function StepClient({ clientMode, setClientMode, selectedClient, setSelectedClie
               placeholder="e.g. Nadia Osei"
               value={walkIn.name}
               onChange={(e) => setWalkIn((p) => ({ ...p, name: e.target.value }))}
-              style={WZ.inputBase}
+              style={{ ...WZ.inputBase, paddingLeft: 16 }}
               onFocus={inputFocus}
               onBlur={inputBlur}
             />
@@ -362,7 +365,7 @@ function StepClient({ clientMode, setClientMode, selectedClient, setSelectedClie
               placeholder="e.g. 0244 123 456"
               value={walkIn.phone}
               onChange={(e) => setWalkIn((p) => ({ ...p, phone: e.target.value }))}
-              style={WZ.inputBase}
+              style={{ ...WZ.inputBase, paddingLeft: 16 }}
               onFocus={inputFocus}
               onBlur={inputBlur}
             />
@@ -374,7 +377,7 @@ function StepClient({ clientMode, setClientMode, selectedClient, setSelectedClie
               placeholder="e.g. nadia@example.com"
               value={walkIn.email}
               onChange={(e) => setWalkIn((p) => ({ ...p, email: e.target.value }))}
-              style={WZ.inputBase}
+              style={{ ...WZ.inputBase, paddingLeft: 16 }}
               onFocus={inputFocus}
               onBlur={inputBlur}
             />
@@ -393,7 +396,9 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
   const priceOf = (s) => {
     if (s.price_type === "free") return "Free";
     const amt = parseFloat(s.price || s.amount || 0);
-    return amt > 0 ? `GH₵ ${amt.toFixed(2)}` : "Free";
+    if (amt <= 0) return "Free";
+    const formatted = `GH₵ ${amt.toFixed(2)}`;
+    return s.price_type === "from" ? `From ${formatted}` : formatted;
   };
 
   const filtered = useMemo(() => {
@@ -423,7 +428,7 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
     setSelectedServices((prev) =>
       isSelected(svc.id)
         ? prev.filter((s) => s.id !== svc.id)
-        : [...prev, { ...svc, _price: priceOf(svc), _amount: parseFloat(svc.price || svc.amount || 0) }]
+        : [...prev, { ...svc, _price: priceOf(svc), _amount: parseFloat(svc.price || svc.amount || 0), _isFrom: svc.price_type === "from" }]
     );
   };
 
@@ -521,7 +526,7 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
             <strong style={{ color: "#BBA14F" }}>
               {selectedServices.every((s) => s._amount === 0)
                 ? "Free"
-                : `GH₵ ${selectedServices.reduce((a, s) => a + s._amount, 0).toFixed(2)}`}
+                : `${selectedServices.some((s) => s._isFrom) ? "From " : ""}GH₵ ${selectedServices.reduce((a, s) => a + s._amount, 0).toFixed(2)}`}
             </strong>
           </p>
         </div>
@@ -535,10 +540,26 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
   // staffPerService: { [serviceId]: staffId | "any" }
   const ANY = "any";
 
-  const isAssigned = (staff, svcId) => {
-    if (!staff.service_ids && !staff.services) return true; // no restriction info → show without warning
-    const ids = staff.service_ids || staff.services || [];
-    return ids.includes(svcId) || ids.includes(String(svcId));
+  /**
+   * Returns the staff members assigned to a given service.
+   * Checks service.assigned_staff_ids → service.staff_ids → [] (no restriction).
+   * If no restriction list exists, returns the full staff list (any staff can do it).
+   * Matches against s.id, s.user, s.user_id, s.account_id to handle different API shapes.
+   */
+  const staffMatchesId = (s, rawId) => {
+    const needle = String(rawId);
+    return (
+      String(s.id)         === needle ||
+      String(s.user)       === needle ||
+      String(s.user_id)    === needle ||
+      String(s.account_id) === needle
+    );
+  };
+
+  const assignedStaffForService = (svc) => {
+    const ids = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
+    if (!ids.length) return staffList; // no restriction — all staff can do it
+    return staffList.filter((s) => ids.some((rawId) => staffMatchesId(s, rawId)));
   };
 
   const setStaff = (svcId, staffId) => {
@@ -551,11 +572,30 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
     <div style={{ padding: "0 28px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
       {selectedServices.map((svc) => {
         const cur = current(svc.id);
+        const eligibleStaff = assignedStaffForService(svc);
+        const hasRestriction = (svc.assigned_staff_ids ?? svc.staff_ids ?? []).length > 0;
+
         return (
           <div key={svc.id}>
-            <p style={{ ...WZ.sectionLabel, marginBottom: 10 }}>
+            <p style={{ ...WZ.sectionLabel, marginBottom: 4 }}>
               <FiScissors size={10} style={{ marginRight: 5 }} />{svc.name}
             </p>
+            {hasRestriction && (
+              <p style={{
+                fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif",
+                margin: "0 0 10px",
+              }}>
+                {eligibleStaff.length} assigned team member{eligibleStaff.length !== 1 ? "s" : ""} for this service
+              </p>
+            )}
+            {!hasRestriction && (
+              <p style={{
+                fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif",
+                margin: "0 0 10px",
+              }}>
+                All team members can perform this service
+              </p>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {/* Any Team Member */}
               <button
@@ -577,7 +617,9 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
                 </div>
                 <div style={{ flex: 1 }}>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif" }}>Any Team Member</p>
-                  <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>Assign automatically</p>
+                  <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+                    Auto-assign from {eligibleStaff.length} available member{eligibleStaff.length !== 1 ? "s" : ""}
+                  </p>
                 </div>
                 {cur === ANY && (
                   <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#BBA14F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -586,10 +628,9 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
                 )}
               </button>
 
-              {/* Staff members */}
-              {staffList.map((s) => {
+              {/* Only show staff assigned to this service */}
+              {eligibleStaff.map((s) => {
                 const [from, to] = avatarGradient(s.full_name);
-                const assigned = isAssigned(s, svc.id);
                 const sel = cur === s.id;
                 return (
                   <button
@@ -601,7 +642,6 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
                       border: `1.5px solid ${sel ? "#BBA14F" : "#ede8de"}`,
                       background: sel ? "linear-gradient(135deg,rgba(187,161,79,0.1),rgba(152,117,84,0.07))" : "#faf8f4",
                       transition: "all 0.15s", textAlign: "left",
-                      opacity: !assigned ? 0.75 : 1,
                     }}
                   >
                     <div style={{
@@ -618,15 +658,6 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>{s.full_name}</p>
                       <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>{s.role}</p>
                     </div>
-                    {!assigned && (
-                      <span style={{
-                        fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
-                        color: "#e05050", background: "rgba(224,80,80,0.1)", border: "1px solid rgba(224,80,80,0.25)",
-                        borderRadius: 100, padding: "3px 8px", fontFamily: "'Poppins',sans-serif", flexShrink: 0,
-                      }}>
-                        <FiAlertCircle size={9} style={{ marginRight: 3 }} />Doesn't provide this service
-                      </span>
-                    )}
                     {sel && (
                       <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#BBA14F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         <FiCheck size={12} color="#fff" />
@@ -635,6 +666,20 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
                   </button>
                 );
               })}
+
+              {/* Fallback: if eligible list is empty (no staff assigned at all) */}
+              {eligibleStaff.length === 0 && (
+                <div style={{
+                  padding: "10px 14px", borderRadius: 12,
+                  background: "rgba(224,80,80,0.06)", border: "1px solid rgba(224,80,80,0.2)",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}>
+                  <FiAlertCircle size={13} color="#e05050" style={{ flexShrink: 0 }} />
+                  <p style={{ margin: 0, fontSize: 12, color: "#e05050", fontFamily: "'Poppins',sans-serif" }}>
+                    No team members are assigned to this service yet.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -844,6 +889,7 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sta
 
   const total = selectedServices.reduce((a, s) => a + s._amount, 0);
   const allFree = selectedServices.every((s) => s._amount === 0);
+  const hasFromPrice = selectedServices.some((s) => s._isFrom);
 
   const timeDisplay = (() => {
     if (!bookingTime) return "—";
@@ -891,7 +937,9 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sta
 
       {/* Total */}
       <div style={{ padding: "12px 16px", borderRadius: 12, background: "linear-gradient(135deg,rgba(187,161,79,0.15),rgba(152,117,84,0.1))", border: "1px solid rgba(187,161,79,0.3)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#987554", fontFamily: "'Poppins',sans-serif", textTransform: "uppercase", letterSpacing: "0.06em" }}>Total Amount</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#987554", fontFamily: "'Poppins',sans-serif", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          Total Amount{hasFromPrice ? " From" : ""}
+        </span>
         <span style={{ fontSize: 20, fontWeight: 800, color: "#BBA14F", fontFamily: "'Playfair Display',serif" }}>
           {allFree ? "Free" : `GH₵ ${total.toFixed(2)}`}
         </span>
@@ -997,7 +1045,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
 
   // Calculate end time from start + duration
   const endMins   = startMins + booking.durationMins;
-  const endTime   = `${String(Math.floor(endMins / 60)).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+  const endTime   = `${String(Math.floor((endMins + HOUR_START * 60) / 60) % 24).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
 
   // Format duration as "1h 30m" or "45m"
   const durLabel  = booking.durationMins >= 60
@@ -1317,10 +1365,32 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
 /* ─────────────────────────────────────────────
    BOOKING DETAIL MODAL
 ───────────────────────────────────────────── */
-function BookingModal({ booking, staff, onClose, onDelete, deleteLoading }) {
+function BookingModal({ booking, staff, onClose, onDelete, deleteLoading, onStatusChange, statusLoading, onReschedule, rescheduleLoading }) {
+  /* ── Reschedule state ── */
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState(null);
+  const [rescheduleTime, setRescheduleTime] = useState(null);
+
   if (!booking) return null;
+
   const cfg = STATUS_CFG[booking.status] || STATUS_CFG.pending;
   const [from, to] = avatarGradient(staff?.full_name || "");
+
+  /* ── End time ── */
+  const startMins = timeToMins(booking.startTime);
+  const endMins   = startMins + booking.durationMins;
+  const endTimeStr = `${String(Math.floor((endMins + HOUR_START * 60) / 60) % 24).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+
+  const durLabel = booking.durationMins >= 60
+    ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
+    : `${booking.durationMins}m`;
+
+  /* Status action buttons config */
+  const statusActions = [
+    { key: "arrived",   label: "Arrived",   color: "#22a050", bg: "rgba(34,160,80,0.1)",   border: "rgba(34,160,80,0.35)"   },
+    { key: "no-show",   label: "No Show",   color: "#e05050", bg: "rgba(200,50,50,0.1)",   border: "rgba(200,50,50,0.35)"   },
+    { key: "completed", label: "Completed", color: "#BBA14F", bg: "rgba(187,161,79,0.12)", border: "rgba(187,161,79,0.4)"   },
+  ];
 
   return (
     <div
@@ -1329,115 +1399,245 @@ function BookingModal({ booking, staff, onClose, onDelete, deleteLoading }) {
       onClick={onClose}
     >
       <div
-        className="relative rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl"
+        className="relative rounded-2xl w-full max-w-sm mx-4 shadow-2xl"
         style={{
           background: "#FDFAF5",
           border: "1px solid rgba(187,161,79,0.25)",
           animation: "fadeInUp 0.2s ease both",
+          overflow: "hidden",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* gold top bar */}
-        <div
-          className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl"
-          style={{ background: "linear-gradient(90deg, #BBA14F, #c9ae5e)" }}
-        />
+        <div className="h-1" style={{ background: "linear-gradient(90deg, #BBA14F, #c9ae5e)" }} />
 
-        {/* close */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center text-sm transition hover:bg-black/5"
-          style={{ color: "#987554" }}
-        >
-          ✕
-        </button>
-
-        {/* staff avatar */}
-        <div className="flex items-center gap-3 mb-5">
-          <div
-            className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white"
-            style={{
-              background: `linear-gradient(135deg, ${from}, ${to})`,
-              fontSize: 16,
-              fontFamily: "'Poppins', sans-serif",
-            }}
-          >
-            {initials(staff?.full_name)}
-          </div>
-          <div>
-            <p
-              className="text-sm font-semibold text-[#272727]"
-              style={{ fontFamily: "'Poppins', sans-serif" }}
-            >
-              {staff?.full_name}
-            </p>
-            <p className="text-xs text-[#987554]" style={{ fontFamily: "'Poppins', sans-serif" }}>
-              {staff?.role}
-            </p>
-          </div>
-        </div>
-
-        {/* booking details */}
-        <h3
-          className="text-lg font-bold text-[#272727] mb-4"
-          style={{ fontFamily: "'Playfair Display', serif" }}
-        >
-          {booking.service}
-        </h3>
-
-        <div className="space-y-3">
-          <DetailRow icon={<FiUser size={13} />} label="Client" value={booking.client} />
-          <DetailRow icon={<FiClock size={13} />} label="Start" value={formatDisplayTime(booking.startTime)} />
-          <DetailRow
-            icon={<FiScissors size={13} />}
-            label="Duration"
-            value={
-              booking.durationMins >= 60
-                ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
-                : `${booking.durationMins}m`
-            }
-          />
-          <DetailRow
-            icon={<span className="w-2 h-2 rounded-full" style={{ background: cfg.dot, display: "inline-block" }} />}
-            label="Status"
-            value={
-              <span
-                className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}
-              >
-                {cfg.label}
-              </span>
-            }
-          />
-        </div>
-
-        <div style={{ display: "flex", gap: 8, marginTop: 24 }}>
-          {onDelete && (
-            <button
-              onClick={() => onDelete(booking.id)}
-              disabled={deleteLoading}
-              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition hover:opacity-90"
-              style={{
-                background: deleteLoading ? "rgba(200,50,50,0.3)" : "rgba(200,50,50,0.12)",
-                border: "1px solid rgba(200,50,50,0.35)",
-                color: "#e05050",
-                fontFamily: "'Poppins', sans-serif",
-                cursor: deleteLoading ? "not-allowed" : "pointer",
-              }}
-            >
-              {deleteLoading ? "Deleting…" : "Delete"}
-            </button>
-          )}
+        <div style={{ padding: "20px 24px 24px" }}>
+          {/* close */}
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition hover:opacity-90"
+            className="absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center text-sm transition hover:bg-black/5"
+            style={{ color: "#987554" }}
+          >
+            ✕
+          </button>
+
+          {/* staff avatar */}
+          <div className="flex items-center gap-3 mb-4">
+            <div
+              className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white shrink-0"
+              style={{ background: `linear-gradient(135deg, ${from}, ${to})`, fontSize: 15, fontFamily: "'Poppins', sans-serif" }}
+            >
+              {initials(staff?.full_name)}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#272727]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+                {staff?.full_name || "Staff"}
+              </p>
+              <p className="text-xs text-[#987554]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+                {staff?.role}
+              </p>
+            </div>
+          </div>
+
+          {/* service title */}
+          <h3 className="text-lg font-bold text-[#272727] mb-4" style={{ fontFamily: "'Playfair Display', serif", margin: "0 0 16px" }}>
+            {booking.service}
+          </h3>
+
+          {/* detail rows */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+            <DetailRow icon={<FiUser size={13} />} label="Client" value={booking.client} />
+            <DetailRow
+              icon={<FiClock size={13} />}
+              label="Time"
+              value={`${formatDisplayTime(booking.startTime)} → ${formatDisplayTime(endTimeStr)}  (${durLabel})`}
+            />
+            <DetailRow
+              icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: cfg.dot, display: "inline-block" }} />}
+              label="Status"
+              value={
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: `${cfg.dot}18`, color: cfg.dot, border: `1px solid ${cfg.dot}44` }}>
+                  {cfg.label}
+                </span>
+              }
+            />
+          </div>
+
+          {/* divider */}
+          <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
+
+          {/* ── Status action buttons ── */}
+          <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, color: "#987554", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins', sans-serif" }}>
+            Update Status
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
+            {statusActions.map((a) => (
+              <button
+                key={a.key}
+                disabled={statusLoading || booking.status === a.key}
+                onClick={() => onStatusChange(booking.id, a.key)}
+                style={{
+                  padding: "8px 4px",
+                  borderRadius: 10,
+                  border: `1px solid ${booking.status === a.key ? a.color : a.border}`,
+                  background: booking.status === a.key ? `${a.color}22` : a.bg,
+                  color: a.color,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  fontFamily: "'Poppins', sans-serif",
+                  cursor: statusLoading || booking.status === a.key ? "default" : "pointer",
+                  opacity: statusLoading && booking.status !== a.key ? 0.6 : 1,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {statusLoading && booking.status !== a.key ? "…" : a.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Reschedule toggle ── */}
+          <button
+            onClick={() => setShowReschedule((v) => !v)}
             style={{
-              background: "linear-gradient(135deg, #BBA14F, #987554)",
+              width: "100%",
+              padding: "9px 14px",
+              borderRadius: 10,
+              border: "1px solid rgba(187,161,79,0.35)",
+              background: showReschedule ? "rgba(187,161,79,0.12)" : "rgba(187,161,79,0.06)",
+              color: "#987554",
+              fontSize: 12,
+              fontWeight: 700,
               fontFamily: "'Poppins', sans-serif",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              marginBottom: 10,
             }}
           >
-            Close
+            <FiCalendar size={13} />
+            {showReschedule ? "Cancel Reschedule" : "Reschedule"}
           </button>
+
+          {/* ── Reschedule panel ── */}
+          {showReschedule && (
+            <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 12, background: "rgba(187,161,79,0.06)", border: "1px solid rgba(187,161,79,0.2)", display: "flex", flexDirection: "column", gap: 10 }}>
+              <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
+                Choose new date &amp; time
+              </p>
+              <DatePicker
+                value={rescheduleDate}
+                onChange={setRescheduleDate}
+                format="DD MMM YYYY"
+                style={{ width: "100%", borderRadius: 8 }}
+                disabledDate={(d) => d && d.isBefore(dayjs().startOf("day"))}
+              />
+              <TimePicker
+                value={rescheduleTime}
+                onChange={setRescheduleTime}
+                format="h:mm A"
+                minuteStep={15}
+                use12Hours
+                style={{ width: "100%", borderRadius: 8 }}
+              />
+              <button
+                disabled={!rescheduleDate || !rescheduleTime || rescheduleLoading}
+                onClick={() => {
+                  if (!rescheduleDate || !rescheduleTime) return;
+                  onReschedule(booking.id, rescheduleDate.format("YYYY-MM-DD"), rescheduleTime.format("HH:mm"));
+                  setShowReschedule(false);
+                }}
+                style={{
+                  padding: "9px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: (!rescheduleDate || !rescheduleTime || rescheduleLoading)
+                    ? "rgba(187,161,79,0.3)"
+                    : "linear-gradient(135deg, #BBA14F, #987554)",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  fontFamily: "'Poppins', sans-serif",
+                  cursor: (!rescheduleDate || !rescheduleTime || rescheduleLoading) ? "not-allowed" : "pointer",
+                }}
+              >
+                {rescheduleLoading ? "Saving…" : "Confirm Reschedule"}
+              </button>
+            </div>
+          )}
+
+          {/* divider */}
+          <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
+
+          {/* bottom actions */}
+          <div style={{ display: "flex", gap: 8 }}>
+            {onDelete && (
+              <button
+                onClick={() => onDelete(booking.id)}
+                disabled={deleteLoading}
+                style={{
+                  flex: 1, padding: "10px 0", borderRadius: 12,
+                  background: deleteLoading ? "rgba(200,50,50,0.3)" : "rgba(200,50,50,0.1)",
+                  border: "1px solid rgba(200,50,50,0.35)",
+                  color: "#e05050", fontSize: 13, fontWeight: 700,
+                  fontFamily: "'Poppins', sans-serif",
+                  cursor: deleteLoading ? "not-allowed" : "pointer",
+                }}
+              >
+                {deleteLoading ? "Deleting…" : "Delete"}
+              </button>
+            )}
+            {booking.phone && (() => {
+              const rawPhone = booking.phone.replace(/\D/g, "");
+              const intlPhone = rawPhone.startsWith("0") ? `233${rawPhone.slice(1)}` : rawPhone;
+              const msg = encodeURIComponent(
+                `Hello ${booking.client}, this is a reminder for your appointment at our salon.\n\n` +
+                `📋 Service: ${booking.service}\n` +
+                `📅 Date: ${booking.date}\n` +
+                `⏰ Time: ${formatDisplayTime(booking.startTime)}\n\n` +
+                `We look forward to seeing you! 💛`
+              );
+              return (
+                <a
+                  href={`https://wa.me/${intlPhone}?text=${msg}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: 12,
+                    background: "rgba(37,211,102,0.1)",
+                    border: "1px solid rgba(37,211,102,0.4)",
+                    color: "#1DA851",
+                    fontSize: 13, fontWeight: 700,
+                    fontFamily: "'Poppins', sans-serif",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    textDecoration: "none",
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                    <path d="M12 0C5.373 0 0 5.373 0 12c0 2.136.558 4.136 1.532 5.875L0 24l6.322-1.499A11.934 11.934 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.814 9.814 0 01-4.996-1.371l-.358-.214-3.752.89.948-3.647-.234-.375A9.812 9.812 0 012.182 12C2.182 6.578 6.578 2.182 12 2.182S21.818 6.578 21.818 12 17.422 21.818 12 21.818z"/>
+                  </svg>
+                  WhatsApp
+                </a>
+              );
+            })()}
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1, padding: "10px 0", borderRadius: 12,
+                background: "linear-gradient(135deg, #BBA14F, #987554)",
+                border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
+                fontFamily: "'Poppins', sans-serif", cursor: "pointer",
+              }}
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1455,7 +1655,7 @@ function DetailRow({ icon, label, value }) {
       </div>
       <span
         className="text-xs font-medium text-[#272727]"
-        style={{ fontFamily: "'Poppins', sans-serif" }}
+        style={{ fontFamily: "'Poppins', sans-serif", textAlign: "right" }}
       >
         {value}
       </span>
@@ -2092,11 +2292,49 @@ export default function CalendarPage() {
         startTime = apt.start_time.slice(0, 5);                  // "HH:MM" from "HH:mm:ss"
       }
 
-      /* ── Staff ID: handle plain id, nested object, or staff_details ── */
-      const staffId =
-        typeof apt.staff === "object" && apt.staff !== null
+      /* ── Services array (needed for staffId fallback and service name below) ── */
+      const services = apt.services ?? apt.booking_services ?? [];
+      const firstService = services[0];
+
+      /* ── Staff ID: handle plain id, nested object, staff_details, or per-service ── */
+      let staffId =
+        (typeof apt.staff === "object" && apt.staff !== null
           ? apt.staff.id
-          : apt.staff_details?.id ?? apt.staff ?? null;
+          : apt.staff_details?.id ?? (apt.staff != null ? apt.staff : undefined)) ??
+        firstService?.staff_id ??
+        firstService?.staff ??
+        null;
+
+      /*
+       * Fallback: when the list endpoint returns staff:null (existing customer bookings),
+       * try to resolve a staff from the service's assigned_staff_ids via serviceLookup.
+       * This ensures the booking appears under a valid staff column on the calendar.
+       */
+      if (staffId == null) {
+        // Try to find the service object by name or id
+        const svcName = apt.service_name || apt.service_summary || "";
+        const svcById = serviceLookup[apt.service];
+        const svcByName = svcName
+          ? Object.values(serviceLookup).find(
+              (s) => s.name?.toLowerCase() === svcName.toLowerCase()
+            )
+          : null;
+        const svcObj = svcById || svcByName;
+        if (svcObj) {
+          const assignedIds = svcObj.assigned_staff_ids ?? svcObj.staff_ids ?? [];
+          if (assignedIds.length > 0) {
+            // Pick the first assigned staff that exists in visibleStaff
+            const match = visibleStaff.find((s) =>
+              assignedIds.includes(s.id) || assignedIds.includes(String(s.id))
+            );
+            if (match) staffId = match.id;
+          }
+        }
+        // Ultimate fallback: assign to the first staff so it's visible
+        if (staffId == null && visibleStaff.length > 0) {
+          staffId = visibleStaff[0].id;
+        }
+      }
 
       /* ── Client name: try all known response shapes ── */
       const client =
@@ -2110,8 +2348,6 @@ export default function CalendarPage() {
         (apt.customer ? `Client #${apt.customer}` : "Walk-in");
 
       /* ── Service name: try all known response shapes ── */
-      const services = apt.services ?? apt.booking_services ?? [];
-      const firstService = services[0];
       const service =
         apt.service_name ||
         apt.service_details?.name ||
@@ -2122,6 +2358,7 @@ export default function CalendarPage() {
 
       /* ── Duration ── */
       const durationMins =
+        apt.total_duration_minutes ??
         apt.duration_mins ??
         apt.service_details?.duration_mins ??
         apt.service_details?.duration ??
@@ -2130,9 +2367,21 @@ export default function CalendarPage() {
         serviceLookup[apt.service]?.duration ??
         60;
 
+      const normStaffId = staffId != null ? Number(staffId) : null;
+
+      /* ── Phone: try all known response shapes ── */
+      const phone =
+        apt.guest_customer?.phone_number ||
+        apt.phone_number ||
+        apt.guest?.phone_number ||
+        apt.customer_details?.phone ||
+        apt.customer_details?.phone_number ||
+        apt.guest_phone ||
+        null;
+
       return {
         id:          apt.id,
-        staffId,
+        staffId:     normStaffId,  // normalise to number for === comparisons
         client,
         service,
         services,      // keep full array for detail overlay
@@ -2140,10 +2389,11 @@ export default function CalendarPage() {
         durationMins,
         status:      (apt.status || "pending").replace("_", "-"),
         date:        aptDate,
+        phone,
         raw:         apt,
       };
     });
-  }, [aptsRaw, serviceLookup, dateStr]);
+  }, [aptsRaw, serviceLookup, dateStr, visibleStaff]);
 
   /* auto-scroll to current time on mount */
   useEffect(() => {
@@ -2289,6 +2539,40 @@ export default function CalendarPage() {
     },
     onError: () => {
       message.error("Failed to delete appointment");
+    },
+  });
+
+  /* ── PATCH mutation — update status from modal ── */
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status }) =>
+      _axios.patch(`/api/portal/v1/booking/appointments/${id}/`, { status }),
+    onSuccess: (_, { status }) => {
+      const label = STATUS_CFG[status]?.label || status;
+      message.success(`Status updated to ${label}`);
+      // Optimistically update selectedBooking so the badge refreshes immediately
+      setSelectedBooking((prev) => prev ? { ...prev, status } : prev);
+      queryClient.invalidateQueries(["appointments", dateStr]);
+      refetchApts();
+    },
+    onError: () => {
+      message.error("Failed to update status");
+    },
+  });
+
+  /* ── PATCH mutation — reschedule from modal (date + time change) ── */
+  const rescheduleFromModal = useMutation({
+    mutationFn: ({ id, date, time }) => {
+      const iso = `${date}T${time}:00`;
+      return _axios.patch(`/api/portal/v1/booking/appointments/${id}/`, { scheduled_start: iso });
+    },
+    onSuccess: () => {
+      message.success("Appointment rescheduled");
+      setSelectedBooking(null);
+      queryClient.invalidateQueries(["appointments", dateStr]);
+      refetchApts();
+    },
+    onError: () => {
+      message.error("Failed to reschedule appointment");
     },
   });
 
@@ -3155,6 +3439,10 @@ export default function CalendarPage() {
           onClose={() => setSelectedBooking(null)}
           onDelete={(id) => deleteAppointment.mutate(id)}
           deleteLoading={deleteAppointment.isPending}
+          onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
+          statusLoading={updateStatus.isPending}
+          onReschedule={(id, date, time) => rescheduleFromModal.mutate({ id, date, time })}
+          rescheduleLoading={rescheduleFromModal.isPending}
         />
       )}
 
@@ -3361,18 +3649,65 @@ export default function CalendarPage() {
                      staff, booking_source: "walk-in", notes }
                 ───────────────────────────────────────────── */
 
-                // Resolve the staff ID (first non-"any" selection)
-                const resolvedStaff = (() => {
-                  const picked = Object.values(staffPerService).find((v) => v && v !== "any");
-                  return picked ? Number(picked) : null;
-                })();
+                /**
+                 * Resolve staff for each service:
+                 * - If a specific staff was picked → use that.
+                 * - If "any" (or nothing picked) → randomly select from the
+                 *   service's assigned_staff_ids list (or full staff list if none assigned).
+                 *
+                 * NOTE: assigned_staff_ids may contain staff profile IDs, user IDs, or
+                 * account IDs depending on the API. We match against every known ID field
+                 * on the staff object to be safe.
+                 */
+                const pickRandomFrom = (pool) => {
+                  if (!pool.length) return null;
+                  return pool[Math.floor(Math.random() * pool.length)].id;
+                };
+
+                /**
+                 * Returns true if the staff object `s` matches any of the given IDs.
+                 * Checks s.id, s.user, s.user_id, s.account_id as both number and string.
+                 */
+                const staffMatchesId = (s, rawId) => {
+                  const needle = String(rawId);
+                  return (
+                    String(s.id)         === needle ||
+                    String(s.user)       === needle ||
+                    String(s.user_id)    === needle ||
+                    String(s.account_id) === needle
+                  );
+                };
+
+                const resolveStaffForService = (svc) => {
+                  const picked = staffPerService[svc.id];
+                  if (picked && picked !== "any") return Number(picked);
+
+                  // Auto-pick from assigned staff
+                  const assignedIds = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
+
+                  const pool = assignedIds.length
+                    ? visibleStaff.filter((s) => assignedIds.some((rawId) => staffMatchesId(s, rawId)))
+                    : visibleStaff;
+
+                  return pickRandomFrom(pool);
+                };
+
+                // Top-level staff: use first service's resolved staff (used for walk-in payload)
+                const resolvedStaff = selectedServices.length > 0
+                  ? resolveStaffForService(selectedServices[0])
+                  : null;
 
                 // Date / time — backend expects "YYYY-MM-DD" and "HH:mm:ss"
                 const appointmentDate = wizDate.format("YYYY-MM-DD");
                 const startTime       = `${wizTime}:00`;   // e.g. "10:00:00"
 
-                // Services array — each item is { service_id }
-                const services = selectedServices.map((s) => ({ service_id: s.id }));
+                // Services array — each item is { service_id, staff_id (resolved) }
+                const services = selectedServices.map((s) => {
+                  const staffId = resolveStaffForService(s);
+                  return staffId
+                    ? { service_id: s.id, staff_id: staffId }
+                    : { service_id: s.id };
+                });
 
                 let payload;
 

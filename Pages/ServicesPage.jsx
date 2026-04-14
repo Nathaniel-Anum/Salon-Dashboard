@@ -1466,7 +1466,7 @@ export default function ServicesPage() {
             Left  = independently scrollable category sidebar
             Right = independently scrollable service groups
         ────────────────────────────────── */
-        <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+        <div style={{ display: "flex", gap: 20, height: "calc(100vh - 220px)", minHeight: 400 }}>
 
           {/* ── LEFT SIDEBAR: Category list ── */}
           <div
@@ -1476,11 +1476,13 @@ export default function ServicesPage() {
               flexShrink: 0,
               display: "flex",
               flexDirection: "column",
-              gap: 6,
-              position: "sticky",
-              top: 16,
-              alignSelf: "flex-start",
+              overflowY: "auto",
+              overflowX: "hidden",
               paddingRight: 4,
+              gap: 6,
+              /* hide scrollbar visually but keep it functional */
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
             }}
           >
             {/* Sidebar header + Add Category button */}
@@ -1623,7 +1625,7 @@ export default function ServicesPage() {
           </div>
 
           {/* ── RIGHT PANEL: grouped services ── */}
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 28 }}>
+          <div className="sp-scroll" style={{ flex: 1, minWidth: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 28 }}>
 
             {filtered.length === 0 ? (
               /* Empty state */
