@@ -114,7 +114,7 @@ const STATUS_CFG = {
   pending:      { label: "Pending",      border: "#F0A830", dot: "#f5b43c"  },
   completed:    { label: "Completed",    border: "#2EAA60", dot: "#22a050"  },
   arrived:      { label: "Arrived",      border: "#22a050", dot: "#22a050"  },
-  "no-show":    { label: "No Show",      border: "#e05050", dot: "#e05050"  },
+  "No-Show":    { label: "No Show",      border: "#e05050", dot: "#e05050"  },
   no_show:      { label: "No Show",      border: "#e05050", dot: "#e05050"  },
 };
 
@@ -1365,11 +1365,14 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
 /* ─────────────────────────────────────────────
    BOOKING DETAIL MODAL
 ───────────────────────────────────────────── */
-function BookingModal({ booking, staff, onClose, onDelete, deleteLoading, onStatusChange, statusLoading, onReschedule, rescheduleLoading }) {
+function BookingModal({ booking, staff, onClose, onCancel, cancelLoading, onDelete, deleteLoading, onStatusChange, statusLoading, onReschedule, rescheduleLoading }) {
   /* ── Reschedule state ── */
   const [showReschedule, setShowReschedule] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(null);
   const [rescheduleTime, setRescheduleTime] = useState(null);
+  const [rescheduleReason, setRescheduleReason] = useState("");
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (!booking) return null;
 
@@ -1388,7 +1391,6 @@ function BookingModal({ booking, staff, onClose, onDelete, deleteLoading, onStat
   /* Status action buttons config */
   const statusActions = [
     { key: "arrived",   label: "Arrived",   color: "#22a050", bg: "rgba(34,160,80,0.1)",   border: "rgba(34,160,80,0.35)"   },
-    { key: "no-show",   label: "No Show",   color: "#e05050", bg: "rgba(200,50,50,0.1)",   border: "rgba(200,50,50,0.35)"   },
     { key: "completed", label: "Completed", color: "#BBA14F", bg: "rgba(187,161,79,0.12)", border: "rgba(187,161,79,0.4)"   },
   ];
 
@@ -1470,34 +1472,38 @@ function BookingModal({ booking, staff, onClose, onDelete, deleteLoading, onStat
           <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, color: "#987554", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins', sans-serif" }}>
             Update Status
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
-            {statusActions.map((a) => (
-              <button
-                key={a.key}
-                disabled={statusLoading || booking.status === a.key}
-                onClick={() => onStatusChange(booking.id, a.key)}
-                style={{
-                  padding: "8px 4px",
-                  borderRadius: 10,
-                  border: `1px solid ${booking.status === a.key ? a.color : a.border}`,
-                  background: booking.status === a.key ? `${a.color}22` : a.bg,
-                  color: a.color,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  fontFamily: "'Poppins', sans-serif",
-                  cursor: statusLoading || booking.status === a.key ? "default" : "pointer",
-                  opacity: statusLoading && booking.status !== a.key ? 0.6 : 1,
-                  transition: "all 0.15s ease",
-                }}
-              >
-                {statusLoading && booking.status !== a.key ? "…" : a.label}
-              </button>
-            ))}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+            {statusActions.map((a) => {
+              const isActive = booking.status === a.key;
+              return (
+                <button
+                  key={a.key}
+                  disabled={statusLoading}
+                  onClick={() => onStatusChange(booking.id, a.key)}
+                  style={{
+                    padding: "8px 4px",
+                    borderRadius: 10,
+                    border: `${isActive ? "2px" : "1px"} solid ${isActive ? a.color : a.border}`,
+                    background: isActive ? `${a.color}22` : a.bg,
+                    color: a.color,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    fontFamily: "'Poppins', sans-serif",
+                    cursor: statusLoading ? "not-allowed" : "pointer",
+                    opacity: statusLoading ? 0.5 : 1,
+                    transition: "all 0.15s ease",
+                    boxShadow: isActive ? `0 0 0 2px ${a.color}33` : "none",
+                  }}
+                >
+                  {isActive ? `✓ ${a.label}` : a.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* ── Reschedule toggle ── */}
           <button
-            onClick={() => setShowReschedule((v) => !v)}
+            onClick={() => { setShowReschedule((v) => !v); setShowCancelConfirm(false); }}
             style={{
               width: "100%",
               padding: "9px 14px",
@@ -1541,12 +1547,38 @@ function BookingModal({ booking, staff, onClose, onDelete, deleteLoading, onStat
                 use12Hours
                 style={{ width: "100%", borderRadius: 8 }}
               />
+              <textarea
+                value={rescheduleReason}
+                onChange={(e) => setRescheduleReason(e.target.value)}
+                placeholder="Reason for rescheduling (optional)"
+                rows={2}
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid rgba(187,161,79,0.3)",
+                  background: "#fff",
+                  padding: "8px 10px",
+                  fontSize: 12,
+                  fontFamily: "'Poppins', sans-serif",
+                  color: "#272727",
+                  resize: "none",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
               <button
                 disabled={!rescheduleDate || !rescheduleTime || rescheduleLoading}
                 onClick={() => {
                   if (!rescheduleDate || !rescheduleTime) return;
-                  onReschedule(booking.id, rescheduleDate.format("YYYY-MM-DD"), rescheduleTime.format("HH:mm"));
+                  onReschedule(
+                    booking.id,
+                    rescheduleDate.format("YYYY-MM-DD"),
+                    rescheduleTime.format("HH:mm"),
+                    booking.staffId,
+                    rescheduleReason.trim(),
+                  );
                   setShowReschedule(false);
+                  setRescheduleReason("");
                 }}
                 style={{
                   padding: "9px 14px",
@@ -1571,23 +1603,107 @@ function BookingModal({ booking, staff, onClose, onDelete, deleteLoading, onStat
           <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
 
           {/* bottom actions */}
-          <div style={{ display: "flex", gap: 8 }}>
-            {onDelete && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {/* Cancel appointment */}
+            {!showCancelConfirm ? (
               <button
-                onClick={() => onDelete(booking.id)}
-                disabled={deleteLoading}
+                onClick={() => { setShowCancelConfirm(true); setShowReschedule(false); setShowDeleteConfirm(false); }}
                 style={{
-                  flex: 1, padding: "10px 0", borderRadius: 12,
-                  background: deleteLoading ? "rgba(200,50,50,0.3)" : "rgba(200,50,50,0.1)",
-                  border: "1px solid rgba(200,50,50,0.35)",
+                  width: "100%", padding: "10px 0", borderRadius: 12,
+                  background: "rgba(200,50,50,0.08)",
+                  border: "1px solid rgba(200,50,50,0.3)",
                   color: "#e05050", fontSize: 13, fontWeight: 700,
-                  fontFamily: "'Poppins', sans-serif",
-                  cursor: deleteLoading ? "not-allowed" : "pointer",
+                  fontFamily: "'Poppins', sans-serif", cursor: "pointer",
                 }}
               >
-                {deleteLoading ? "Deleting…" : "Delete"}
+                Cancel Appointment
               </button>
+            ) : (
+              <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(200,50,50,0.06)", border: "1px solid rgba(200,50,50,0.25)", display: "flex", flexDirection: "column", gap: 8 }}>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#e05050", fontFamily: "'Poppins', sans-serif" }}>
+                  Are you sure you want to cancel this appointment?
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => setShowCancelConfirm(false)}
+                    style={{
+                      flex: 1, padding: "8px 0", borderRadius: 10,
+                      border: "1px solid rgba(187,161,79,0.3)", background: "#fff",
+                      color: "#987554", fontSize: 12, fontWeight: 700,
+                      fontFamily: "'Poppins', sans-serif", cursor: "pointer",
+                    }}
+                  >
+                    No, Keep It
+                  </button>
+                  <button
+                    onClick={() => onCancel(booking.id)}
+                    disabled={cancelLoading}
+                    style={{
+                      flex: 1, padding: "8px 0", borderRadius: 10,
+                      border: "none",
+                      background: cancelLoading ? "rgba(200,50,50,0.3)" : "#e05050",
+                      color: "#fff", fontSize: 12, fontWeight: 700,
+                      fontFamily: "'Poppins', sans-serif",
+                      cursor: cancelLoading ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {cancelLoading ? "Cancelling…" : "Yes, Cancel"}
+                  </button>
+                </div>
+              </div>
             )}
+
+            {/* Delete appointment */}
+            {!showDeleteConfirm ? (
+              <button
+                onClick={() => { setShowDeleteConfirm(true); setShowReschedule(false); setShowCancelConfirm(false); }}
+                style={{
+                  width: "100%", padding: "10px 0", borderRadius: 12,
+                  background: "transparent",
+                  border: "1px solid rgba(150,30,30,0.25)",
+                  color: "#a83232", fontSize: 13, fontWeight: 700,
+                  fontFamily: "'Poppins', sans-serif", cursor: "pointer",
+                }}
+              >
+                Delete Appointment
+              </button>
+            ) : (
+              <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(150,30,30,0.05)", border: "1px solid rgba(150,30,30,0.2)", display: "flex", flexDirection: "column", gap: 8 }}>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#a83232", fontFamily: "'Poppins', sans-serif" }}>
+                  ⚠️ This will permanently delete the appointment. Are you sure?
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    style={{
+                      flex: 1, padding: "8px 0", borderRadius: 10,
+                      border: "1px solid rgba(187,161,79,0.3)", background: "#fff",
+                      color: "#987554", fontSize: 12, fontWeight: 700,
+                      fontFamily: "'Poppins', sans-serif", cursor: "pointer",
+                    }}
+                  >
+                    No, Go Back
+                  </button>
+                  <button
+                    onClick={() => onDelete(booking.id)}
+                    disabled={deleteLoading}
+                    style={{
+                      flex: 1, padding: "8px 0", borderRadius: 10,
+                      border: "none",
+                      background: deleteLoading ? "rgba(150,30,30,0.3)" : "#a83232",
+                      color: "#fff", fontSize: 12, fontWeight: 700,
+                      fontFamily: "'Poppins', sans-serif",
+                      cursor: deleteLoading ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {deleteLoading ? "Deleting…" : "Yes, Delete"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* WhatsApp + Close row */}
+            <div style={{ display: "flex", gap: 8 }}>
             {booking.phone && (() => {
               const rawPhone = booking.phone.replace(/\D/g, "");
               const intlPhone = rawPhone.startsWith("0") ? `233${rawPhone.slice(1)}` : rawPhone;
@@ -1637,6 +1753,7 @@ function BookingModal({ booking, staff, onClose, onDelete, deleteLoading, onStat
             >
               Close
             </button>
+          </div>
           </div>
         </div>
       </div>
@@ -2527,7 +2644,58 @@ export default function CalendarPage() {
     },
   });
 
-  /* ── DELETE mutation ── */
+  /* ── POST mutation — update status from modal ── */
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status }) =>
+      _axios.post(`/api/portal/v1/booking/appointments/${id}/status/`, { status }),
+    onSuccess: (_, { status }) => {
+      const label = STATUS_CFG[status]?.label || status;
+      message.success(`Status updated to ${label}`);
+      setSelectedBooking((prev) => prev ? { ...prev, status } : prev);
+      queryClient.invalidateQueries(["appointments", dateStr]);
+      refetchApts();
+    },
+    onError: () => {
+      message.error("Failed to update status");
+    },
+  });
+
+  /* ── POST mutation — reschedule from modal ── */
+  const rescheduleFromModal = useMutation({
+    mutationFn: ({ id, date, time, staffId, reason }) =>
+      _axios.post(`/api/portal/v1/booking/appointments/${id}/schedule/`, {
+        date,
+        start_time: `${time}:00`,
+        staff_id:   staffId,
+        reason:     reason || "",
+      }),
+    onSuccess: () => {
+      message.success("Appointment rescheduled");
+      setSelectedBooking(null);
+      queryClient.invalidateQueries(["appointments", dateStr]);
+      refetchApts();
+    },
+    onError: () => {
+      message.error("Failed to reschedule appointment");
+    },
+  });
+
+  /* ── POST mutation — cancel appointment ── */
+  const cancelAppointment = useMutation({
+    mutationFn: (id) =>
+      _axios.post(`/api/portal/v1/booking/appointments/${id}/cancel/`),
+    onSuccess: () => {
+      message.success("Appointment cancelled");
+      setSelectedBooking(null);
+      queryClient.invalidateQueries(["appointments", dateStr]);
+      refetchApts();
+    },
+    onError: () => {
+      message.error("Failed to cancel appointment");
+    },
+  });
+
+  /* ── DELETE mutation — permanently delete appointment ── */
   const deleteAppointment = useMutation({
     mutationFn: (id) =>
       _axios.delete(`/api/portal/v1/booking/appointments/${id}/`),
@@ -2539,40 +2707,6 @@ export default function CalendarPage() {
     },
     onError: () => {
       message.error("Failed to delete appointment");
-    },
-  });
-
-  /* ── PATCH mutation — update status from modal ── */
-  const updateStatus = useMutation({
-    mutationFn: ({ id, status }) =>
-      _axios.patch(`/api/portal/v1/booking/appointments/${id}/`, { status }),
-    onSuccess: (_, { status }) => {
-      const label = STATUS_CFG[status]?.label || status;
-      message.success(`Status updated to ${label}`);
-      // Optimistically update selectedBooking so the badge refreshes immediately
-      setSelectedBooking((prev) => prev ? { ...prev, status } : prev);
-      queryClient.invalidateQueries(["appointments", dateStr]);
-      refetchApts();
-    },
-    onError: () => {
-      message.error("Failed to update status");
-    },
-  });
-
-  /* ── PATCH mutation — reschedule from modal (date + time change) ── */
-  const rescheduleFromModal = useMutation({
-    mutationFn: ({ id, date, time }) => {
-      const iso = `${date}T${time}:00`;
-      return _axios.patch(`/api/portal/v1/booking/appointments/${id}/`, { scheduled_start: iso });
-    },
-    onSuccess: () => {
-      message.success("Appointment rescheduled");
-      setSelectedBooking(null);
-      queryClient.invalidateQueries(["appointments", dateStr]);
-      refetchApts();
-    },
-    onError: () => {
-      message.error("Failed to reschedule appointment");
     },
   });
 
@@ -3437,11 +3571,13 @@ export default function CalendarPage() {
           booking={selectedBooking}
           staff={visibleStaff.find((s) => s.id === selectedBooking.staffId)}
           onClose={() => setSelectedBooking(null)}
+          onCancel={(id) => cancelAppointment.mutate(id)}
+          cancelLoading={cancelAppointment.isPending}
           onDelete={(id) => deleteAppointment.mutate(id)}
           deleteLoading={deleteAppointment.isPending}
           onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
           statusLoading={updateStatus.isPending}
-          onReschedule={(id, date, time) => rescheduleFromModal.mutate({ id, date, time })}
+          onReschedule={(id, date, time, staffId, reason) => rescheduleFromModal.mutate({ id, date, time, staffId, reason })}
           rescheduleLoading={rescheduleFromModal.isPending}
         />
       )}
@@ -3715,9 +3851,10 @@ export default function CalendarPage() {
                   // ── Existing registered customer ──
                   payload = {
                     customer_id:      selectedClient.id,
+                    staff:            resolvedStaff,
                     appointment_date: appointmentDate,
                     start_time:       startTime,
-                    services,
+                    services:         selectedServices.map((s) => ({ service_id: s.id })),
                   };
                 } else {
                   // ── Walk-in / Guest ──

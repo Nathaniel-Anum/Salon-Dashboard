@@ -12,9 +12,9 @@
 
 import _axios from "./_axios";
 
-/* ── Fetch a single customer's detail ── */
-export async function fetchCustomerDetail(id) {
-  const res = await _axios.get(`/api/portal/v1/accounts/customers/${id}/`);
+/* ── Fetch a single customer's detail by user_id ── */
+export async function fetchCustomerDetail(userId) {
+  const res = await _axios.get(`/api/portal/v1/accounts/customers/${userId}/`);
   return res.data;
 }
 

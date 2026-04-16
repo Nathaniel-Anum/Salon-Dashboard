@@ -537,7 +537,7 @@ export default function CustomersPage() {
                 {/* Actions */}
                 <div className="flex items-center justify-between gap-2">
                   <button
-                    onClick={() => navigate(`/clients/${customer.id}`)}
+                    onClick={() => navigate(`/clients/${customer.user ?? customer.user_id ?? customer.id}`)}
                     className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
                     style={{
                       color: "#BBA14F",
@@ -702,7 +702,7 @@ export default function CustomersPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => navigate(`/clients/${customer.id}`)}
+                            onClick={() => navigate(`/clients/${customer.user ?? customer.user_id ?? customer.id}`)}
                             className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full transition-all duration-200 hover:opacity-80 whitespace-nowrap"
                             style={{
                               color: "#BBA14F",
