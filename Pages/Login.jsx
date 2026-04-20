@@ -1,7 +1,7 @@
 import React from "react";
 import { Form, Input, Button, message, ConfigProvider } from "antd";
 import { FaUserAlt, FaLock } from "react-icons/fa";
-import pic1 from "../src/9.svg";
+import pic1 from "../src/cbk 6.svg";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { loginUser } from "../src/api/auth";
@@ -127,14 +127,14 @@ const SalonLogin = ({ setIsAuthenticated }) => {
             <div className="relative z-10 flex flex-col items-center text-center px-12">
               {/* logo ring */}
               <div
-                className="flex items-center justify-center w-24 h-24 rounded-full mb-7"
+                className="flex items-center justify-center w-36 h-36 rounded-full mb-7"
                 style={{
                   border: "2px solid rgba(187,161,79,0.55)",
-                  background: "#ffffff",
+                  background: "transparent",
                   boxShadow: "0 4px 24px rgba(0,0,0,0.25), 0 0 0 6px rgba(255,255,255,0.07)",
                 }}
               >
-                <img src={pic1} alt="CBK Beauty" className="w-16 h-16 object-contain" />
+                <img src={pic1} alt="CBK Beauty" className="w-full h-full object-contain" />
               </div>
 
               {/* brand name */}
@@ -287,7 +287,7 @@ const SalonLogin = ({ setIsAuthenticated }) => {
 
               {/* forgot password */}
               <div className="flex justify-end -mt-2 mb-5">
-                <span
+                {/* <span
                   className="text-sm text-[#987554] cursor-pointer"
                   style={{
                     fontFamily: "'Poppins', sans-serif",
@@ -297,7 +297,7 @@ const SalonLogin = ({ setIsAuthenticated }) => {
                   onMouseLeave={(e) => (e.target.style.color = "#987554")}
                 >
                   Forgot password?
-                </span>
+                </span> */}
               </div>
 
               <Form.Item className="mb-4">
@@ -313,7 +313,7 @@ const SalonLogin = ({ setIsAuthenticated }) => {
             </Form>
 
             {/* sign up row */}
-            <p
+            {/* <p
               className="text-center text-sm text-[#272727] mt-2"
               style={{ fontFamily: "'Poppins', sans-serif" }}
             >
@@ -326,7 +326,7 @@ const SalonLogin = ({ setIsAuthenticated }) => {
               >
                 Sign up
               </span>
-            </p>
+            </p> */}
 
             {/* bottom brand tag */}
             <p
@@ -337,7 +337,7 @@ const SalonLogin = ({ setIsAuthenticated }) => {
                 letterSpacing: "0.2em",
               }}
             >
-              CBK Beauty · Est. 2024
+              CBK Beauty · Est. 2018
             </p>
           </div>
         </div>

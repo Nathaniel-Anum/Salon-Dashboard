@@ -76,18 +76,27 @@ const DashboardPage = () => {
               {today}
             </p>
             <h1
-              className="text-2xl sm:text-3xl font-bold text-white leading-snug"
-              style={{ fontFamily: "'Playfair Display', serif" }}
+              className="leading-snug"
+              style={{
+                fontFamily: "'Dancing Script', cursive",
+                fontSize: "clamp(2rem, 4vw, 2.8rem)",
+                fontWeight: 700,
+                background: "linear-gradient(90deg, #f9d4e8 0%, #f3a8cf 40%, #e8c96a 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+                textShadow: "none",
+                letterSpacing: "0.02em",
+              }}
             >
-              Welcome back, Admin
+              ✦ Welcome back, Admin
             </h1>
             <p className="text-white/55 text-sm mt-1" style={{ fontFamily: "'Poppins', sans-serif" }}>
               Here's what's happening at the salon today
             </p>
           </div>
 
-          <div
-            className="flex items-center gap-2 self-start sm:self-auto px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-all duration-200 hover:opacity-80"
+          <div className="flex items-center gap-2 self-start sm:self-auto px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-all duration-200 hover:opacity-80"
             style={{
               background: "rgba(187,161,79,0.2)",
               border: "1px solid rgba(187,161,79,0.4)",
