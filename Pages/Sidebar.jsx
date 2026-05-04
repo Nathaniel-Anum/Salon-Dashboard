@@ -100,9 +100,6 @@ const Sidebar = () => {
   const SidebarContent = ({ isMobile = false }) => (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-5 py-6 border-b" style={{ borderColor: "rgba(187,161,79,0.2)" }}>
-        <div className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "#fff", border: "1.5px solid rgba(187,161,79,0.5)" }}>
-          <img src={pic1} alt="logo" className="w-7 h-7 object-contain" />
-        </div>
         {(!collapsed || isMobile) && (
           <div className="overflow-hidden">
             <h1 className="text-base font-semibold leading-none text-white" style={{ fontFamily: "'Playfair Display',serif", letterSpacing: "0.03em" }}>CBK Beauty</h1>

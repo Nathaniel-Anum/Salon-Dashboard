@@ -2382,15 +2382,24 @@ export default function CalendarPage() {
     staleTime: 5 * 60_000,   // cache for 5 minutes
   });
 
-  // Set of blocked date strings "YYYY-MM-DD" for O(1) lookup
-  const blockedDateSet = useMemo(
-    () => new Set(blockedDaysData.map((d) => d.date)),
-    [blockedDaysData]
-  );
+  // Set of blocked date strings "YYYY-MM-DD" for O(1) lookup — expands ranges
+  const blockedDateSet = useMemo(() => {
+    const set = new Set();
+    blockedDaysData.forEach((p) => {
+      let cur = dayjs(p.start_date);
+      const end = dayjs(p.end_date);
+      while (!cur.isAfter(end)) {
+        set.add(cur.format("YYYY-MM-DD"));
+        cur = cur.add(1, "day");
+      }
+    });
+    return set;
+  }, [blockedDaysData]);
 
   // Is the currently viewed date blocked?
   const selectedDateIsBlocked = blockedDateSet.has(dateStr);
-  const selectedDateBlockReason = blockedDaysData.find((d) => d.date === dateStr)?.reason || "";
+  const selectedDateBlockReason =
+    blockedDaysData.find((p) => dateStr >= p.start_date && dateStr <= p.end_date)?.reason || "";
 
   /* ── Normalise API → internal booking shape ── */
   const dayBookings = useMemo(() => {

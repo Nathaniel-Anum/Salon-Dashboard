@@ -1,32 +1,29 @@
 /**
  * Blocked Days API helper
  * ──────────────────────
- * Tries the backend REST endpoint first.
- * If the endpoint doesn't exist yet (404/network error) it silently
- * falls back to localStorage so the feature works regardless of
- * whether the backend has been updated.
+ * Supports date-range blocked periods: { start_date, end_date, reason }.
+ * Tries the backend REST endpoint first and falls back to localStorage.
  *
- * Storage shape (localStorage key: "salon_blocked_days"):
- *   { "YYYY-MM-DD": { date, reason, createdAt }, ... }
- *
- * Backend endpoint (when available):
- *   GET  /api/portal/v1/booking/blocked-days/          → [{ date, reason, id }]
- *   POST /api/portal/v1/booking/blocked-days/          → { date, reason }
+ * Backend endpoints:
+ *   GET    /api/portal/v1/booking/blocked-days/        → [{ id, start_date, end_date, reason }]
+ *   POST   /api/portal/v1/booking/blocked-days/        → { start_date, end_date, reason }
+ *   GET    /api/portal/v1/booking/blocked-days/{id}/
+ *   PATCH  /api/portal/v1/booking/blocked-days/{id}/   → { start_date, end_date, reason }
  *   DELETE /api/portal/v1/booking/blocked-days/{id}/
  */
 
 import _axios from "./_axios";
 
-const LS_KEY = "salon_blocked_days";
+const LS_KEY   = "salon_blocked_periods";
 const ENDPOINT = "/api/portal/v1/booking/blocked-days/";
 
 /* ── Local Storage helpers ── */
 
 function lsRead() {
   try {
-    return JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    return JSON.parse(localStorage.getItem(LS_KEY) || "[]");
   } catch {
-    return {};
+    return [];
   }
 }
 
@@ -37,76 +34,92 @@ function lsWrite(data) {
 /* ── Public API ── */
 
 /**
- * Fetch all blocked days.
- * Returns an array of { id, date: "YYYY-MM-DD", reason } objects.
+ * Fetch all blocked periods.
+ * Returns an array of { id, start_date, end_date, reason } objects.
  */
 export async function fetchBlockedDays() {
   try {
     const res = await _axios.get(ENDPOINT);
     const raw = Array.isArray(res.data) ? res.data : (res.data?.results ?? []);
-    // Sync backend response into localStorage as a cache
-    const map = {};
-    raw.forEach((item) => {
-      map[item.date] = {
-        id: item.id,
-        date: item.date,
-        reason: item.reason || "",
-      };
-    });
-    lsWrite(map);
-    return Object.values(map);
+    const periods = raw.map((item) => ({
+      id:         item.id,
+      start_date: item.start_date,
+      end_date:   item.end_date,
+      reason:     item.reason || "",
+    }));
+    lsWrite(periods);
+    return periods;
   } catch {
-    // Backend not available — return from localStorage
-    return Object.values(lsRead());
+    return lsRead();
   }
 }
 
 /**
- * Block a date.
- * @param {string} date   "YYYY-MM-DD"
- * @param {string} reason e.g. "Public Holiday", "Staff Training", etc.
- * @returns {{ id, date, reason }}
+ * Block a date range (or a single day when start_date === end_date).
+ * @param {string} start_date  "YYYY-MM-DD"
+ * @param {string} end_date    "YYYY-MM-DD"
+ * @param {string} reason
+ * @returns {{ id, start_date, end_date, reason }}
  */
-export async function blockDate(date, reason = "") {
+export async function blockPeriod(start_date, end_date, reason = "") {
   try {
-    const res = await _axios.post(ENDPOINT, { date, reason });
+    const res  = await _axios.post(ENDPOINT, { start_date, end_date, reason });
     const item = {
-      id: res.data.id,
-      date: res.data.date,
-      reason: res.data.reason || reason,
+      id:         res.data.id,
+      start_date: res.data.start_date,
+      end_date:   res.data.end_date,
+      reason:     res.data.reason || reason,
     };
-    // Keep local cache in sync
-    const map = lsRead();
-    map[date] = item;
-    lsWrite(map);
+    const list = lsRead();
+    list.push(item);
+    lsWrite(list);
     return item;
   } catch {
-    // Fallback: store only in localStorage
     const item = {
-      id: `local_${date}`,
-      date,
+      id:         `local_${start_date}_${end_date}_${Date.now()}`,
+      start_date,
+      end_date,
       reason,
-      createdAt: new Date().toISOString(),
     };
-    const map = lsRead();
-    map[date] = item;
-    lsWrite(map);
+    const list = lsRead();
+    list.push(item);
+    lsWrite(list);
     return item;
   }
 }
 
 /**
- * Unblock a previously blocked date.
- * @param {string} date  "YYYY-MM-DD"
- * @param {string} id    The backend record ID (may be a local_ prefixed string)
+ * Update an existing blocked period.
+ * @param {string|number} id
+ * @param {string} start_date  "YYYY-MM-DD"
+ * @param {string} end_date    "YYYY-MM-DD"
+ * @param {string} reason
+ * @returns {{ id, start_date, end_date, reason }}
  */
-export async function unblockDate(date, id) {
-  // Remove from localStorage first (instant UI feedback)
-  const map = lsRead();
-  delete map[date];
-  lsWrite(map);
+export async function updatePeriod(id, start_date, end_date, reason = "") {
+  try {
+    const res  = await _axios.patch(`${ENDPOINT}${id}/`, { start_date, end_date, reason });
+    const item = {
+      id:         res.data.id ?? id,
+      start_date: res.data.start_date,
+      end_date:   res.data.end_date,
+      reason:     res.data.reason || reason,
+    };
+    lsWrite(lsRead().map((p) => (p.id === id ? item : p)));
+    return item;
+  } catch {
+    const item = { id, start_date, end_date, reason };
+    lsWrite(lsRead().map((p) => (p.id === id ? item : p)));
+    return item;
+  }
+}
 
-  // Attempt backend delete (only for real IDs)
+/**
+ * Unblock a period by its ID.
+ * @param {string|number} id
+ */
+export async function unblockPeriod(id) {
+  lsWrite(lsRead().filter((p) => p.id !== id));
   if (id && !String(id).startsWith("local_")) {
     try {
       await _axios.delete(`${ENDPOINT}${id}/`);
@@ -117,18 +130,17 @@ export async function unblockDate(date, id) {
 }
 
 /**
- * Quick synchronous check whether a date string is blocked.
+ * Quick synchronous check whether a date string falls inside any blocked period.
  * Uses only the localStorage cache — no network call.
  * @param {string} dateStr "YYYY-MM-DD"
  */
 export function isDateBlocked(dateStr) {
-  return !!lsRead()[dateStr];
+  return lsRead().some((p) => dateStr >= p.start_date && dateStr <= p.end_date);
 }
 
 /**
- * Returns the Set of all blocked date strings from cache.
- * Useful for DatePicker disabledDate checks.
+ * Returns all blocked periods from the localStorage cache.
  */
-export function getBlockedDateSet() {
-  return new Set(Object.keys(lsRead()));
+export function getBlockedPeriods() {
+  return lsRead();
 }
