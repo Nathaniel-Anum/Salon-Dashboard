@@ -16,6 +16,12 @@ import ServicesPage from "../Pages/ServicesPage";
 import CustomersPage from "../Pages/CustomersPage";
 import BlockedDaysPage from "../Pages/BlockedDaysPage";
 import ClientProfilePage from "../Pages/ClientProfilePage";
+import CategoriesPage from "../Pages/CategoriesPage";
+import ProductsPage from "../Pages/ProductsPage";
+import OrdersPage from "../Pages/OrdersPage";
+import InventoryPage from "../Pages/InventoryPage";
+import AnalyticsPage from "../Pages/AnalyticsPage";
+import SettingsPage from "../Pages/SettingsPage";
 
 export default function App() {
   const [loading, setLoading] = useState(() => {
@@ -59,6 +65,12 @@ export default function App() {
             <Route path="/clients" element={<CustomersPage/>}/>
             <Route path="/clients/:id" element={<ClientProfilePage/>}/>
             <Route path="/blocked-days" element={<BlockedDaysPage/>}/>
+            <Route path="/commerce/categories" element={<CategoriesPage/>}/>
+            <Route path="/commerce/products" element={<ProductsPage/>}/>
+            <Route path="/commerce/orders" element={<OrdersPage/>}/>
+            <Route path="/commerce/inventory" element={<InventoryPage/>}/>
+            <Route path="/analytics" element={<AnalyticsPage/>}/>
+            <Route path="/settings" element={<SettingsPage/>}/>
           </Route>
         </Route>
       </Routes>

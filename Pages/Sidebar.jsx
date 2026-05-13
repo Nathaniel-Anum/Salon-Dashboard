@@ -17,6 +17,7 @@ import {
 } from "react-icons/fi";
 import { FaUserAlt } from "react-icons/fa";
 import { MdManageAccounts } from "react-icons/md";
+import { FiShoppingCart, FiPackage, FiGrid, FiBox } from "react-icons/fi";
 import pic1 from "../src/9.svg";
 import { useMutation } from "@tanstack/react-query";
 import { LoadingOutlined } from "@ant-design/icons";
@@ -33,6 +34,7 @@ const menuItems = [
 ];
 
 const USER_MGMT_PATHS = ["/staff", "/role-management", "/clients"];
+const COMMERCE_PATHS = ["/commerce/categories", "/commerce/products", "/commerce/orders", "/commerce/inventory"];
 
 const userMgmtItems = [
   { name: "Staff",           icon: <FaUserAlt size={14} />,        path: "/staff" },
@@ -40,14 +42,23 @@ const userMgmtItems = [
   { name: "Clients",         icon: <FiUsers size={14} />,          path: "/clients" },
 ];
 
+const commerceItems = [
+  { name: "Categories", icon: <FiGrid size={14} />,        path: "/commerce/categories" },
+  { name: "Products",   icon: <FiPackage size={14} />,     path: "/commerce/products" },
+  { name: "Orders",     icon: <FiShoppingCart size={14} />, path: "/commerce/orders" },
+  { name: "Inventory",  icon: <FiBox size={14} />,          path: "/commerce/inventory" },
+];
+
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMgmtOpen, setUserMgmtOpen] = useState(false);
+  const [commerceOpen, setCommerceOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   const isUserMgmtActive = USER_MGMT_PATHS.some((p) => location.pathname === p);
+  const isCommerceActive = COMMERCE_PATHS.some((p) => location.pathname === p);
 
   const logoutMutation = useMutation({
     mutationFn: (refresh) =>
@@ -118,6 +129,71 @@ const Sidebar = () => {
 
           {menuItems.slice(0, 4).map((item) => renderNavLink(item, isMobile, collapsed))}
 
+          {/* ── Commerce ── */}
+          <div>
+            <Tooltip title={collapsed && !isMobile ? "Commerce" : ""} placement="right">
+              <button
+                onClick={() => {
+                  if (collapsed && !isMobile) { setCollapsed(false); setCommerceOpen(true); }
+                  else { setCommerceOpen((v) => !v); }
+                }}
+                className={`w-full group flex items-center rounded-xl transition-all duration-200 ${collapsed && !isMobile ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"}`}
+                style={{
+                  background: isCommerceActive ? "rgba(187,161,79,0.12)" : "transparent",
+                  color: isCommerceActive ? "#BBA14F" : "rgba(255,255,255,0.78)",
+                  border: isCommerceActive ? "1px solid rgba(187,161,79,0.25)" : "1px solid transparent",
+                  fontFamily: "'Poppins',sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                <span className={`text-[17px] shrink-0 transition-transform duration-200 ${!isCommerceActive ? "group-hover:scale-110" : ""}`}>
+                  <FiShoppingCart />
+                </span>
+                {(!collapsed || isMobile) && (
+                  <>
+                    <span className="text-sm tracking-wide flex-1 text-left">Commerce</span>
+                    <FiChevronDown
+                      size={14}
+                      style={{
+                        transition: "transform 0.2s ease",
+                        transform: commerceOpen || isCommerceActive ? "rotate(180deg)" : "rotate(0deg)",
+                        color: isCommerceActive ? "#BBA14F" : "rgba(255,255,255,0.45)",
+                      }}
+                    />
+                  </>
+                )}
+              </button>
+            </Tooltip>
+
+            {(!collapsed || isMobile) && (commerceOpen || isCommerceActive) && (
+              <div style={{ marginLeft: 14, paddingLeft: 14, borderLeft: "1.5px solid rgba(187,161,79,0.25)", marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+                {commerceItems.map((item) => (
+                  <NavLink
+                    key={item.name}
+                    to={item.path}
+                    onClick={() => isMobile && setMobileOpen(false)}
+                    className="group relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 no-underline"
+                    style={({ isActive }) =>
+                      isActive
+                        ? { background: "linear-gradient(90deg,#BBA14F 0%,#c9ae5e 100%)", boxShadow: "0 4px 14px rgba(187,161,79,0.3)", fontWeight: 600, color: "#272727" }
+                        : { background: "transparent", color: "rgba(255,255,255,0.72)" }
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span className={`text-[15px] shrink-0 transition-transform duration-200 ${!isActive ? "group-hover:scale-110" : ""}`}>
+                          {item.icon}
+                        </span>
+                        <span className="text-sm tracking-wide" style={{ fontFamily: "'Poppins',sans-serif" }}>{item.name}</span>
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── User Management ── */}
           <div>
             <Tooltip title={collapsed && !isMobile ? "User Management" : ""} placement="right">
               <button
@@ -210,7 +286,7 @@ const Sidebar = () => {
   return (
     <>
       <button
-        className="fixed top-4 left-4 z-50 lg:hidden flex items-center justify-center w-9 h-9 rounded-full shadow-lg"
+        className="fixed top-4 left-4 z-50 lg:hidden flex items-center justify-center w-9 h-9 rounded-full shadow-lg cursor-pointer"
         style={{ background: "#272727", border: "1px solid rgba(187,161,79,0.4)" }}
         onClick={() => setMobileOpen(true)}
       >

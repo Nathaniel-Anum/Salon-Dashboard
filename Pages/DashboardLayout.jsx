@@ -2,8 +2,11 @@ import React from "react";
 import Sidebar from "./Sidebar";
 import { Outlet } from "react-router-dom";
 import { Header } from "./Header";
+import { useInventorySocket } from "../src/hooks/useInventorySocket";
 
 const DashboardLayout = () => {
+  useInventorySocket();
+
   return (
     <div className="flex min-h-screen" style={{ background: "#F5EFE6", overflow: "hidden" }}>
       <Sidebar />

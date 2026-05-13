@@ -1,30 +1,5 @@
 import axios from "axios";
 
-// const _axios = axios.create({
-//   baseURL: "https://api.cbkbeauty.expertech.dev/",
-//   headers: {
-//     "Content-Type": "application/json",
-//   },
-// });
-
-// // Axios interceptor
-// _axios.interceptors.request.use(
-//   (config) => {
-//     const token = localStorage.getItem("access");
-
-//     if (token) {
-//       config.headers.Authorization = `Bearer ${token}`;
-//     }
-
-//     return config;
-//   },
-//   (error) => Promise.reject(error)
-// );
-
-// export default _axios;
-
-
-
 
 const _axios = axios.create({
   baseURL: "https://api.cbkbeauty.expertech.dev/",
