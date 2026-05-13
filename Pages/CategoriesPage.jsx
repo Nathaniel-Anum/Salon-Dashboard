@@ -21,6 +21,7 @@ import {
   Switch,
   Button,
   Upload,
+  Image,
   message,
   Popconfirm,
   Tooltip,
@@ -134,11 +135,14 @@ function CategoryCard({ cat, onEdit, onDelete, deleting }) {
         style={{ background: "linear-gradient(135deg, #FDFAF5 0%, #F5EFE6 100%)" }}
       >
         {cat.image ? (
-          <img
+          <Image
             src={cat.image}
             alt={cat.name}
-            className="w-16 h-16 rounded-xl object-cover"
-            style={{ boxShadow: "0 2px 10px rgba(0,0,0,0.1)" }}
+            width={64}
+            height={64}
+            className="!rounded-xl !object-cover"
+            style={{ boxShadow: "0 2px 10px rgba(0,0,0,0.1)", borderRadius: 12 }}
+            preview={{ maskClassName: "!rounded-xl" }}
           />
         ) : (
           <div

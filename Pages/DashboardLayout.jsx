@@ -3,8 +3,9 @@ import Sidebar from "./Sidebar";
 import { Outlet } from "react-router-dom";
 import { Header } from "./Header";
 import { useInventorySocket } from "../src/hooks/useInventorySocket";
+import { NotificationsProvider } from "../src/context/NotificationsContext";
 
-const DashboardLayout = () => {
+function LayoutInner() {
   useInventorySocket();
 
   return (
@@ -18,6 +19,12 @@ const DashboardLayout = () => {
       </div>
     </div>
   );
-};
+}
+
+const DashboardLayout = () => (
+  <NotificationsProvider>
+    <LayoutInner />
+  </NotificationsProvider>
+);
 
 export default DashboardLayout;

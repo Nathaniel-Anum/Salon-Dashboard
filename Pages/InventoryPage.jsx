@@ -170,7 +170,22 @@ function InventoryFormFields({ products, isEdit }) {
           </div>
           <Form.Item
             name="reorder_level"
-            rules={[{ required: true, message: "Required" }]}
+            dependencies={["quantity_available"]}
+            rules={[
+              { required: true, message: "Required" },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  const qty = getFieldValue("quantity_available");
+                  if (value == null || value === "") return Promise.resolve();
+                  if (qty != null && value > qty) {
+                    return Promise.reject(
+                      new Error("Reorder level cannot exceed quantity available")
+                    );
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
             style={{ marginBottom: 0 }}
           >
             <InputNumber
@@ -653,7 +668,18 @@ export default function InventoryPage() {
           <Form
             form={form}
             layout="vertical"
-            onFinish={(values) => saveMutation.mutate(values)}
+            onFinish={(values) => {
+              const qty = values.quantity_available;
+              const reorder = values.reorder_level;
+              if (qty != null && reorder != null && reorder > qty) {
+                form.setFields([{
+                  name: "reorder_level",
+                  errors: ["Reorder level cannot exceed quantity available"],
+                }]);
+                return;
+              }
+              saveMutation.mutate(values);
+            }}
           >
             <InventoryFormFields
               products={productData}

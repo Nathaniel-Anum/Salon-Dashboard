@@ -339,8 +339,14 @@ function NewOrderModal({ open, onClose, products, customers, onSuccess }) {
       setItems([{ product_id: undefined, quantity: 1 }]);
       onSuccess?.();
     },
-    onError: () => {
-      messageApi.error("Could not create order.");
+    onError: (err) => {
+      const data = err?.response?.data;
+      // Backend sends { items: ["Insufficient stock…"] } or similar
+      const apiMessage =
+        data?.items?.[0] ||
+        data?.detail ||
+        (typeof data === "string" ? data : null);
+      messageApi.error(apiMessage || "Could not create order.");
       form.resetFields();
       setItems([{ product_id: undefined, quantity: 1 }]);
     },

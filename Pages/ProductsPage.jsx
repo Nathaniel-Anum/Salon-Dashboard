@@ -24,6 +24,7 @@ import {
   Switch,
   Button,
   Upload,
+  Image,
   message,
   Popconfirm,
   Tooltip,
@@ -172,6 +173,7 @@ export default function ProductsPage() {
   const [editTarget, setEditTarget] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [previewImage, setPreviewImage] = useState(null);
   const [messageApi, msgCtx] = message.useMessage();
 
   /* ── Data ── */
@@ -268,7 +270,8 @@ export default function ProductsPage() {
             <img
               src={record.image}
               alt={record.name}
-              className="w-10 h-10 rounded-xl object-cover shrink-0"
+              onClick={() => setPreviewImage(record.image)}
+              className="w-10 h-10 rounded-xl object-cover shrink-0 cursor-zoom-in"
               style={{ border: "1px solid rgba(187,161,79,0.2)" }}
             />
           ) : (
@@ -677,6 +680,18 @@ export default function ProductsPage() {
           </Form>
         </div>
       </Modal>
+
+      {/* ── Image preview lightbox ── */}
+      {previewImage && (
+        <Image
+          style={{ display: "none" }}
+          src={previewImage}
+          preview={{
+            visible: true,
+            onVisibleChange: (v) => { if (!v) setPreviewImage(null); },
+          }}
+        />
+      )}
     </div>
   );
 }
