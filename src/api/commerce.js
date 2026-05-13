@@ -9,7 +9,10 @@ export const createCategory = (data) =>
       data instanceof FormData ? { "Content-Type": "multipart/form-data" } : {},
   });
 export const updateCategory = (id, data) =>
-  _axios.patch(`/api/portal/v1/commerce/categories/${id}/`, data);
+  _axios.patch(`/api/portal/v1/commerce/categories/${id}/`, data, {
+    headers:
+      data instanceof FormData ? { "Content-Type": "multipart/form-data" } : {},
+  });
 export const deleteCategory = (id) =>
   _axios.delete(`/api/portal/v1/commerce/categories/${id}/`);
 
@@ -17,9 +20,15 @@ export const deleteCategory = (id) =>
 export const getProducts = () =>
   _axios.get("/api/portal/v1/commerce/products/").then((r) => r.data);
 export const createProduct = (data) =>
-  _axios.post("/api/portal/v1/commerce/products/", data);
+  _axios.post("/api/portal/v1/commerce/products/", data, {
+    headers:
+      data instanceof FormData ? { "Content-Type": "multipart/form-data" } : {},
+  });
 export const updateProduct = (id, data) =>
-  _axios.patch(`/api/portal/v1/commerce/products/${id}/`, data);
+  _axios.patch(`/api/portal/v1/commerce/products/${id}/`, data, {
+    headers:
+      data instanceof FormData ? { "Content-Type": "multipart/form-data" } : {},
+  });
 export const deleteProduct = (id) =>
   _axios.delete(`/api/portal/v1/commerce/products/${id}/`);
 

@@ -23,6 +23,7 @@ import {
   Select,
   Switch,
   Button,
+  Upload,
   message,
   Popconfirm,
   Tooltip,
@@ -37,6 +38,7 @@ import {
   FiPackage,
   FiTag,
   FiImage,
+  FiUpload,
 } from "react-icons/fi";
 import {
   getProducts,
@@ -64,7 +66,7 @@ function formatPrice(val) {
 /* ─────────────────────────────────────────────
    FORM FIELDS  (module-level → avoids re-mount)
 ───────────────────────────────────────────── */
-function ProductFormFields({ categories }) {
+function ProductFormFields({ categories, currentImage = null, isEdit = false }) {
   return (
     <>
       <Form.Item
@@ -113,9 +115,37 @@ function ProductFormFields({ categories }) {
       </Form.Item>
 
       <div className="flex flex-col sm:flex-row gap-4">
-        <Form.Item name="image" label="Image URL" className="flex-1">
-          <Input placeholder="https://example.com/image.png" className="!rounded-xl" />
-        </Form.Item>
+        <div className="flex-1 flex flex-col gap-1.5">
+          {isEdit && currentImage && (
+            <img
+              src={currentImage}
+              alt="Current"
+              className="w-14 h-14 rounded-xl object-cover"
+              style={{ border: "1px solid rgba(187,161,79,0.25)" }}
+            />
+          )}
+          <Form.Item
+            name="image"
+            label={isEdit && currentImage ? "Replace Image" : "Image"}
+            valuePropName="fileList"
+            getValueFromEvent={(e) => (Array.isArray(e) ? e : e?.fileList)}
+            style={{ marginBottom: 0 }}
+          >
+            <Upload
+              accept="image/*"
+              beforeUpload={() => false}
+              maxCount={1}
+              listType="text"
+            >
+              <Button
+                icon={<FiUpload size={13} />}
+                className="!rounded-xl !border-[rgba(187,161,79,0.4)] !text-[#987554] hover:!border-[#BBA14F] hover:!text-[#BBA14F]"
+              >
+                {isEdit && currentImage ? "Upload New Image" : "Upload Image"}
+              </Button>
+            </Upload>
+          </Form.Item>
+        </div>
         <Form.Item
           name="price"
           label="Price (GHS)"
@@ -186,7 +216,15 @@ export default function ProductsPage() {
 
   const openEdit = (product) => {
     setEditTarget(product);
-    form.setFieldsValue({ ...product });
+    form.setFieldsValue({
+      category: product.category,
+      name: product.name,
+      sku: product.sku,
+      description: product.description,
+      price: product.price,
+      is_active: product.is_active,
+      image: undefined, // file field — don't pre-fill
+    });
     setModalOpen(true);
   };
 
@@ -601,9 +639,24 @@ export default function ProductsPage() {
           <Form
             form={form}
             layout="vertical"
-            onFinish={(v) => saveMutation.mutate(v)}
+            onFinish={(values) => {
+              const fd = new FormData();
+              if (values.category) fd.append("category", values.category);
+              fd.append("name", values.name ?? "");
+              fd.append("sku", values.sku ?? "");
+              if (values.description) fd.append("description", values.description);
+              fd.append("price", values.price ?? "");
+              fd.append("is_active", values.is_active ?? true);
+              const imageFile = values.image?.[0]?.originFileObj;
+              if (imageFile) fd.append("image", imageFile);
+              saveMutation.mutate(fd);
+            }}
           >
-            <ProductFormFields categories={categoryData} />
+            <ProductFormFields
+              categories={categoryData}
+              isEdit={!!editTarget}
+              currentImage={editTarget?.image ?? null}
+            />
             <div className="flex justify-end gap-3 mt-2">
               <Button
                 onClick={closeModal}

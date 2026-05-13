@@ -39,7 +39,7 @@ const GOLD_BTN = "!bg-[#BBA14F] !border-none hover:!bg-[#a08340] !text-white";
    FORM FIELDS  (module-level → avoids focus-
    steal re-mount on every render)
 ───────────────────────────────────────────── */
-function CategoryFormFields({ isEdit = false }) {
+function CategoryFormFields({ isEdit = false, currentImage = null }) {
   return (
     <>
       <Form.Item
@@ -59,17 +59,21 @@ function CategoryFormFields({ isEdit = false }) {
       </Form.Item>
 
       <div className="flex flex-col sm:flex-row gap-4">
-        {isEdit ? (
-          <Form.Item name="image" label="Image URL" className="flex-1">
-            <Input placeholder="https://example.com/image.png" className="!rounded-xl" />
-          </Form.Item>
-        ) : (
+        <div className="flex-1 flex flex-col gap-1.5">
+          {isEdit && currentImage && (
+            <img
+              src={currentImage}
+              alt="Current"
+              className="w-14 h-14 rounded-xl object-cover"
+              style={{ border: "1px solid rgba(187,161,79,0.25)" }}
+            />
+          )}
           <Form.Item
             name="image"
-            label="Image"
+            label={isEdit && currentImage ? "Replace Image" : "Image"}
             valuePropName="fileList"
             getValueFromEvent={(e) => (Array.isArray(e) ? e : e?.fileList)}
-            className="flex-1"
+            style={{ marginBottom: 0 }}
           >
             <Upload
               accept="image/*"
@@ -81,39 +85,15 @@ function CategoryFormFields({ isEdit = false }) {
                 icon={<FiUpload size={13} />}
                 className="!rounded-xl !border-[rgba(187,161,79,0.4)] !text-[#987554] hover:!border-[#BBA14F] hover:!text-[#BBA14F]"
               >
-                Upload Image
+                {isEdit && currentImage ? "Upload New Image" : "Upload Image"}
               </Button>
             </Upload>
           </Form.Item>
-        )}
+        </div>
 
-        {isEdit ? (
-          <Form.Item name="icon" label="Icon" className="flex-1">
-            <Input placeholder="e.g. ✂️ or SVG URL" className="!rounded-xl" />
-          </Form.Item>
-        ) : (
-          <Form.Item
-            name="icon"
-            label="Icon (SVG file)"
-            valuePropName="fileList"
-            getValueFromEvent={(e) => (Array.isArray(e) ? e : e?.fileList)}
-            className="flex-1"
-          >
-            <Upload
-              accept=".svg,image/svg+xml"
-              beforeUpload={() => false}
-              maxCount={1}
-              listType="text"
-            >
-              <Button
-                icon={<FiUpload size={13} />}
-                className="!rounded-xl !border-[rgba(187,161,79,0.4)] !text-[#987554] hover:!border-[#BBA14F] hover:!text-[#BBA14F]"
-              >
-                Upload SVG
-              </Button>
-            </Upload>
-          </Form.Item>
-        )}
+        <Form.Item name="icon" label="Icon URL" className="flex-1">
+          <Input placeholder="https://example.com/icon.svg" className="!rounded-xl" />
+        </Form.Item>
       </div>
 
       <Form.Item name="is_active" label="Active" valuePropName="checked">
@@ -295,7 +275,13 @@ export default function CategoriesPage() {
 
   const openEdit = (cat) => {
     setEditTarget(cat);
-    form.setFieldsValue({ ...cat });
+    form.setFieldsValue({
+      name: cat.name,
+      description: cat.description,
+      icon: cat.icon,
+      is_active: cat.is_active,
+      image: undefined, // file field — don't pre-fill
+    });
     setModalOpen(true);
   };
 
@@ -576,22 +562,21 @@ export default function CategoriesPage() {
             form={form}
             layout="vertical"
             onFinish={(values) => {
+              const fd = new FormData();
+              fd.append("name", values.name ?? "");
+              if (values.description) fd.append("description", values.description);
+              const imageFile = values.image?.[0]?.originFileObj;
+              if (imageFile) fd.append("image", imageFile);
+              fd.append("is_active", values.is_active ?? true);
+              if (values.icon) fd.append("icon", values.icon);
               if (editTarget) {
-                saveMutation.mutate(values);
+                saveMutation.mutate(fd);
               } else {
-                const fd = new FormData();
-                fd.append("name", values.name ?? "");
-                if (values.description) fd.append("description", values.description);
-                const imageFile = values.image?.[0]?.originFileObj;
-                if (imageFile) fd.append("image", imageFile);
-                fd.append("is_active", values.is_active ?? true);
-                const iconFile = values.icon?.[0]?.originFileObj;
-                if (iconFile) fd.append("icon", iconFile);
                 saveMutation.mutate(fd);
               }
             }}
           >
-            <CategoryFormFields isEdit={!!editTarget} />
+            <CategoryFormFields isEdit={!!editTarget} currentImage={editTarget?.image ?? null} />
             <div className="flex justify-end gap-3 mt-2">
               <Button
                 onClick={closeModal}
