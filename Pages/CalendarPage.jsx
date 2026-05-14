@@ -34,9 +34,11 @@ import {
   FiDollarSign,
   FiCheckCircle,
   FiSlash,
+  FiCreditCard,
 } from "react-icons/fi";
 import _axios from "../src/api/_axios";
 import { fetchBlockedDays } from "../src/api/blockedDays";
+import { createWaitlistEntry } from "../src/api/waitlist";
 
 /* ─────────────────────────────────────────────
    CONSTANTS & HELPERS
@@ -114,8 +116,10 @@ const STATUS_CFG = {
   pending:      { label: "Pending",      border: "#F0A830", dot: "#f5b43c"  },
   completed:    { label: "Completed",    border: "#2EAA60", dot: "#22a050"  },
   arrived:      { label: "Arrived",      border: "#22a050", dot: "#22a050"  },
-  "No-Show":    { label: "No Show",      border: "#e05050", dot: "#e05050"  },
-  no_show:      { label: "No Show",      border: "#e05050", dot: "#e05050"  },
+  "No-Show":       { label: "No Show",       border: "#e05050", dot: "#e05050"  },
+  no_show:          { label: "No Show",       border: "#e05050", dot: "#e05050"  },
+  pending_deposit:  { label: "Deposit Pending", border: "#D4A847", dot: "#f5b43c" },
+  expired:          { label: "Expired",        border: "#a87050", dot: "#a87050" },
 };
 
 /* ─────────────────────────────────────────────
@@ -2315,6 +2319,11 @@ export default function CalendarPage() {
   const [wizDate, setWizDate] = useState(() => dayjs());
   const [wizTime, setWizTime] = useState(null);
 
+  /* ── Waitlist fallback state ── */
+  const [waitlistPrompt, setWaitlistPrompt] = useState(null); // { payload, errorMsg } — set when booking fails with waitlist_eligible
+  const [waitlistDate, setWaitlistDate] = useState(null);     // DatePicker value for the waitlist modal
+  const [waitlistStaffPerService, setWaitlistStaffPerService] = useState({}); // { [service_id]: staffId } — required per service
+
   const gridRef = useRef(null);      // time gutter
   const bodyRef = useRef(null);      // main scroll body
   const queryClient = useQueryClient();
@@ -2620,14 +2629,57 @@ export default function CalendarPage() {
       resetWizard();
       addForm.resetFields();
     },
+    onError: (err, sentPayload) => {
+      const data = err?.response?.data ?? {};
+      const msg =
+        data.detail ||
+        data.non_field_errors?.[0] ||
+        Object.values(data)?.[0]?.[0] ||
+        "Failed to create appointment";
+
+      // ── Waitlist eligible? Offer fallback ──
+      const isWaitlistEligible =
+        data.waitlist_eligible === true ||
+        (typeof data.detail === "string" &&
+          (data.detail.toLowerCase().includes("waitlist") ||
+           data.detail.toLowerCase().includes("fully booked") ||
+           data.detail.toLowerCase().includes("after hours") ||
+           data.detail.toLowerCase().includes("closing")));
+
+      if (isWaitlistEligible) {
+        // Pre-fill staff from whatever was resolved in the failed payload
+        const preStaff = {};
+        (sentPayload?.services || []).forEach((s) => {
+          if (s.staff_id) preStaff[s.service_id] = s.staff_id;
+        });
+        setWaitlistStaffPerService(preStaff);
+        setWaitlistPrompt({ payload: sentPayload, errorMsg: msg });
+      } else {
+        message.error(msg);
+      }
+      createAppointment.reset();
+    },
+  });
+
+  /* ── POST mutation — create waitlist entry (fallback) ── */
+  const createWaitlist = useMutation({
+    mutationFn: (data) => createWaitlistEntry(data),
+    onSuccess: () => {
+      message.success("Added to waitlist successfully!");
+      setWaitlistPrompt(null);
+      setWaitlistDate(null);
+      setWaitlistStaffPerService({});
+      setAddOpen(false);
+      resetWizard();
+      addForm.resetFields();
+    },
     onError: (err) => {
       const msg =
         err?.response?.data?.detail ||
         err?.response?.data?.non_field_errors?.[0] ||
         Object.values(err?.response?.data ?? {})?.[0]?.[0] ||
-        "Failed to create appointment";
+        "Failed to add to waitlist";
       message.error(msg);
-      createAppointment.reset();
     },
   });
 
@@ -3860,10 +3912,9 @@ export default function CalendarPage() {
                   // ── Existing registered customer ──
                   payload = {
                     customer_id:      selectedClient.id,
-                    staff:            resolvedStaff,
                     appointment_date: appointmentDate,
                     start_time:       startTime,
-                    services:         selectedServices.map((s) => ({ service_id: s.id })),
+                    services,         // each item includes staff_id when resolved
                   };
                 } else {
                   // ── Walk-in / Guest ──
@@ -3904,6 +3955,146 @@ export default function CalendarPage() {
               {createAppointment.isPending ? "Booking…" : "✦ Book Appointment"}
             </button>
           )}
+        </div>
+      </Modal>
+
+      {/* ── Waitlist fallback prompt ── */}
+      {/* Shown when createAppointment fails with a waitlist-eligible error */}
+      <Modal
+        open={!!waitlistPrompt}
+        onCancel={() => { setWaitlistPrompt(null); setWaitlistDate(null); setWaitlistStaffPerService({}); }}
+        footer={null}
+        width={420}
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'Playfair Display', serif", color: "#272727", fontSize: 16 }}>
+            <FiCreditCard size={16} color="#D4A847" />
+            Slot Unavailable — Join Waitlist?
+          </div>
+        }
+        style={{ top: 80 }}
+      >
+        <div style={{ fontFamily: "'Poppins', sans-serif" }}>
+          {/* Error reason */}
+          <div style={{
+            padding: "10px 14px", borderRadius: 9, marginBottom: 18,
+            background: "rgba(212,168,71,0.09)", border: "1px solid rgba(212,168,71,0.3)",
+          }}>
+            <p style={{ margin: 0, fontSize: 12, color: "#8a7030" }}>
+              <FiAlertCircle size={12} style={{ marginRight: 5, verticalAlign: "middle" }} />
+              {waitlistPrompt?.errorMsg || "This time slot is not directly bookable."}
+            </p>
+          </div>
+
+          <p style={{ margin: "0 0 14px", fontSize: 13, color: "#272727" }}>
+            Would you like to add this customer to the waitlist instead? They will be notified when a slot opens.
+          </p>
+
+          {/* Per-service staff selection — staff_id is required on every service */}
+          {(waitlistPrompt?.payload?.services || []).length > 0 && (
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "#987554", display: "block", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Assign Staff per Service <span style={{ color: "#c43232" }}>*</span>
+              </label>
+              {(waitlistPrompt?.payload?.services || []).map((svc) => {
+                const svcObj = selectedServices.find((s) => s.id === svc.service_id);
+                const svcName = svcObj?.name || `Service #${svc.service_id}`;
+                const assignedIds = svcObj?.assigned_staff_ids ?? svcObj?.staff_ids ?? [];
+                const eligibleStaff = assignedIds.length
+                  ? visibleStaff.filter((s) =>
+                      assignedIds.some((id) => String(id) === String(s.id) || String(id) === String(s.user) || String(id) === String(s.user_id))
+                    )
+                  : visibleStaff;
+                const displayStaff = eligibleStaff.length ? eligibleStaff : visibleStaff;
+                return (
+                  <div key={svc.service_id} style={{ marginBottom: 10 }}>
+                    <p style={{ margin: "0 0 4px", fontSize: 11, color: "#272727", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
+                      {svcName}
+                    </p>
+                    <Select
+                      style={{ width: "100%" }}
+                      placeholder="Select staff member…"
+                      value={waitlistStaffPerService[svc.service_id] || undefined}
+                      onChange={(val) =>
+                        setWaitlistStaffPerService((prev) => ({ ...prev, [svc.service_id]: val }))
+                      }
+                      options={displayStaff.map((s) => ({
+                        value: s.id,
+                        label: s.full_name || s.name || `Staff #${s.id}`,
+                      }))}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Waitlist date picker */}
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#987554", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Waitlist Date <span style={{ color: "#c43232" }}>*</span>
+            </label>
+            <DatePicker
+              value={waitlistDate}
+              onChange={setWaitlistDate}
+              format="YYYY-MM-DD"
+              disabledDate={(d) => d && d < dayjs().startOf("day")}
+              placeholder="Date customer is available"
+              style={{ width: "100%" }}
+            />
+            <p style={{ margin: "5px 0 0", fontSize: 10, color: "rgba(152,117,84,0.7)" }}>
+              The date you want the customer promoted if a slot opens.
+            </p>
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={() => { setWaitlistPrompt(null); setWaitlistDate(null); setWaitlistStaffPerService({}); }}
+              style={{
+                flex: 1, padding: "10px 0", borderRadius: 9,
+                border: "1px solid rgba(187,161,79,0.25)",
+                background: "#FDFAF5", color: "#987554",
+                fontSize: 12, fontWeight: 600, fontFamily: "'Poppins', sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              disabled={!waitlistDate || createWaitlist.isPending ||
+                !(waitlistPrompt?.payload?.services || []).every((s) => waitlistStaffPerService[s.service_id])
+              }
+              onClick={() => {
+                if (!waitlistDate || !waitlistPrompt) return;
+                const base = waitlistPrompt.payload;
+                // Rebuild services with confirmed staff_id from waitlistStaffPerService
+                const correctedServices = (base.services || []).map((s) => ({
+                  service_id: s.service_id,
+                  staff_id:   waitlistStaffPerService[s.service_id],
+                }));
+                createWaitlist.mutate({
+                  ...base,
+                  services:     correctedServices,
+                  waitlist_date: waitlistDate.format("YYYY-MM-DD"),
+                  reason:        "staff_fully_booked",
+                });
+              }}
+              style={{
+                flex: 2, padding: "10px 0", borderRadius: 9, border: "none",
+                background: (!waitlistDate || createWaitlist.isPending)
+                  ? "rgba(187,161,79,0.45)"
+                  : "linear-gradient(135deg,#BBA14F,#987554)",
+                color: "#fff", fontSize: 12, fontWeight: 700,
+                fontFamily: "'Poppins', sans-serif",
+                cursor: (!waitlistDate || createWaitlist.isPending) ? "not-allowed" : "pointer",
+                boxShadow: (!waitlistDate || createWaitlist.isPending) ? "none" : "0 4px 14px rgba(187,161,79,0.4)",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              }}
+            >
+              <FiList size={13} />
+              {createWaitlist.isPending ? "Adding…" : "Add to Waitlist"}
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

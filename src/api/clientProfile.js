@@ -140,3 +140,18 @@ export function computeProfileStats(bookings) {
     upcoming,
   };
 }
+
+/**
+ * Fetch all waitlist entries for a specific customer.
+ * Returns a raw array of waitlist entry objects.
+ */
+export async function fetchClientWaitlist(customerId) {
+  try {
+    const res = await _axios.get("/api/portal/v1/booking/waitlist/", {
+      params: { customer: customerId },
+    });
+    return Array.isArray(res.data) ? res.data : (res.data?.results ?? []);
+  } catch {
+    return [];
+  }
+}

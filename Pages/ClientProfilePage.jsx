@@ -8,7 +8,7 @@
  * Opened from CustomersPage "View Profile" button.
  */
 
-import React, { useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -26,8 +26,9 @@ import {
   FiXCircle,
   FiAlertCircle,
   FiRefreshCw,
+  FiList,
 } from "react-icons/fi";
-import { fetchCustomerDetail, fetchClientBookings, computeProfileStats } from "../src/api/clientProfile";
+import { fetchCustomerDetail, fetchClientBookings, computeProfileStats, fetchClientWaitlist } from "../src/api/clientProfile";
 
 /* ─────────────────────────────────────────────
    CONSTANTS
@@ -48,12 +49,14 @@ const AVATAR_COLORS = [
 ];
 
 const STATUS_CFG = {
-  completed:  { label: "Completed",  bg: "rgba(34,160,80,0.12)",    color: "#1a8a40", border: "rgba(34,160,80,0.25)",    icon: <FiCheckCircle size={11} /> },
-  pending:    { label: "Pending",    bg: "rgba(187,161,79,0.12)",   color: "#8a7030", border: "rgba(187,161,79,0.3)",    icon: <FiAlertCircle size={11} /> },
-  confirmed:  { label: "Confirmed",  bg: "rgba(79,122,168,0.12)",   color: "#2d5a84", border: "rgba(79,122,168,0.3)",   icon: <FiCheckCircle size={11} /> },
-  cancelled:  { label: "Cancelled",  bg: "rgba(200,50,50,0.1)",     color: "#c43232", border: "rgba(200,50,50,0.25)",   icon: <FiXCircle size={11} />    },
-  "no-show":  { label: "No Show",    bg: "rgba(150,100,50,0.1)",    color: "#7a5020", border: "rgba(150,100,50,0.25)",  icon: <FiXCircle size={11} />    },
-  in_progress:{ label: "In Progress",bg: "rgba(79,168,122,0.12)",   color: "#2d845a", border: "rgba(79,168,122,0.3)",  icon: <FiRefreshCw size={11} />  },
+  completed:       { label: "Completed",       bg: "rgba(34,160,80,0.12)",    color: "#1a8a40", border: "rgba(34,160,80,0.25)",    icon: <FiCheckCircle size={11} /> },
+  pending:         { label: "Pending",         bg: "rgba(187,161,79,0.12)",   color: "#8a7030", border: "rgba(187,161,79,0.3)",    icon: <FiAlertCircle size={11} /> },
+  confirmed:       { label: "Confirmed",       bg: "rgba(79,122,168,0.12)",   color: "#2d5a84", border: "rgba(79,122,168,0.3)",   icon: <FiCheckCircle size={11} /> },
+  cancelled:       { label: "Cancelled",       bg: "rgba(200,50,50,0.1)",     color: "#c43232", border: "rgba(200,50,50,0.25)",   icon: <FiXCircle size={11} />    },
+  "no-show":       { label: "No Show",         bg: "rgba(150,100,50,0.1)",    color: "#7a5020", border: "rgba(150,100,50,0.25)",  icon: <FiXCircle size={11} />    },
+  in_progress:     { label: "In Progress",     bg: "rgba(79,168,122,0.12)",   color: "#2d845a", border: "rgba(79,168,122,0.3)",  icon: <FiRefreshCw size={11} />  },
+  booked:          { label: "Booked",          bg: "rgba(79,122,168,0.12)",   color: "#2d5a84", border: "rgba(79,122,168,0.3)",  icon: <FiCheckCircle size={11} /> },
+  expired:         { label: "Expired",         bg: "rgba(150,100,50,0.08)",   color: "#7a5020", border: "rgba(150,100,50,0.2)",  icon: <FiXCircle size={11} />    },
 };
 
 /* ─────────────────────────────────────────────
@@ -308,6 +311,7 @@ function LoyaltyRing({ points }) {
 export default function ClientProfilePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [historyTab, setHistoryTab] = useState("appointments"); // "appointments" | "waitlist"
 
   /* ── Fetch customer detail ── */
   const { data: customer, isLoading: loadingCustomer } = useQuery({
@@ -323,6 +327,13 @@ export default function ClientProfilePage() {
     staleTime: 60_000,
   });
 
+  /* ── Fetch waitlist entries for this customer ── */
+  const { data: waitlistRaw = [], isLoading: loadingWaitlist } = useQuery({
+    queryKey: ["client-waitlist", id],
+    queryFn: () => fetchClientWaitlist(id),
+    staleTime: 60_000,
+  });
+
   /* ── Derived stats ── */
   const stats = useMemo(() => computeProfileStats(bookingsRaw), [bookingsRaw]);
 
@@ -330,6 +341,16 @@ export default function ClientProfilePage() {
   const history = useMemo(
     () => [...bookingsRaw].sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime)),
     [bookingsRaw]
+  );
+
+  /* ── Sorted waitlist (newest first) ── */
+  const waitlistHistory = useMemo(
+    () => [...waitlistRaw].sort((a, b) => {
+      const da = a.waitlist_date || a.appointment_date || "";
+      const db = b.waitlist_date || b.appointment_date || "";
+      return db.localeCompare(da);
+    }),
+    [waitlistRaw]
   );
 
   const fullName =
@@ -471,10 +492,45 @@ export default function ClientProfilePage() {
         alignItems: "start",
       }}>
 
-        {/* ── LEFT: Appointment history ── */}
+        {/* ── LEFT: Appointment history / Waitlist ── */}
         <div>
-          <SectionHeading icon={<FiClock size={14} />} title="Appointment History" />
+          {/* Tab toggle */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {[
+              { key: "appointments", label: "Appointments", icon: <FiClock size={12} />, count: history.length },
+              { key: "waitlist",     label: "Waitlist",     icon: <FiList size={12} />,  count: waitlistHistory.length },
+            ].map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setHistoryTab(t.key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: "7px 14px", borderRadius: 8,
+                  border: `1px solid ${historyTab === t.key ? GOLD : BORDER}`,
+                  background: historyTab === t.key ? "rgba(187,161,79,0.1)" : CREAM,
+                  color: historyTab === t.key ? GOLD : MID,
+                  fontSize: 12, fontWeight: 600, fontFamily: "'Poppins', sans-serif",
+                  cursor: "pointer", transition: "all 0.15s",
+                }}
+              >
+                {t.icon} {t.label}
+                {t.count > 0 && (
+                  <span style={{
+                    minWidth: 16, height: 16, borderRadius: 8,
+                    background: historyTab === t.key ? GOLD : "rgba(187,161,79,0.18)",
+                    color: historyTab === t.key ? "#fff" : MID,
+                    fontSize: 9, fontWeight: 700,
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    padding: "0 4px",
+                  }}>
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
 
+          {historyTab === "appointments" ? (
           <div style={{
             background: CREAM, border: `1px solid ${BORDER}`,
             borderRadius: 16, overflow: "hidden",
@@ -532,6 +588,87 @@ export default function ClientProfilePage() {
               </div>
             )}
           </div>
+          ) : (
+          /* ── Waitlist tab ── */
+          <div style={{
+            background: CREAM, border: `1px solid ${BORDER}`,
+            borderRadius: 16, overflow: "hidden",
+            boxShadow: "0 2px 12px rgba(39,39,39,0.05)",
+          }}>
+            {/* Table header */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "120px 1fr 110px 80px 90px",
+              gap: 10,
+              padding: "10px 16px",
+              background: "linear-gradient(90deg, rgba(187,161,79,0.1), rgba(152,117,84,0.06))",
+              borderBottom: `1px solid rgba(187,161,79,0.2)`,
+            }}>
+              {["Reference", "Services", "Requested", "Waitlist Date", "Status"].map((h) => (
+                <span key={h} style={{
+                  fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase",
+                  letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif",
+                }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+
+            {/* Rows */}
+            {loadingWaitlist ? (
+              [1, 2, 3].map((k) => (
+                <div key={k} style={{ padding: "14px 16px", borderBottom: `1px solid rgba(187,161,79,0.1)` }}>
+                  <Skeleton width="100%" height={14} />
+                </div>
+              ))
+            ) : waitlistHistory.length === 0 ? (
+              <div style={{ padding: "40px 20px", textAlign: "center", color: MID, fontSize: 13 }}>
+                <FiList size={28} style={{ color: GOLD, opacity: 0.35, display: "block", margin: "0 auto 10px" }} />
+                No waitlist entries for this client
+              </div>
+            ) : (
+              waitlistHistory.map((w, idx) => {
+                const refCode  = w.reference_code || `#${w.id}`;
+                const svcs     = (w.services || w.items || []).map((s) => s.service_name || s.name || "").filter(Boolean).join(", ") || "—";
+                const requested = w.requested_start
+                  ? dayjs(w.requested_start).format("D MMM, h:mm A")
+                  : w.appointment_date ? dayjs(w.appointment_date).format("D MMM YYYY") : "—";
+                const wDate = w.waitlist_date ? dayjs(w.waitlist_date).format("D MMM YYYY") : "—";
+                const cfg   = { pending: { label: "Pending", color: "#8a7030", bg: "rgba(187,161,79,0.12)", border: "rgba(187,161,79,0.3)" }, booked: { label: "Booked", color: "#2d5a84", bg: "rgba(79,122,168,0.12)", border: "rgba(79,122,168,0.3)" }, cancelled: { label: "Cancelled", color: "#c43232", bg: "rgba(200,50,50,0.1)", border: "rgba(200,50,50,0.25)" }, expired: { label: "Expired", color: "#7a5020", bg: "rgba(150,100,50,0.08)", border: "rgba(150,100,50,0.2)" } }[w.status] || { label: w.status, color: MID, bg: "transparent", border: BORDER };
+                return (
+                  <div key={w.id} style={{
+                    display: "grid",
+                    gridTemplateColumns: "120px 1fr 110px 80px 90px",
+                    gap: 10,
+                    alignItems: "center",
+                    padding: "11px 16px",
+                    borderBottom: `1px solid rgba(187,161,79,0.1)`,
+                    background: idx % 2 === 0 ? CREAM : "rgba(187,161,79,0.03)",
+                    transition: "background 0.15s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(187,161,79,0.07)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = idx % 2 === 0 ? CREAM : "rgba(187,161,79,0.03)")}
+                  >
+                    <span style={{ fontSize: 11, fontWeight: 700, color: GOLD, fontFamily: "'Poppins', sans-serif" }}>{refCode}</span>
+                    <span style={{ fontSize: 11, color: DARK, fontFamily: "'Poppins', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{svcs}</span>
+                    <span style={{ fontSize: 11, color: MID, fontFamily: "'Poppins', sans-serif" }}>{requested}</span>
+                    <span style={{ fontSize: 11, color: MID, fontFamily: "'Poppins', sans-serif" }}>{wDate}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "3px 7px", borderRadius: 20, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>{cfg.label}</span>
+                  </div>
+                );
+              })
+            )}
+
+            {/* Footer */}
+            {!loadingWaitlist && waitlistHistory.length > 0 && (
+              <div style={{ padding: "10px 16px", background: "rgba(187,161,79,0.04)", borderTop: `1px solid rgba(187,161,79,0.12)` }}>
+                <p style={{ margin: 0, fontSize: 11, color: "rgba(152,117,84,0.65)", fontFamily: "'Poppins', sans-serif" }}>
+                  {waitlistHistory.length} waitlist entr{waitlistHistory.length !== 1 ? "ies" : "y"} total
+                </p>
+              </div>
+            )}
+          </div>
+          )}
         </div>
 
         {/* ── RIGHT: Loyalty + Favourite services ── */}

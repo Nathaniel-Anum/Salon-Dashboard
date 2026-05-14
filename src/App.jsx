@@ -22,6 +22,7 @@ import OrdersPage from "../Pages/OrdersPage";
 import InventoryPage from "../Pages/InventoryPage";
 import AnalyticsPage from "../Pages/AnalyticsPage";
 import SettingsPage from "../Pages/SettingsPage";
+import WaitlistPage from "../Pages/WaitlistPage";
 
 export default function App() {
   const [loading, setLoading] = useState(() => {
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="/commerce/orders" element={<OrdersPage/>}/>
             <Route path="/commerce/inventory" element={<InventoryPage/>}/>
             <Route path="/analytics" element={<AnalyticsPage/>}/>
+            <Route path="/waitlist" element={<WaitlistPage/>}/>
             <Route path="/settings" element={<SettingsPage/>}/>
           </Route>
         </Route>

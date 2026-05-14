@@ -14,6 +14,7 @@ import {
   FiX,
   FiMenu,
   FiSlash,
+  FiList,
 } from "react-icons/fi";
 import { FaUserAlt } from "react-icons/fa";
 import { MdManageAccounts } from "react-icons/md";
@@ -28,6 +29,7 @@ const menuItems = [
   { name: "Dashboard",    icon: <FiHome />,      path: "/" },
   { name: "Calendar",     icon: <FiCalendar />,  path: "/calendar" },
   { name: "Services",     icon: <FiScissors />,  path: "/services" },
+  { name: "Waitlist",     icon: <FiList />,      path: "/waitlist" },
   { name: "Analytics",    icon: <FiBarChart2 />, path: "/analytics" },
   { name: "Blocked Days", icon: <FiSlash />,     path: "/blocked-days" },
   { name: "Settings",     icon: <FiSettings />,  path: "/settings" },

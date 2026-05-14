@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Modal, Form, Input, Select, Button, Switch, message, Tag, Tooltip } from "antd";
-import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiGrid, FiList } from "react-icons/fi";
+import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiGrid, FiList, FiScissors } from "react-icons/fi";
 import { FaUserAlt } from "react-icons/fa";
 import _axios from "../src/api/_axios";
 
@@ -94,12 +94,28 @@ export default function Staff() {
   const [viewMode, setViewMode] = useState("cards"); // "cards" | "table"
   const [addForm] = Form.useForm();
   const [editForm] = Form.useForm();
+  const [assignForm] = Form.useForm();
+
+  // Assign-services modal state
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignStaff, setAssignStaff] = useState(null);
 
   // --- FETCH STAFF ---
   const { data: staffRaw, isLoading: staffLoading } = useQuery({
     queryKey: ["staff"],
     queryFn: () => _axios.get("/api/portal/v1/accounts/staff/").then((r) => r.data),
   });
+
+  // --- FETCH SERVICES (for assign-services modal) ---
+  const { data: servicesRaw } = useQuery({
+    queryKey: ["services"],
+    queryFn: () => _axios.get("/api/portal/v1/booking/services/").then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
+  const servicesData = useMemo(
+    () => (Array.isArray(servicesRaw) ? servicesRaw : servicesRaw?.results || []),
+    [servicesRaw]
+  );
 
   // --- FETCH ROLES — normalise to array regardless of API shape ---
   const { data: rolesRaw, isLoading: rolesLoading } = useQuery({
@@ -162,6 +178,21 @@ export default function Staff() {
     },
   });
 
+  // --- ASSIGN SERVICES TO STAFF ---
+  const assignServices = useMutation({
+    mutationFn: ({ staff_id, service_ids }) =>
+      _axios.post("/api/portal/v1/booking/services/assign-staff/", { staff_id, service_ids }),
+    onSuccess: () => {
+      message.success("Services assigned successfully");
+      queryClient.invalidateQueries(["services"]);
+      setAssignOpen(false);
+      assignForm.resetFields();
+    },
+    onError: (err) => {
+      message.error(err.response?.data?.message || "Failed to assign services");
+    },
+  });
+
   // --- DELETE STAFF ---
   const deleteStaff = useMutation({
     mutationFn: (id) => _axios.delete(`/api/portal/v1/accounts/staff/${id}/`),
@@ -185,6 +216,25 @@ export default function Staff() {
       centered: true,
       onOk: () => deleteStaff.mutate(id),
     });
+  };
+
+  // --- HANDLE ASSIGN SERVICES ---
+  const handleAssignServices = (staff) => {
+    setAssignStaff(staff);
+    // Pre-populate with services already assigned to this staff member
+    const currentIds = servicesData
+      .filter((svc) => {
+        const ids = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
+        return ids.some(
+          (id) =>
+            String(id) === String(staff.id) ||
+            String(id) === String(staff.user) ||
+            String(id) === String(staff.user_id)
+        );
+      })
+      .map((svc) => svc.id);
+    assignForm.setFieldsValue({ service_ids: currentIds });
+    setAssignOpen(true);
   };
 
   // --- HANDLE EDIT ---
@@ -400,7 +450,19 @@ export default function Staff() {
               <div className="h-px mb-3" style={{ background: "rgba(187,161,79,0.15)" }} />
 
               {/* actions */}
-              <div className="flex items-center justify-end gap-3">
+              <div className="flex items-center justify-end gap-2 flex-wrap">
+                <button
+                  onClick={() => handleAssignServices(staff)}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
+                  style={{
+                    color: "#BBA14F",
+                    background: "rgba(187,161,79,0.1)",
+                    fontFamily: "'Poppins', sans-serif",
+                  }}
+                >
+                  <FiScissors size={12} />
+                  Services
+                </button>
                 <button
                   onClick={() => handleEdit(staff)}
                   className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
@@ -547,7 +609,21 @@ export default function Staff() {
 
                     {/* Actions */}
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => handleAssignServices(staff)}
+                          className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full transition-all duration-200 hover:opacity-80 whitespace-nowrap"
+                          style={{
+                            color: "#BBA14F",
+                            background: "rgba(187,161,79,0.1)",
+                            fontFamily: "'Poppins', sans-serif",
+                            border: "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <FiScissors size={11} />
+                          Services
+                        </button>
                         <button
                           onClick={() => handleEdit(staff)}
                           className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full transition-all duration-200 hover:opacity-80 whitespace-nowrap"
@@ -626,6 +702,60 @@ export default function Staff() {
                 className={goldBtn}
               >
                 Add Staff
+              </Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* ── Assign Services Modal ── */}
+      <Modal
+        title={modalTitle(`Assign Services`)}
+        open={assignOpen}
+        onCancel={() => { setAssignOpen(false); assignForm.resetFields(); }}
+        footer={null}
+        centered
+        style={{ borderRadius: 16 }}
+      >
+        <Form
+          form={assignForm}
+          layout="vertical"
+          onFinish={(values) =>
+            assignServices.mutate({
+              staff_id: assignStaff?.id,
+              service_ids: values.service_ids || [],
+            })
+          }
+          className="pt-3"
+        >
+          <p style={{ margin: "0 0 16px", fontSize: 12, color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+            Select the services that{" "}
+            <strong style={{ color: "#272727" }}>{assignStaff?.full_name}</strong>{" "}
+            is permitted to perform. Leaving it empty means no service restriction.
+          </p>
+          <Form.Item name="service_ids" label="Services">
+            <Select
+              mode="multiple"
+              placeholder="Choose services…"
+              showSearch
+              filterOption={(input, opt) =>
+                (opt?.label || "").toLowerCase().includes(input.toLowerCase())
+              }
+              options={servicesData.map((s) => ({ value: s.id, label: s.name }))}
+              allowClear
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item className="flex justify-end mb-0 mt-4">
+            <div className="flex justify-end gap-3">
+              <Button onClick={() => setAssignOpen(false)}>Cancel</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={assignServices.isPending}
+                className={goldBtn}
+              >
+                Save
               </Button>
             </div>
           </Form.Item>
