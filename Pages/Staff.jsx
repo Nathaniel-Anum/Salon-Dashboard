@@ -53,16 +53,6 @@ function StaffFormFields({ isEdit = false, roleOptions = [], rolesLoading = fals
       <Form.Item name="phone" label="Phone">
         <Input placeholder="+234 000 000 0000" className="rounded-xl" />
       </Form.Item>
-      <Form.Item
-        name="password"
-        label="Password"
-        rules={isEdit ? [] : [{ required: true, message: "Required" }]}
-      >
-        <Input.Password
-          placeholder={isEdit ? "Leave empty to keep current" : "Set password"}
-          className="rounded-xl"
-        />
-      </Form.Item>
       <Form.Item name="role_ids" label="Roles">
         <Select
           mode="multiple"
@@ -244,7 +234,6 @@ export default function Staff() {
       full_name: staff.full_name,
       email: staff.email,
       phone: staff.phone,
-      password: "",
       is_active: staff.is_active,
       is_verified: staff.is_verified,
       is_staff: staff.is_staff,
@@ -453,7 +442,7 @@ export default function Staff() {
               <div className="flex items-center justify-end gap-2 flex-wrap">
                 <button
                   onClick={() => handleAssignServices(staff)}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80 cursor-pointer"
                   style={{
                     color: "#BBA14F",
                     background: "rgba(187,161,79,0.1)",
@@ -465,7 +454,7 @@ export default function Staff() {
                 </button>
                 <button
                   onClick={() => handleEdit(staff)}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80 cursor-pointer"
                   style={{
                     color: "#987554",
                     background: "rgba(152,117,84,0.1)",
@@ -477,7 +466,7 @@ export default function Staff() {
                 </button>
                 <button
                   onClick={() => handleDeleteStaff(staff.id, staff.full_name)}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80 cursor-pointer"
                   style={{
                     color: "#c43232",
                     background: "rgba(196,50,50,0.08)",

@@ -16,6 +16,7 @@ import {
   FiSlash,
   FiList,
 } from "react-icons/fi";
+import { FaClock } from "react-icons/fa";
 import { FaUserAlt } from "react-icons/fa";
 import { MdManageAccounts } from "react-icons/md";
 import { FiShoppingCart, FiPackage, FiGrid, FiBox } from "react-icons/fi";
@@ -30,6 +31,7 @@ const menuItems = [
   { name: "Calendar",     icon: <FiCalendar />,  path: "/calendar" },
   { name: "Services",     icon: <FiScissors />,  path: "/services" },
   { name: "Waitlist",     icon: <FiList />,      path: "/waitlist" },
+  { name: "Schedules",    icon: <FaClock size={14} />, path: "/schedules" },
   { name: "Analytics",    icon: <FiBarChart2 />, path: "/analytics" },
   { name: "Blocked Days", icon: <FiSlash />,     path: "/blocked-days" },
   { name: "Settings",     icon: <FiSettings />,  path: "/settings" },

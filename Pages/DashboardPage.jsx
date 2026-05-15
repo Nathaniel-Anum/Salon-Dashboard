@@ -1,5 +1,8 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { GlassCard } from "./GlassCard";
+import _axios from "../src/api/_axios";
 import {
   FaCalendarAlt,
   FaDollarSign,
@@ -35,9 +38,29 @@ const services = [
 ];
 
 const DashboardPage = () => {
+  const navigate = useNavigate();
   const today = new Date().toLocaleDateString("en-GB", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
+
+  const { data: staffData } = useQuery({
+    queryKey: ["staff"],
+    queryFn: () => _axios.get("/api/portal/v1/accounts/staff/").then((r) =>
+      Array.isArray(r.data) ? r.data : (r.data?.results ?? [])
+    ),
+    staleTime: 5 * 60_000,
+  });
+
+  const { data: customersData } = useQuery({
+    queryKey: ["customers"],
+    queryFn: () => _axios.get("/api/portal/v1/accounts/customers/").then((r) =>
+      Array.isArray(r.data) ? r.data : (r.data?.results ?? [])
+    ),
+    staleTime: 5 * 60_000,
+  });
+
+  const staffCount     = staffData?.length     ?? "—";
+  const customersCount = customersData?.length  ?? "—";
 
   return (
     <div
@@ -96,7 +119,9 @@ const DashboardPage = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-all duration-200 hover:opacity-80"
+          <div
+            onClick={() => navigate("/schedules")}
+            className="flex items-center gap-2 self-start sm:self-auto px-4 py-2.5 rounded-full text-sm font-medium cursor-pointer transition-all duration-200 hover:opacity-80"
             style={{
               background: "rgba(187,161,79,0.2)",
               border: "1px solid rgba(187,161,79,0.4)",
@@ -114,11 +139,10 @@ const DashboardPage = () => {
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
         <GlassCard
-          title="Today's Clients"
-          value="24"
+          title="Total Staff"
+          value={staffCount}
           icon={<FaUsers />}
-          trend={12}
-          trendLabel="vs yesterday"
+          trendLabel="team members"
         />
         <GlassCard
           title="Appointments"
@@ -136,12 +160,11 @@ const DashboardPage = () => {
           trendLabel="vs yesterday"
         />
         <GlassCard
-          title="Avg. Rating"
-          value="4.9 ★"
+          title="Total Customers"
+          value={customersCount}
           icon={<FaStar />}
           accent="#BBA14F"
-          trend={2}
-          trendLabel="this month"
+          trendLabel="registered"
         />
       </div>
 
