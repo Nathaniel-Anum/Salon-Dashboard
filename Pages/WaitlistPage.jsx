@@ -22,7 +22,6 @@ import {
   Input,
   Select,
   DatePicker,
-  TimePicker,
   message,
   Drawer,
   Spin,
@@ -466,10 +465,8 @@ function EntryDrawer({ entryId, onClose, onCancel }) {
 ═══════════════════════════════════════════════ */
 function CreateWaitlistModal({ open, onClose, onSuccess }) {
   const [form] = Form.useForm();
-  const [clientMode, setClientMode] = useState("existing"); // "existing" | "guest"
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClient, setSelectedClient] = useState(null);
-  const [serviceSearch, setServiceSearch] = useState("");
 
   /* Fetch customers for search */
   const { data: customersData = [] } = useQuery({
@@ -481,7 +478,6 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
         })
         .then((r) => (Array.isArray(r.data) ? r.data : (r.data?.results ?? []))),
     staleTime: 30_000,
-    enabled: clientMode === "existing",
   });
 
   /* Fetch services */
@@ -510,7 +506,6 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
       message.success("Waitlist entry created");
       form.resetFields();
       setSelectedClient(null);
-      setClientMode("existing");
       onSuccess();
     },
     onError: (err) => {
@@ -530,31 +525,12 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
         staff_id:   item.staff_id,
       }));
 
-      let payload;
-      if (clientMode === "existing" && selectedClient) {
-        payload = {
-          customer_id:      selectedClient.id,
-          appointment_date: vals.appointment_date.format("YYYY-MM-DD"),
-          start_time:       vals.start_time.format("HH:mm:ss"),
-          waitlist_date:    vals.waitlist_date.format("YYYY-MM-DD"),
-          services,
-          reason:           vals.reason || "staff_fully_booked",
-          notes:            vals.notes || "",
-        };
-      } else {
-        payload = {
-          guest: {
-            full_name: vals.guest_name,
-            email:     vals.guest_email || undefined,
-          },
-          appointment_date: vals.appointment_date.format("YYYY-MM-DD"),
-          start_time:       vals.start_time.format("HH:mm:ss"),
-          waitlist_date:    vals.waitlist_date.format("YYYY-MM-DD"),
-          services,
-          reason:           vals.reason || "staff_fully_booked",
-          notes:            vals.notes || "",
-        };
-      }
+      const payload = {
+        customer_id:   selectedClient?.id,
+        waitlist_date: vals.waitlist_date.format("YYYY-MM-DD"),
+        services,
+        reason:        vals.reason || "staff_fully_booked",
+      };
 
       createMutation.mutate(payload);
     });
@@ -574,61 +550,31 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
       styles={{ body: { background: CREAM, padding: "20px 24px" } }}
       style={{ top: 40 }}
     >
-      {/* Client mode toggle */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        {["existing", "guest"].map((m) => (
-          <button
-            key={m}
-            onClick={() => { setClientMode(m); setSelectedClient(null); }}
-            style={{
-              flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${clientMode === m ? GOLD : BORDER}`,
-              background: clientMode === m ? "rgba(187,161,79,0.1)" : CREAM,
-              color: clientMode === m ? GOLD : MID,
-              fontSize: 12, fontWeight: 600, fontFamily: "'Poppins', sans-serif", cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-          >
-            {m === "existing" ? "Registered Customer" : "Guest"}
-          </button>
-        ))}
-      </div>
-
       <Form form={form} layout="vertical">
-        {/* Customer / Guest fields */}
-        {clientMode === "existing" ? (
-          <Form.Item label="Customer" required>
-            <Select
-              showSearch
-              placeholder="Search by name or email…"
-              filterOption={false}
-              onSearch={(v) => setClientSearch(v)}
-              onSelect={(_, opt) => setSelectedClient(opt.data)}
-              value={selectedClient ? `${selectedClient.full_name || selectedClient.first_name} (${selectedClient.email || ""})` : undefined}
-              style={{ width: "100%" }}
-              notFoundContent={<span style={{ fontSize: 11, color: MID, fontFamily: "'Poppins', sans-serif" }}>No customers found</span>}
-            >
-              {customersData.map((c) => {
-                const name = c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ");
-                return (
-                  <Select.Option key={c.id} value={c.id} data={c}>
-                    <span style={{ fontFamily: "'Poppins', sans-serif", fontSize: 12 }}>
-                      {name} {c.email ? `— ${c.email}` : ""}
-                    </span>
-                  </Select.Option>
-                );
-              })}
-            </Select>
-          </Form.Item>
-        ) : (
-          <>
-            <Form.Item name="guest_name" label="Guest Name" rules={[{ required: true, message: "Name required" }]}>
-              <Input placeholder="Full name" style={{ fontFamily: "'Poppins', sans-serif", fontSize: 12 }} />
-            </Form.Item>
-            <Form.Item name="guest_email" label="Guest Email">
-              <Input placeholder="email@example.com (optional)" style={{ fontFamily: "'Poppins', sans-serif", fontSize: 12 }} />
-            </Form.Item>
-          </>
-        )}
+        {/* Customer search */}
+        <Form.Item label="Customer" required>
+          <Select
+            showSearch
+            placeholder="Search by name or email…"
+            filterOption={false}
+            onSearch={(v) => setClientSearch(v)}
+            onSelect={(_, opt) => setSelectedClient(opt.data)}
+            value={selectedClient ? `${selectedClient.full_name || selectedClient.first_name}` : undefined}
+            style={{ width: "100%" }}
+            notFoundContent={<span style={{ fontSize: 11, color: MID, fontFamily: "'Poppins', sans-serif" }}>No customers found</span>}
+          >
+            {customersData.map((c) => {
+              const name = c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ");
+              return (
+                <Select.Option key={c.id} value={c.id} data={c}>
+                  <span style={{ fontFamily: "'Poppins', sans-serif", fontSize: 12 }}>
+                    {name}
+                  </span>
+                </Select.Option>
+              );
+            })}
+          </Select>
+        </Form.Item>
 
         {/* Services + Staff per service */}
         <Form.List
@@ -769,15 +715,6 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
           )}
         </Form.List>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Form.Item name="appointment_date" label="Requested Date" rules={[{ required: true, message: "Required" }]}>
-            <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" disabledDate={(d) => d && d < dayjs().startOf("day")} />
-          </Form.Item>
-          <Form.Item name="start_time" label="Requested Time" rules={[{ required: true, message: "Required" }]}>
-            <TimePicker style={{ width: "100%" }} format="HH:mm" minuteStep={15} />
-          </Form.Item>
-        </div>
-
         <Form.Item name="waitlist_date" label="Waitlist Date" rules={[{ required: true, message: "Required" }]}
           tooltip="The date the customer is available. They will be promoted when a slot opens on this date.">
           <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" disabledDate={(d) => d && d < dayjs().startOf("day")} />
@@ -793,10 +730,6 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
               { value: "other",              label: "Other" },
             ]}
           />
-        </Form.Item>
-
-        <Form.Item name="notes" label="Notes">
-          <Input.TextArea rows={2} placeholder="Optional note…" style={{ fontFamily: "'Poppins', sans-serif", fontSize: 12 }} />
         </Form.Item>
 
         {/* Footer buttons */}

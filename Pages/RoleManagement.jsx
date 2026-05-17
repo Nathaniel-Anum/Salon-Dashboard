@@ -183,6 +183,10 @@ const FormBody = ({ values, setValues, onSave, saving, onClose, saveLabel, permi
         onChange={(value) => setValues({ ...values, permission_ids: value })}
         options={permissionOptions}
         allowClear
+        showSearch
+        filterOption={(input, option) =>
+          (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+        }
       />
     </div>
     <div className="flex justify-end gap-3">
