@@ -22,6 +22,7 @@ import {
   Input,
   Select,
   DatePicker,
+  TimePicker,
   message,
   Drawer,
   Spin,
@@ -527,6 +528,8 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
 
       const payload = {
         customer_id:   selectedClient?.id,
+        appointment_date: vals.appointment_date.format("YYYY-MM-DD"),
+        start_time:    vals.start_time.format("HH:mm:ss"),
         waitlist_date: vals.waitlist_date.format("YYYY-MM-DD"),
         services,
         reason:        vals.reason || "staff_fully_booked",
@@ -714,6 +717,27 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
             </>
           )}
         </Form.List>
+
+        <Form.Item
+          name="appointment_date"
+          label="Requested Appointment Date"
+          rules={[{ required: true, message: "Required" }]}
+          tooltip="The original appointment date the customer requested."
+        >
+          <DatePicker
+            style={{ width: "100%" }}
+            format="YYYY-MM-DD"
+            disabledDate={(d) => d && d < dayjs().startOf("day")}
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="start_time"
+          label="Requested Start Time"
+          rules={[{ required: true, message: "Required" }]}
+        >
+          <TimePicker style={{ width: "100%" }} format="HH:mm" minuteStep={5} />
+        </Form.Item>
 
         <Form.Item name="waitlist_date" label="Waitlist Date" rules={[{ required: true, message: "Required" }]}
           tooltip="The date the customer is available. They will be promoted when a slot opens on this date.">
