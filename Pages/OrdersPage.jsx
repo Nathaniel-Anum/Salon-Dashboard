@@ -69,6 +69,10 @@ function formatPrice(val) {
   }).format(n);
 }
 
+function getOrderNumber(order) {
+  return order?.order_number ?? order?.orderNo ?? order?.order_no ?? order?.number ?? order?.id ?? "—";
+}
+
 const STATUS_CONFIG = {
   pending:   { label: "Pending",   color: "#c97d10", bg: "rgba(245,180,60,0.12)",  icon: <FiClock size={11} />   },
   confirmed: { label: "Confirmed", color: "#a08340", bg: "rgba(187,161,79,0.12)",  icon: <FiCheck size={11} />   },
@@ -194,7 +198,7 @@ function OrderDetailModal({ orderId, open, onClose }) {
                 className="text-base font-bold text-white leading-none"
                 style={{ fontFamily: "'Playfair Display', serif" }}
               >
-                Order #{orderId}
+                Order #{getOrderNumber(order) ?? orderId}
               </h3>
             </div>
           </div>
@@ -690,7 +694,7 @@ export default function OrdersPage() {
   /* ── Table columns ── */
   const columns = [
     {
-      title: "Order ID",
+      title: "Order Number",
       key: "id",
       width: 100,
       render: (_, record) => (
@@ -698,7 +702,7 @@ export default function OrdersPage() {
           className="font-mono text-sm font-semibold"
           style={{ color: "#272727" }}
         >
-          #{record.id}
+          #{getOrderNumber(record)}
         </span>
       ),
     },
