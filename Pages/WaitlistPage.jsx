@@ -811,8 +811,8 @@ export default function WaitlistPage() {
 
   /* ── Fetch waitlist ── */
   const { data: rawList = [], isLoading, refetch } = useQuery({
-    queryKey: ["waitlist", activeTab],
-    queryFn: () => getWaitlist(activeTab !== "all" ? { status: activeTab } : {}),
+    queryKey: ["waitlist"],
+    queryFn: () => getWaitlist(),
     staleTime: 60_000,
     select: (d) => (Array.isArray(d) ? d : (d?.results ?? [])),
   });
@@ -853,11 +853,15 @@ export default function WaitlistPage() {
     });
   };
 
-  /* ── Local search filter ── */
+  /* ── Local search + tab filter ── */
   const filtered = useMemo(() => {
-    if (!search.trim()) return rawList;
+    let list = rawList;
+    if (activeTab !== "all") {
+      list = list.filter((e) => e.status === activeTab);
+    }
+    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return rawList.filter((e) => {
+    return list.filter((e) => {
       const name = (
         e.customer_name ||
         e.customer?.full_name ||
@@ -871,9 +875,9 @@ export default function WaitlistPage() {
         .toLowerCase();
       return name.includes(q) || ref.includes(q) || svcs.includes(q);
     });
-  }, [rawList, search]);
+  }, [rawList, activeTab, search]);
 
-  /* ── Tab counts ── */
+  /* ── Tab counts (always from full list) ── */
   const counts = useMemo(() => {
     const c = { all: rawList.length, pending: 0, booked: 0, cancelled: 0, expired: 0 };
     rawList.forEach((e) => { if (c[e.status] !== undefined) c[e.status]++; });
