@@ -4,38 +4,30 @@ import { useQuery } from "@tanstack/react-query";
 import { GlassCard } from "./GlassCard";
 import _axios from "../src/api/_axios";
 import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
+import {
   FaCalendarAlt,
   FaDollarSign,
-  FaUsers,
   FaStar,
   FaCheckCircle,
 } from "react-icons/fa";
-import { FiClock, FiArrowRight } from "react-icons/fi";
+import { FiClock, FiArrowRight, FiActivity } from "react-icons/fi";
+import { getAnalyticsOverview, getAnalyticsRevenue, getAnalyticsBookings } from "../src/api/analytics";
 
-/* ── recent bookings mock data ── */
-const recentBookings = [
-  { name: "Amara Johnson",   service: "Hair Treatment",    time: "09:00 AM", status: "confirmed" },
-  { name: "Sophia Williams", service: "Nail Art",          time: "10:30 AM", status: "in-progress" },
-  { name: "Kezia Mensah",    service: "Facial & Massage",  time: "12:00 PM", status: "pending" },
-  { name: "Temi Oluwaseun",  service: "Hair Coloring",     time: "02:00 PM", status: "confirmed" },
-  { name: "Grace Adeola",    service: "Eyebrow Shaping",   time: "03:30 PM", status: "completed" },
-];
-
-const statusConfig = {
-  confirmed:    { label: "Confirmed",    bg: "rgba(187,161,79,0.12)",  color: "#a08340" },
-  "in-progress":{ label: "In Progress", bg: "rgba(82,130,255,0.12)",  color: "#3b6de8" },
-  pending:      { label: "Pending",      bg: "rgba(245,180,60,0.12)",  color: "#c97d10" },
-  completed:    { label: "Completed",    bg: "rgba(34,160,80,0.12)",   color: "#1a8a40" },
+/* ── analytics display helpers ── */
+const fmtAmt = (val, prefix = "GH₵") => {
+  if (val === null || val === undefined) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return "—";
+  if (n >= 1_000_000) return `${prefix}${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${prefix}${(n / 1_000).toFixed(1)}K`;
+  return `${prefix}${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
+const fmtNum = (val) => (val === null || val === undefined ? "—" : Number(val).toLocaleString());
+const fmtPct = (val) => (val === null || val === undefined ? "—" : `${val}%`);
 
-/* ── popular services with ratings ── */
-const services = [
-  { name: "Hair Treatment",  bookings: 124, rating: 4.9, pct: 82 },
-  { name: "Nail Art",        bookings: 98,  rating: 4.7, pct: 67 },
-  { name: "Facial & Massage",bookings: 76,  rating: 4.8, pct: 54 },
-  { name: "Hair Coloring",   bookings: 65,  rating: 4.6, pct: 48 },
-  { name: "Eyebrow Shaping", bookings: 52,  rating: 4.5, pct: 38 },
-];
+
 
 const DashboardPage = () => {
   const navigate = useNavigate();
@@ -59,8 +51,34 @@ const DashboardPage = () => {
     staleTime: 5 * 60_000,
   });
 
-  const staffCount     = staffData?.length     ?? "—";
-  const customersCount = customersData?.length  ?? "—";
+  const staffCount     = staffData?.length     ?? "—";   // eslint-disable-line
+  const customersCount = customersData?.length  ?? "—";   // eslint-disable-line
+
+  /* ── analytics data ── */
+  const { data: overviewData, isLoading: overviewLoading } = useQuery({
+    queryKey: ["dash-analytics-overview"],
+    queryFn: () => getAnalyticsOverview({}),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const { data: revenueData, isLoading: revenueLoading } = useQuery({
+    queryKey: ["dash-analytics-revenue"],
+    queryFn: () => getAnalyticsRevenue({}),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  const revenueChartData = (revenueData?.revenue_by_day ?? []).map((d) => ({
+    date: d.date.slice(5),
+    revenue: parseFloat(d.revenue) || 0,
+  }));
+
+  const { data: bookingsData, isLoading: bookingsLoading } = useQuery({
+    queryKey: ["dash-analytics-bookings"],
+    queryFn: () => getAnalyticsBookings({}),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
 
   return (
     <div
@@ -136,42 +154,40 @@ const DashboardPage = () => {
         </div>
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* ── Analytics KPI cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
         <GlassCard
-          title="Total Staff"
-          value={staffCount}
-          icon={<FaUsers />}
-          trendLabel="team members"
-        />
-        <GlassCard
-          title="Appointments"
-          value="18"
-          icon={<FaCalendarAlt />}
-          trend={5}
-          trendLabel="vs yesterday"
-        />
-        <GlassCard
-          title="Revenue Today"
-          value="$1,280"
+          title="Gross Revenue"
+          value={overviewLoading ? "..." : fmtAmt(overviewData?.gross_revenue)}
           icon={<FaDollarSign />}
           accent="#987554"
-          trend={8}
-          trendLabel="vs yesterday"
+          trendLabel="last 30 days"
         />
         <GlassCard
-          title="Total Customers"
-          value={customersCount}
-          icon={<FaStar />}
+          title="Bookings Created"
+          value={overviewLoading ? "..." : fmtNum(overviewData?.booking_created_count)}
+          icon={<FaCalendarAlt />}
+          trendLabel="last 30 days"
+        />
+        <GlassCard
+          title="Appts Completed"
+          value={overviewLoading ? "..." : fmtNum(overviewData?.appointment_completed_count)}
+          icon={<FaCheckCircle />}
           accent="#BBA14F"
-          trendLabel="registered"
+          trendLabel="completed"
+        />
+        <GlassCard
+          title="Payment Rate"
+          value={overviewLoading ? "..." : fmtPct(overviewData?.payment_success_rate)}
+          icon={<FaStar />}
+          accent="#987554"
+          trendLabel="success rate"
         />
       </div>
 
-      {/* ── Second stat row: Services ── */}
-      {/* ── Bottom row ── */}
+      {/* ── Revenue chart + Booking performance ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        {/* Recent bookings — takes 2 cols */}
+        {/* Revenue by Day — 2 cols */}
         <div
           className="xl:col-span-2 rounded-2xl p-6"
           style={{
@@ -185,79 +201,67 @@ const DashboardPage = () => {
               className="text-base font-semibold text-[#272727]"
               style={{ fontFamily: "'Playfair Display', serif" }}
             >
-              Today's Bookings
+              Revenue Trend
             </h2>
-            <button
-              className="text-xs flex items-center gap-1 transition-opacity hover:opacity-70"
-              style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
+            <span
+              className="text-[10px] px-2.5 py-1 rounded-full font-medium"
+              style={{
+                background: "rgba(187,161,79,0.12)",
+                color: "#987554",
+                fontFamily: "'Poppins', sans-serif",
+              }}
             >
-              View all <FiArrowRight size={12} />
-            </button>
+              Last 30 days
+            </span>
           </div>
-
-          <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: "1px solid rgba(187,161,79,0.15)" }}>
-                  {["Client", "Service", "Time", "Status"].map((h) => (
-                    <th
-                      key={h}
-                      className="text-left pb-3 px-1 font-medium text-[#987554] text-xs tracking-wide"
-                      style={{ fontFamily: "'Poppins', sans-serif" }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {recentBookings.map((b, i) => {
-                  const s = statusConfig[b.status];
-                  return (
-                    <tr
-                      key={i}
-                      className="transition-colors duration-150 hover:bg-[#F5EFE6]"
-                      style={{ borderBottom: "1px solid rgba(187,161,79,0.08)" }}
-                    >
-                      <td className="py-3 px-1">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
-                            style={{ background: "linear-gradient(135deg,#BBA14F,#987554)" }}
-                          >
-                            {b.name.charAt(0)}
-                          </div>
-                          <span
-                            className="font-medium text-[#272727] whitespace-nowrap"
-                            style={{ fontFamily: "'Poppins', sans-serif" }}
-                          >
-                            {b.name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-1 text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                        {b.service}
-                      </td>
-                      <td className="py-3 px-1 text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                        {b.time}
-                      </td>
-                      <td className="py-3 px-1 whitespace-nowrap">
-                        <span
-                          className="text-xs px-2.5 py-1 rounded-full font-medium"
-                          style={{ background: s.bg, color: s.color, fontFamily: "'Poppins', sans-serif" }}
-                        >
-                          {s.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {revenueLoading ? (
+            <div className="h-48 rounded-xl animate-pulse" style={{ background: "rgba(187,161,79,0.1)" }} />
+          ) : !revenueChartData.length ? (
+            <p className="text-xs py-10 text-center" style={{ color: "#987554" }}>No revenue data available.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={192}>
+              <AreaChart data={revenueChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="dashRevGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#BBA14F" stopOpacity={0.22} />
+                    <stop offset="95%" stopColor="#BBA14F" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(187,161,79,0.1)" />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#987554" }} tickLine={false} axisLine={false} />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "#987554" }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `GH₵${(v / 1000).toFixed(0)}K`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "#272727",
+                    border: "1px solid rgba(187,161,79,0.4)",
+                    borderRadius: 12,
+                    fontSize: 11,
+                    fontFamily: "'Poppins', sans-serif",
+                  }}
+                  labelStyle={{ color: "#BBA14F", fontWeight: 600 }}
+                  itemStyle={{ color: "#fff" }}
+                  formatter={(v) => [fmtAmt(v), "Revenue"]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="#BBA14F"
+                  strokeWidth={2}
+                  fill="url(#dashRevGrad)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "#BBA14F" }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
-        {/* Popular services — 1 col */}
+        {/* Booking Performance — 1 col */}
         <div
           className="rounded-2xl p-6"
           style={{
@@ -271,143 +275,301 @@ const DashboardPage = () => {
               className="text-base font-semibold text-[#272727]"
               style={{ fontFamily: "'Playfair Display', serif" }}
             >
-              Popular Services
+              Booking Performance
+            </h2>
+            <FiActivity size={14} style={{ color: "#BBA14F" }} />
+          </div>
+
+          {overviewLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-10 rounded-xl animate-pulse" style={{ background: "rgba(187,161,79,0.1)" }} />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {[
+                { label: "Created",   val: overviewData?.booking_created_count,          color: "#BBA14F" },
+                { label: "Completed", val: overviewData?.appointment_completed_count,    color: "#1a8a40" },
+                { label: "Cancelled", val: overviewData?.appointment_cancelled_count,    color: "#cb2431" },
+                { label: "No-shows",  val: overviewData?.appointment_no_show_count,      color: "#d97706" },
+              ].map(({ label, val, color }) => {
+                const total = overviewData?.booking_created_count || 1;
+                const w = val ? Math.min((val / total) * 100, 100) : 0;
+                return (
+                  <div key={label}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: "#272727", fontFamily: "'Poppins', sans-serif" }}
+                      >
+                        {label}
+                      </span>
+                      <span
+                        className="text-sm font-bold"
+                        style={{ color, fontFamily: "'Playfair Display', serif" }}
+                      >
+                        {fmtNum(val)}
+                      </span>
+                    </div>
+                    <div
+                      className="h-1.5 rounded-full overflow-hidden"
+                      style={{ background: "rgba(187,161,79,0.13)" }}
+                    >
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${w}%`,
+                          background: color,
+                          opacity: 0.75,
+                          transition: "width 0.8s ease",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Completion rate footer */}
+              {overviewData?.booking_created_count ? (
+                <div
+                  className="pt-4 mt-1 flex items-center justify-between"
+                  style={{ borderTop: "1px solid rgba(187,161,79,0.15)" }}
+                >
+                  <span className="text-xs" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+                    Completion Rate
+                  </span>
+                  <span
+                    className="text-sm font-bold"
+                    style={{ color: "#BBA14F", fontFamily: "'Playfair Display', serif" }}
+                  >
+                    {overviewData.appointment_completed_count != null
+                      ? `${((overviewData.appointment_completed_count / overviewData.booking_created_count) * 100).toFixed(1)}%`
+                      : "—"}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Business Activity + Top Services ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+
+        {/* Business Activity — 2 cols */}
+        <div
+          className="xl:col-span-2 rounded-2xl p-6"
+          style={{
+            background: "#FDFAF5",
+            border: "1px solid rgba(187,161,79,0.18)",
+            boxShadow: "0 4px 20px rgba(39,39,39,0.05)",
+          }}
+        >
+          <div className="flex items-center justify-between mb-5">
+            <h2
+              className="text-base font-semibold text-[#272727]"
+              style={{ fontFamily: "'Playfair Display', serif" }}
+            >
+              Business Activity
             </h2>
             <span
               className="text-[10px] px-2.5 py-1 rounded-full font-medium"
-              style={{
-                background: "rgba(187,161,79,0.12)",
-                color: "#987554",
-                fontFamily: "'Poppins', sans-serif",
-              }}
+              style={{ background: "rgba(187,161,79,0.12)", color: "#987554", fontFamily: "'Poppins', sans-serif" }}
             >
-              This month
+              Last 30 days
             </span>
           </div>
 
-          <div className="space-y-4">
-            {services.map((s, i) => {
-              /* render filled stars */
-              const stars = Array.from({ length: 5 }, (_, idx) => {
-                const filled = idx < Math.floor(s.rating);
-                const half   = !filled && idx < s.rating;
-                return (
-                  <span
-                    key={idx}
-                    style={{
-                      color: filled || half ? "#BBA14F" : "rgba(187,161,79,0.25)",
-                      fontSize: 11,
-                    }}
-                  >
-                    ★
-                  </span>
-                );
-              });
-
-              return (
-                <div key={i}>
-                  {/* Service row */}
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {/* rank badge */}
-                      <span
-                        className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
-                        style={{
-                          background: i === 0
-                            ? "linear-gradient(135deg,#BBA14F,#987554)"
-                            : "rgba(187,161,79,0.12)",
-                          color: i === 0 ? "#fff" : "#987554",
-                          fontFamily: "'Poppins', sans-serif",
-                        }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span
-                        className="text-sm text-[#272727] truncate"
+          {overviewLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                <div key={i} className="h-11 rounded-xl animate-pulse" style={{ background: "rgba(187,161,79,0.1)" }} />
+              ))}
+            </div>
+          ) : (
+            <div className="overflow-x-auto -mx-1">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid rgba(187,161,79,0.15)" }}>
+                    {["Metric", "Count", "Category"].map((h) => (
+                      <th
+                        key={h}
+                        className="text-left pb-3 px-2 font-medium text-[#987554] text-xs tracking-wide"
                         style={{ fontFamily: "'Poppins', sans-serif" }}
                       >
-                        {s.name}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      {/* star rating */}
-                      <div className="flex items-center gap-0.5">
-                        {stars}
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { label: "Bookings Created",     val: overviewData?.booking_created_count,          cat: "Appointments", color: "#BBA14F"  },
+                    { label: "Appts Completed",       val: overviewData?.appointment_completed_count,    cat: "Appointments", color: "#1a8a40"  },
+                    { label: "Appts Cancelled",       val: overviewData?.appointment_cancelled_count,    cat: "Appointments", color: "#cb2431"  },
+                    { label: "Orders Confirmed",      val: overviewData?.order_confirmed_count,          cat: "Commerce",     color: "#3b6de8"  },
+                    { label: "Orders Dispatched",     val: overviewData?.order_dispatched_count,         cat: "Commerce",     color: "#22863a"  },
+                    { label: "Notifications Sent",    val: overviewData?.notification_sent_count,        cat: "Engagement",   color: "#987554"  },
+                    { label: "Waitlist Promoted",     val: overviewData?.waitlist_promoted_count,        cat: "Waitlist",     color: "#d97706"  },
+                  ].map((row, i) => (
+                    <tr
+                      key={i}
+                      className="transition-colors duration-150 hover:bg-[#F5EFE6]"
+                      style={{ borderBottom: "1px solid rgba(187,161,79,0.08)" }}
+                    >
+                      <td className="py-3 px-2">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-1.5 h-7 rounded-full shrink-0"
+                            style={{ background: row.color, opacity: 0.75 }}
+                          />
+                          <span
+                            className="font-medium text-[#272727] whitespace-nowrap"
+                            style={{ fontFamily: "'Poppins', sans-serif" }}
+                          >
+                            {row.label}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2">
                         <span
-                          className="ml-1 text-[11px] font-semibold"
-                          style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
+                          className="text-base font-bold"
+                          style={{ color: "#272727", fontFamily: "'Playfair Display', serif" }}
                         >
-                          {s.rating}
+                          {fmtNum(row.val)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2">
+                        <span
+                          className="text-xs px-2.5 py-1 rounded-full font-medium"
+                          style={{
+                            background: `${row.color}18`,
+                            color: row.color,
+                            fontFamily: "'Poppins', sans-serif",
+                          }}
+                        >
+                          {row.cat}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Top Services — 1 col */}
+        <div
+          className="rounded-2xl p-6"
+          style={{
+            background: "#FDFAF5",
+            border: "1px solid rgba(187,161,79,0.18)",
+            boxShadow: "0 4px 20px rgba(39,39,39,0.05)",
+          }}
+        >
+          <div className="flex items-center justify-between mb-5">
+            <h2
+              className="text-base font-semibold text-[#272727]"
+              style={{ fontFamily: "'Playfair Display', serif" }}
+            >
+              Top Services
+            </h2>
+            <span
+              className="text-[10px] px-2.5 py-1 rounded-full font-medium"
+              style={{ background: "rgba(187,161,79,0.12)", color: "#987554", fontFamily: "'Poppins', sans-serif" }}
+            >
+              By bookings
+            </span>
+          </div>
+
+          {bookingsLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-8 rounded-xl animate-pulse" style={{ background: "rgba(187,161,79,0.1)" }} />
+              ))}
+            </div>
+          ) : !bookingsData?.bookings_by_service?.length ? (
+            <p className="text-xs py-8 text-center" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+              No service data for this period.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {bookingsData.bookings_by_service.map((s, i) => {
+                const max = bookingsData.bookings_by_service[0]?.count || 1;
+                const w = Math.min((s.count / max) * 100, 100);
+                return (
+                  <div key={s.service_id}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                          style={{
+                            background: i === 0
+                              ? "linear-gradient(135deg,#BBA14F,#987554)"
+                              : "rgba(187,161,79,0.12)",
+                            color: i === 0 ? "#fff" : "#987554",
+                            fontFamily: "'Poppins', sans-serif",
+                          }}
+                        >
+                          {i + 1}
+                        </span>
+                        <span
+                          className="text-sm text-[#272727] truncate"
+                          style={{ fontFamily: "'Poppins', sans-serif" }}
+                        >
+                          Service #{s.service_id}
                         </span>
                       </div>
-                      {/* booking count */}
                       <span
-                        className="text-[11px]"
-                        style={{ color: "#b5a47a", fontFamily: "'Poppins', sans-serif" }}
+                        className="text-[11px] font-semibold shrink-0"
+                        style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
                       >
-                        {s.bookings} bk
+                        {s.count} bk
                       </span>
                     </div>
-                  </div>
-
-                  {/* progress bar */}
-                  <div
-                    className="h-1.5 rounded-full overflow-hidden"
-                    style={{ background: "rgba(187,161,79,0.13)" }}
-                  >
                     <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${s.pct}%`,
-                        background: i === 0
-                          ? "linear-gradient(90deg, #BBA14F, #c9ae5e)"
-                          : "rgba(187,161,79,0.45)",
-                        transition: "width 0.7s ease",
-                      }}
-                    />
+                      className="h-1.5 rounded-full overflow-hidden"
+                      style={{ background: "rgba(187,161,79,0.13)" }}
+                    >
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${w}%`,
+                          background: i === 0
+                            ? "linear-gradient(90deg, #BBA14F, #c9ae5e)"
+                            : "rgba(187,161,79,0.45)",
+                          transition: "width 0.7s ease",
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
 
-          {/* Footer totals */}
-          <div
-            className="mt-5 pt-4 flex items-center justify-between"
-            style={{ borderTop: "1px solid rgba(187,161,79,0.15)" }}
-          >
-            <div className="flex items-center gap-1.5">
-              <FaCheckCircle size={11} style={{ color: "#1a8a40" }} />
-              <span
-                className="text-xs text-[#987554]"
-                style={{ fontFamily: "'Poppins', sans-serif" }}
-              >
-                Completed today
-              </span>
-              <span
-                className="text-xs font-semibold text-[#272727] ml-1"
-                style={{ fontFamily: "'Poppins', sans-serif" }}
-              >
-                14
-              </span>
+              {/* Footer: booking revenue */}
+              {bookingsData?.booking_revenue != null && (
+                <div
+                  className="pt-4 mt-1 flex items-center justify-between"
+                  style={{ borderTop: "1px solid rgba(187,161,79,0.15)" }}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <FaCheckCircle size={11} style={{ color: "#1a8a40" }} />
+                    <span className="text-xs text-[#987554]" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                      Booking Revenue
+                    </span>
+                  </div>
+                  <span
+                    className="text-xs font-semibold text-[#272727]"
+                    style={{ fontFamily: "'Poppins', sans-serif" }}
+                  >
+                    {fmtAmt(bookingsData.booking_revenue)}
+                  </span>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-1.5">
-              <FiClock size={11} style={{ color: "#c97d10" }} />
-              <span
-                className="text-xs text-[#987554]"
-                style={{ fontFamily: "'Poppins', sans-serif" }}
-              >
-                Pending
-              </span>
-              <span
-                className="text-xs font-semibold text-[#272727] ml-1"
-                style={{ fontFamily: "'Poppins', sans-serif" }}
-              >
-                4
-              </span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
