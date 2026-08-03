@@ -20,7 +20,7 @@
  *   – Rounded cards, gold gradient CTA buttons
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Modal,
@@ -45,6 +45,8 @@ import {
   FiUsers,
   FiCheck,
   FiUserCheck,
+  FiMenu,
+  FiX,
 } from "react-icons/fi";
 import _axios from "../src/api/_axios";
 
@@ -1069,6 +1071,10 @@ export default function ServicesPage() {
   const [editService, setEditService] = useState(null);
   const [search, setSearch]           = useState("");
   const [activeCat, setActiveCat]     = useState("all");
+  const [isMobileCatsOpen, setIsMobileCatsOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window === "undefined" ? true : window.innerWidth >= 1024
+  );
 
   /* ── Category modal state ── */
   const [addCatOpen, setAddCatOpen]   = useState(false);
@@ -1193,6 +1199,25 @@ export default function ServicesPage() {
   }, [filtered, sidebarCategories]);
 
   const isLoading = servicesLoading;
+
+  useEffect(() => {
+    const onResize = () => setIsDesktop(window.innerWidth >= 1024);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    if (isDesktop) setIsMobileCatsOpen(false);
+  }, [isDesktop]);
+
+  useEffect(() => {
+    if (!isMobileCatsOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isMobileCatsOpen]);
 
   /* ─────────────────────────────────────
      CREATE
@@ -1369,6 +1394,174 @@ export default function ServicesPage() {
     });
   };
 
+  const renderCategorySidebar = ({ isDrawer = false } = {}) => (
+    <div
+      className="sp-scroll"
+      style={{
+        width: isDrawer ? "100%" : 220,
+        flexShrink: 0,
+        display: "flex",
+        flexDirection: "column",
+        overflowY: "auto",
+        overflowX: "hidden",
+        paddingRight: 4,
+        gap: 6,
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
+      }}
+    >
+      <div
+        className="flex items-center justify-between px-1 pb-3 mb-1"
+        style={{ borderBottom: "1px solid rgba(187,161,79,0.18)" }}
+      >
+        <div className="flex items-center gap-2">
+          <FiLayers size={14} style={{ color: "#BBA14F" }} />
+          <span
+            className="text-xs font-semibold uppercase tracking-wider"
+            style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}
+          >
+            Categories
+          </span>
+        </div>
+        <Tooltip title="Add category" placement={isDrawer ? "left" : "right"}>
+          <button
+            onClick={() => {
+              setAddCatOpen(true);
+              if (isDrawer) setIsMobileCatsOpen(false);
+            }}
+            className="flex items-center justify-center w-6 h-6 rounded-full transition-all duration-200 hover:opacity-80"
+            style={{
+              background: "linear-gradient(135deg, #BBA14F, #987554)",
+              color: "#fff",
+              border: "none",
+            }}
+          >
+            <FiPlus size={12} />
+          </button>
+        </Tooltip>
+      </div>
+
+      <button
+        onClick={() => {
+          setActiveCat("all");
+          if (isDrawer) setIsMobileCatsOpen(false);
+        }}
+        className="flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-sm text-left transition-all duration-200"
+        style={{
+          fontFamily: "'Poppins', sans-serif",
+          background: activeCat === "all"
+            ? "linear-gradient(135deg, #BBA14F, #987554)"
+            : "transparent",
+          color: activeCat === "all" ? "#fff" : "#7a6030",
+          fontWeight: activeCat === "all" ? 600 : 400,
+          border: activeCat === "all"
+            ? "none"
+            : "1px solid rgba(187,161,79,0.15)",
+        }}
+      >
+        <span className="flex items-center gap-2">
+          <FiScissors size={13} />
+          All Services
+        </span>
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+          style={{
+            background: activeCat === "all" ? "rgba(255,255,255,0.25)" : "rgba(187,161,79,0.15)",
+            color: activeCat === "all" ? "#fff" : "#987554",
+          }}
+        >
+          {servicesData.length}
+        </span>
+      </button>
+
+      {sidebarCategories.map((cat) => {
+        const count = servicesData.filter((s) => String(s.category) === String(cat.id)).length;
+        const isActive = String(activeCat) === String(cat.id);
+        return (
+          <div
+            key={cat.id}
+            className="group flex items-center gap-1 rounded-xl transition-all duration-200"
+            style={{
+              background: isActive
+                ? "linear-gradient(135deg, #BBA14F, #987554)"
+                : "transparent",
+              border: isActive ? "none" : "1px solid rgba(187,161,79,0.15)",
+            }}
+          >
+            <button
+              onClick={() => {
+                setActiveCat(String(cat.id));
+                if (isDrawer) setIsMobileCatsOpen(false);
+              }}
+              className="flex items-center justify-between flex-1 min-w-0 px-3 py-2.5 text-sm text-left"
+              style={{
+                fontFamily: "'Poppins', sans-serif",
+                color: isActive ? "#fff" : "#7a6030",
+                fontWeight: isActive ? 600 : 400,
+                background: "transparent",
+                border: "none",
+              }}
+            >
+              <span className="flex items-center gap-2 min-w-0 truncate">
+                <FiTag size={12} style={{ flexShrink: 0 }} />
+                <span className="truncate">{cat.name}</span>
+              </span>
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ml-1"
+                style={{
+                  background: isActive ? "rgba(255,255,255,0.25)" : "rgba(187,161,79,0.15)",
+                  color: isActive ? "#fff" : "#987554",
+                }}
+              >
+                {count}
+              </span>
+            </button>
+
+            <div
+              className={`flex items-center gap-0.5 pr-1.5 transition-opacity duration-150 shrink-0 ${isDrawer ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+            >
+              <Tooltip title="Edit category" placement="top">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditCategory(cat);
+                    if (isDrawer) setIsMobileCatsOpen(false);
+                  }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150 hover:opacity-80"
+                  style={{
+                    background: isActive ? "rgba(255,255,255,0.2)" : "rgba(187,161,79,0.15)",
+                    color: isActive ? "#fff" : "#987554",
+                    border: "none",
+                  }}
+                >
+                  <FiEdit2 size={10} />
+                </button>
+              </Tooltip>
+              <Tooltip title="Delete category" placement="top">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteCategory(cat);
+                    if (isDrawer) setIsMobileCatsOpen(false);
+                  }}
+                  disabled={deleteCategory.isPending}
+                  className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150 hover:opacity-80 disabled:opacity-40"
+                  style={{
+                    background: isActive ? "rgba(255,255,255,0.2)" : "rgba(200,50,50,0.1)",
+                    color: isActive ? "#fff" : "#c43232",
+                    border: "none",
+                  }}
+                >
+                  <FiTrash2 size={10} />
+                </button>
+              </Tooltip>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   /* ─────────────────────────────────────
      STATS
   ───────────────────────────────────── */
@@ -1404,6 +1597,22 @@ export default function ServicesPage() {
 
         {/* Right: search + add button */}
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+
+          {!isDesktop && (
+            <button
+              onClick={() => setIsMobileCatsOpen(true)}
+              className="flex cursor-pointer items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 hover:opacity-90"
+              style={{
+                background: "#FDFAF5",
+                border: "1px solid rgba(187,161,79,0.3)",
+                color: "#7a6030",
+                fontFamily: "'Poppins', sans-serif",
+              }}
+            >
+              <FiMenu size={15} />
+              Categories
+            </button>
+          )}
 
           {/* Search bar */}
           <div
@@ -1468,161 +1677,7 @@ export default function ServicesPage() {
         ────────────────────────────────── */
         <div style={{ display: "flex", gap: 20, height: "calc(100vh - 220px)", minHeight: 400 }}>
 
-          {/* ── LEFT SIDEBAR: Category list ── */}
-          <div
-            className="sp-scroll"
-            style={{
-              width: 220,
-              flexShrink: 0,
-              display: "flex",
-              flexDirection: "column",
-              overflowY: "auto",
-              overflowX: "hidden",
-              paddingRight: 4,
-              gap: 6,
-              /* hide scrollbar visually but keep it functional */
-              scrollbarWidth: "none",
-              msOverflowStyle: "none",
-            }}
-          >
-            {/* Sidebar header + Add Category button */}
-            <div
-              className="flex items-center justify-between px-1 pb-3 mb-1"
-              style={{ borderBottom: "1px solid rgba(187,161,79,0.18)" }}
-            >
-              <div className="flex items-center gap-2">
-                <FiLayers size={14} style={{ color: "#BBA14F" }} />
-                <span
-                  className="text-xs font-semibold uppercase tracking-wider"
-                  style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}
-                >
-                  Categories
-                </span>
-              </div>
-              <Tooltip title="Add category" placement="right">
-                <button
-                  onClick={() => setAddCatOpen(true)}
-                  className="flex items-center justify-center w-6 h-6 rounded-full transition-all duration-200 hover:opacity-80"
-                  style={{
-                    background: "linear-gradient(135deg, #BBA14F, #987554)",
-                    color: "#fff",
-                    border: "none",
-                  }}
-                >
-                  <FiPlus size={12} />
-                </button>
-              </Tooltip>
-            </div>
-
-            {/* "All" pill */}
-            <button
-              onClick={() => setActiveCat("all")}
-              className="flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-sm text-left transition-all duration-200"
-              style={{
-                fontFamily: "'Poppins', sans-serif",
-                background: activeCat === "all"
-                  ? "linear-gradient(135deg, #BBA14F, #987554)"
-                  : "transparent",
-                color: activeCat === "all" ? "#fff" : "#7a6030",
-                fontWeight: activeCat === "all" ? 600 : 400,
-                border: activeCat === "all"
-                  ? "none"
-                  : "1px solid rgba(187,161,79,0.15)",
-              }}
-            >
-              <span className="flex items-center gap-2">
-                <FiScissors size={13} />
-                All Services
-              </span>
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-                style={{
-                  background: activeCat === "all" ? "rgba(255,255,255,0.25)" : "rgba(187,161,79,0.15)",
-                  color: activeCat === "all" ? "#fff" : "#987554",
-                }}
-              >
-                {servicesData.length}
-              </span>
-            </button>
-
-            {/* One row per category */}
-            {sidebarCategories.map((cat) => {
-              const count    = servicesData.filter((s) => String(s.category) === String(cat.id)).length;
-              const isActive = String(activeCat) === String(cat.id);
-              return (
-                <div
-                  key={cat.id}
-                  className="group flex items-center gap-1 rounded-xl transition-all duration-200"
-                  style={{
-                    background: isActive
-                      ? "linear-gradient(135deg, #BBA14F, #987554)"
-                      : "transparent",
-                    border: isActive ? "none" : "1px solid rgba(187,161,79,0.15)",
-                  }}
-                >
-                  {/* Clickable label area */}
-                  <button
-                    onClick={() => setActiveCat(String(cat.id))}
-                    className="flex items-center justify-between flex-1 min-w-0 px-3 py-2.5 text-sm text-left"
-                    style={{
-                      fontFamily: "'Poppins', sans-serif",
-                      color: isActive ? "#fff" : "#7a6030",
-                      fontWeight: isActive ? 600 : 400,
-                      background: "transparent",
-                      border: "none",
-                    }}
-                  >
-                    <span className="flex items-center gap-2 min-w-0 truncate">
-                      <FiTag size={12} style={{ flexShrink: 0 }} />
-                      <span className="truncate">{cat.name}</span>
-                    </span>
-                    <span
-                      className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ml-1"
-                      style={{
-                        background: isActive ? "rgba(255,255,255,0.25)" : "rgba(187,161,79,0.15)",
-                        color: isActive ? "#fff" : "#987554",
-                      }}
-                    >
-                      {count}
-                    </span>
-                  </button>
-
-                  {/* Edit / Delete actions — visible on hover */}
-                  <div
-                    className="flex items-center gap-0.5 pr-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0"
-                  >
-                    <Tooltip title="Edit category" placement="top">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleEditCategory(cat); }}
-                        className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150 hover:opacity-80"
-                        style={{
-                          background: isActive ? "rgba(255,255,255,0.2)" : "rgba(187,161,79,0.15)",
-                          color: isActive ? "#fff" : "#987554",
-                          border: "none",
-                        }}
-                      >
-                        <FiEdit2 size={10} />
-                      </button>
-                    </Tooltip>
-                    <Tooltip title="Delete category" placement="top">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat); }}
-                        disabled={deleteCategory.isPending}
-                        className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150 hover:opacity-80 disabled:opacity-40"
-                        style={{
-                          background: isActive ? "rgba(255,255,255,0.2)" : "rgba(200,50,50,0.1)",
-                          color: isActive ? "#fff" : "#c43232",
-                          border: "none",
-                        }}
-                      >
-                        <FiTrash2 size={10} />
-                      </button>
-                    </Tooltip>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {isDesktop && renderCategorySidebar()}
 
           {/* ── RIGHT PANEL: grouped services ── */}
           <div className="sp-scroll" style={{ flex: 1, minWidth: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 28 }}>
@@ -1715,6 +1770,65 @@ export default function ServicesPage() {
               ))
             )}
           </div>
+
+          {!isDesktop && (
+            <div
+              className="fixed inset-0"
+              style={{
+                zIndex: 200,
+                pointerEvents: isMobileCatsOpen ? "auto" : "none",
+                background: isMobileCatsOpen ? "rgba(20,16,10,0.45)" : "transparent",
+                opacity: isMobileCatsOpen ? 1 : 0,
+                transition: "opacity 0.2s ease",
+              }}
+              onClick={() => setIsMobileCatsOpen(false)}
+            >
+              <div
+                style={{
+                  position: "relative",
+                  zIndex: 201,
+                  width: "82vw",
+                  maxWidth: 330,
+                  height: "100%",
+                  background: "#FDFAF5",
+                  borderRight: "1px solid rgba(187,161,79,0.25)",
+                  boxShadow: "8px 0 24px rgba(0,0,0,0.18)",
+                  padding: "16px 12px",
+                  transform: isMobileCatsOpen ? "translateX(0)" : "translateX(-104%)",
+                  transition: "transform 0.24s ease",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "#7a6030",
+                      fontFamily: "'Poppins', sans-serif",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Browse Categories
+                  </p>
+                  <button
+                    onClick={() => setIsMobileCatsOpen(false)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center"
+                    style={{
+                      border: "1px solid rgba(187,161,79,0.22)",
+                      color: "#987554",
+                      background: "#fff",
+                    }}
+                  >
+                    <FiX size={14} />
+                  </button>
+                </div>
+                {renderCategorySidebar({ isDrawer: true })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
