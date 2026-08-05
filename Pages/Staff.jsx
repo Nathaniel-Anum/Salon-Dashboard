@@ -108,6 +108,36 @@ export default function Staff() {
     [servicesRaw]
   );
 
+  const getServiceAssignedStaffRefs = (svc) => {
+    const fromIds = svc?.assigned_staff_ids ?? svc?.staff_ids ?? [];
+    const fromAssignedStaffArray = Array.isArray(svc?.assigned_staff)
+      ? svc.assigned_staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
+      : [];
+    const fromAssignedStaffSingle =
+      svc?.assigned_staff && !Array.isArray(svc.assigned_staff)
+        ? [svc.assigned_staff?.id ?? svc.assigned_staff?.user_id ?? svc.assigned_staff?.account_id ?? svc.assigned_staff]
+        : [];
+    const fromStaffArray = Array.isArray(svc?.staff)
+      ? svc.staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
+      : [];
+    const fromStaffSingle =
+      svc?.staff && !Array.isArray(svc.staff)
+        ? [svc.staff?.id ?? svc.staff?.user_id ?? svc.staff?.account_id ?? svc.staff]
+        : [];
+    const scalarIds = [svc?.assigned_staff_id, svc?.staff_id];
+
+    return [
+      ...fromIds,
+      ...fromAssignedStaffArray,
+      ...fromAssignedStaffSingle,
+      ...fromStaffArray,
+      ...fromStaffSingle,
+      ...scalarIds,
+    ]
+      .filter((x) => x !== null && x !== undefined && x !== "")
+      .map(String);
+  };
+
   const servicesByCategory = useMemo(() => {
     const grouped = new Map();
     servicesData.forEach((svc) => {
@@ -233,23 +263,25 @@ export default function Staff() {
     // Pre-populate with services already assigned to this staff member
     const currentIds = servicesData
       .filter((svc) => {
-        const ids = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
+        const ids = getServiceAssignedStaffRefs(svc);
         return ids.some(
           (id) =>
             String(id) === String(staff.id) ||
             String(id) === String(staff.user) ||
-            String(id) === String(staff.user_id)
+            String(id) === String(staff.user_id) ||
+            String(id) === String(staff.account_id)
         );
       })
-      .map((svc) => svc.id);
+      .map((svc) => String(svc.id));
     setAssignServiceIds(currentIds);
     setAssignOpen(true);
   };
 
   const toggleServiceSelection = (serviceId, checked) => {
+    const serviceIdStr = String(serviceId);
     setAssignServiceIds((prev) => {
-      if (checked) return prev.includes(serviceId) ? prev : [...prev, serviceId];
-      return prev.filter((id) => String(id) !== String(serviceId));
+      if (checked) return prev.some((id) => String(id) === serviceIdStr) ? prev : [...prev, serviceIdStr];
+      return prev.filter((id) => String(id) !== serviceIdStr);
     });
   };
 
@@ -262,15 +294,20 @@ export default function Staff() {
       } else {
         ids.forEach((id) => prevSet.delete(String(id)));
       }
-      return Array.from(prevSet).map((id) => Number(id));
+      return Array.from(prevSet);
     });
   };
 
   const handleSaveAssignedServices = () => {
     if (!assignStaff?.id) return;
+    const normalizedServiceIds = assignServiceIds.map((id) => {
+      const raw = String(id);
+      const n = Number(raw);
+      return Number.isFinite(n) && String(n) === raw ? n : raw;
+    });
     assignServices.mutate({
       staff_id: assignStaff.id,
-      service_ids: assignServiceIds,
+      service_ids: normalizedServiceIds,
     });
   };
 
