@@ -138,6 +138,14 @@ export default function Staff() {
       .map(String);
   };
 
+  const serviceRefMatchesStaff = (staff, rawRef) => {
+    const needle = String(rawRef);
+    return [staff?.id, staff?.user, staff?.user_id, staff?.account_id]
+      .filter((x) => x !== null && x !== undefined && x !== "")
+      .map(String)
+      .includes(needle);
+  };
+
   const servicesByCategory = useMemo(() => {
     const grouped = new Map();
     servicesData.forEach((svc) => {
@@ -220,15 +228,53 @@ export default function Staff() {
 
   // --- ASSIGN SERVICES TO STAFF ---
   const assignServices = useMutation({
-    mutationFn: ({ staff_id, service_ids }) =>
-      _axios.post("/api/portal/v1/booking/services/assign-staff/", { staff_id, service_ids }),
-    onSuccess: () => {
-      message.success("Services assigned successfully");
-      queryClient.invalidateQueries(["services"]);
+    mutationFn: async ({ staff, service_ids }) => {
+      const selectedSet = new Set(service_ids.map((id) => String(id)));
+      const updates = [];
+
+      servicesData.forEach((svc) => {
+        const isCurrentlyAssigned = getServiceAssignedStaffRefs(svc).some((ref) =>
+          serviceRefMatchesStaff(staff, ref)
+        );
+        const shouldBeAssigned = selectedSet.has(String(svc.id));
+
+        if (isCurrentlyAssigned === shouldBeAssigned) return;
+
+        const baseIds = (svc.assigned_staff_ids ?? svc.staff_ids ?? [])
+          .filter((x) => x !== null && x !== undefined && x !== "")
+          .map(String);
+
+        const withoutTargetStaff = baseIds.filter((ref) => !serviceRefMatchesStaff(staff, ref));
+        const nextIds = shouldBeAssigned
+          ? Array.from(new Set([...withoutTargetStaff, String(staff.id)]))
+          : withoutTargetStaff;
+
+        const payloadStaffIds = nextIds.map((id) => {
+          const n = Number(id);
+          return Number.isFinite(n) && String(n) === id ? n : id;
+        });
+
+        updates.push(
+          _axios.patch(`/api/portal/v1/booking/services/${svc.id}/`, {
+            staff_ids: payloadStaffIds,
+          })
+        );
+      });
+
+      await Promise.all(updates);
+      return updates.length;
+    },
+    onSuccess: async (updatedCount) => {
+      await queryClient.invalidateQueries(["services"]);
       closeAssignDrawer();
+      message.success(
+        updatedCount > 0
+          ? "Services assignment updated successfully"
+          : "No changes to save"
+      );
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to assign services");
+      message.error(err.response?.data?.message || "Failed to update services assignment");
     },
   });
 
@@ -306,7 +352,7 @@ export default function Staff() {
       return Number.isFinite(n) && String(n) === raw ? n : raw;
     });
     assignServices.mutate({
-      staff_id: assignStaff.id,
+      staff: assignStaff,
       service_ids: normalizedServiceIds,
     });
   };
