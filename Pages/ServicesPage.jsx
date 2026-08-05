@@ -1643,6 +1643,11 @@ export default function ServicesPage() {
     [staffRaw]
   );
 
+  const activeServicesData = useMemo(
+    () => servicesData.filter((s) => s?.is_active),
+    [servicesData]
+  );
+
   const normalizeServiceOptionsForPayload = (rows = []) =>
     (Array.isArray(rows) ? rows : [])
       .map((row) => ({
@@ -1679,7 +1684,7 @@ export default function ServicesPage() {
      SEARCH + CATEGORY FILTER
   ───────────────────────────────────── */
   const filtered = useMemo(() => {
-    let list = servicesData;
+    let list = activeServicesData;
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -1692,7 +1697,7 @@ export default function ServicesPage() {
       list = list.filter((s) => String(s.category) === String(activeCat));
     }
     return list;
-  }, [servicesData, search, activeCat]);
+  }, [activeServicesData, search, activeCat]);
 
   /* ─────────────────────────────────────
      DERIVE CATEGORIES from services
@@ -1706,7 +1711,7 @@ export default function ServicesPage() {
       return [...categoriesData].sort((a, b) => a.name.localeCompare(b.name));
     // Otherwise derive from service fields, sorted A→Z
     const map = {};
-    servicesData.forEach((s) => {
+    activeServicesData.forEach((s) => {
       if (s.category != null) {
         const id   = s.category;
         const name = s.category_name || s.category_display || `Category ${id}`;
@@ -1714,7 +1719,7 @@ export default function ServicesPage() {
       }
     });
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
-  }, [categoriesData, servicesData]);
+  }, [categoriesData, activeServicesData]);
 
   /* Group filtered services by category for the right panel */
   const groupedServices = useMemo(() => {
@@ -2046,12 +2051,12 @@ export default function ServicesPage() {
             color: activeCat === "all" ? "#fff" : "#987554",
           }}
         >
-          {servicesData.length}
+          {activeServicesData.length}
         </span>
       </button>
 
       {sidebarCategories.map((cat) => {
-        const count = servicesData.filter((s) => String(s.category) === String(cat.id)).length;
+        const count = activeServicesData.filter((s) => String(s.category) === String(cat.id)).length;
         const isActive = String(activeCat) === String(cat.id);
         return (
           <div
@@ -2141,8 +2146,8 @@ export default function ServicesPage() {
   /* ─────────────────────────────────────
      STATS
   ───────────────────────────────────── */
-  const totalServices  = servicesData.length;
-  const activeServices = servicesData.filter((s) => s.is_active).length;
+  const totalServices  = activeServicesData.length;
+  const activeServices = activeServicesData.length;
 
   /* ═══════════════════════════════════
      RENDER

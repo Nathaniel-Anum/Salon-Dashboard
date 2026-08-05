@@ -573,6 +573,36 @@ export default function SupportPage() {
   const resolvedAt = field(ticket, "resolved_at");
   const reopenDeadline = field(ticket, "reopen_deadline", "reopen_until", "reopen_expires_at");
 
+  const getAuthorInitials = (author) => {
+    const parts = String(author || "U")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (parts.length === 0) return "U";
+    if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+    return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
+  };
+
+  const isSupportSideMessage = (item, author) => {
+    const role = String(item?.role || item?.sender_role || item?.author_role || "").toLowerCase();
+    const senderType = String(item?.sender_type || item?.message_type || "").toLowerCase();
+    const authorText = String(author || "").toLowerCase();
+
+    return (
+      item?.is_staff === true ||
+      item?.created_by_is_staff === true ||
+      role.includes("support") ||
+      role.includes("staff") ||
+      role.includes("agent") ||
+      senderType.includes("support") ||
+      senderType.includes("staff") ||
+      senderType.includes("agent") ||
+      authorText.includes("support") ||
+      authorText.includes("staff") ||
+      authorText.includes("agent")
+    );
+  };
+
   const renderConversationBlock = (item, idx, kind = "public") => {
     const author =
       item.sender_name ||
@@ -583,6 +613,94 @@ export default function SupportPage() {
       (kind === "note" ? "Internal" : "Support");
     const body = item.body || item.message || item.text || "";
     const when = formatDateTime(item.created_at || item.timestamp || item.updated_at);
+
+    if (kind === "public") {
+      const supportSide = isSupportSideMessage(item, author);
+      const initials = getAuthorInitials(author);
+
+      return (
+        <div
+          key={item.public_id || item.id || `${kind}-${idx}`}
+          className={`flex gap-2.5 ${supportSide ? "justify-end" : "justify-start"}`}
+        >
+          {!supportSide && (
+            <div
+              className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-[11px] font-semibold"
+              style={{
+                background: "linear-gradient(135deg, rgba(152,117,84,0.2), rgba(187,161,79,0.28))",
+                color: "#7a6030",
+                border: "1px solid rgba(187,161,79,0.35)",
+                fontFamily: "'Poppins', sans-serif",
+              }}
+              title={author}
+            >
+              {initials}
+            </div>
+          )}
+
+          <div
+            className="max-w-[82%] sm:max-w-[72%] rounded-2xl px-3 py-2"
+            style={{
+              background: supportSide
+                ? "linear-gradient(135deg, #BBA14F, #987554)"
+                : "#fff",
+              color: supportSide ? "#fff" : "#3d3d3d",
+              border: supportSide
+                ? "1px solid rgba(187,161,79,0.45)"
+                : "1px solid rgba(187,161,79,0.2)",
+              boxShadow: "0 2px 8px rgba(39,39,39,0.06)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <p
+                className="text-[11px] font-semibold m-0"
+                style={{
+                  color: supportSide ? "rgba(255,255,255,0.95)" : "#7a6030",
+                  fontFamily: "'Poppins', sans-serif",
+                }}
+              >
+                {author}
+              </p>
+              {when ? (
+                <p
+                  className="text-[10px] m-0"
+                  style={{ color: supportSide ? "rgba(255,255,255,0.78)" : "#9b8567" }}
+                >
+                  {when}
+                </p>
+              ) : null}
+            </div>
+
+            <p
+              className="text-sm m-0"
+              style={{
+                color: supportSide ? "#fff" : "#3d3d3d",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                fontFamily: "'Poppins', sans-serif",
+              }}
+            >
+              {body || "—"}
+            </p>
+          </div>
+
+          {supportSide && (
+            <div
+              className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-[11px] font-semibold"
+              style={{
+                background: "linear-gradient(135deg, #BBA14F, #987554)",
+                color: "#fff",
+                border: "1px solid rgba(187,161,79,0.45)",
+                fontFamily: "'Poppins', sans-serif",
+              }}
+              title={author}
+            >
+              {initials}
+            </div>
+          )}
+        </div>
+      );
+    }
 
     return (
       <div
@@ -910,7 +1028,17 @@ export default function SupportPage() {
                     children: messagesLoading ? (
                       <p className="text-sm" style={{ color: "#987554" }}>Loading messages...</p>
                     ) : messagesList.length ? (
-                      <div className="space-y-3">{messagesList.map((item, idx) => renderConversationBlock(item, idx, "public"))}</div>
+                      <div
+                        className="space-y-3 rounded-2xl p-3"
+                        style={{
+                          background: "rgba(187,161,79,0.06)",
+                          border: "1px solid rgba(187,161,79,0.18)",
+                          maxHeight: 380,
+                          overflowY: "auto",
+                        }}
+                      >
+                        {messagesList.map((item, idx) => renderConversationBlock(item, idx, "public"))}
+                      </div>
                     ) : (
                       <Empty description="No public messages" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                     ),

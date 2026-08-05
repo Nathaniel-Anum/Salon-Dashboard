@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { message, Modal } from "antd";
+import { message, Modal, Drawer, Table, Input } from "antd";
 import { FiTag, FiUsers, FiGift, FiRefreshCw, FiPauseCircle, FiPlayCircle, FiPlus } from "react-icons/fi";
 import _axios from "../src/api/_axios";
 
@@ -46,12 +46,34 @@ const toIsoDateTime = (raw) => {
   return d.toISOString();
 };
 
+const displayDateTime = (raw) => {
+  if (!raw) return "-";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString();
+};
+
+const displayValue = (value) => {
+  if (value === null || value === undefined || value === "") return "-";
+  return String(value);
+};
+
+const getCustomerName = (row) =>
+  row?.customer_name || row?.customer?.name || row?.name || row?.user_name || "Customer";
+
+const getCustomerEmail = (row) =>
+  row?.customer_email || row?.customer?.email || row?.email || row?.user_email || "-";
+
 export default function CampaignsPage() {
   const [selectedCampaignId, setSelectedCampaignId] = useState(null);
   const [actionReason, setActionReason] = useState("");
   const [publishVersion, setPublishVersion] = useState(1);
   const [optimisticPublishedIds, setOptimisticPublishedIds] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [enrollmentsDrawerOpen, setEnrollmentsDrawerOpen] = useState(false);
+  const [grantsDrawerOpen, setGrantsDrawerOpen] = useState(false);
+  const [enrollmentSearch, setEnrollmentSearch] = useState("");
+  const [grantSearch, setGrantSearch] = useState("");
   const [createForm, setCreateForm] = useState({
     code: "",
     name: "",
@@ -107,6 +129,123 @@ export default function CampaignsPage() {
   const campaignDetail = campaignDetailRaw || selectedCampaign || null;
   const enrollments = normalizeList(enrollmentsRaw);
   const grants = normalizeList(grantsRaw);
+
+  const filteredEnrollments = useMemo(() => {
+    const q = enrollmentSearch.trim().toLowerCase();
+    if (!q) return enrollments;
+    return enrollments.filter((row) => {
+      const customerName = getCustomerName(row).toLowerCase();
+      const customerEmail = String(getCustomerEmail(row)).toLowerCase();
+      const eligibility = String(row?.eligibility_status || row?.status || "").toLowerCase();
+      return customerName.includes(q) || customerEmail.includes(q) || eligibility.includes(q);
+    });
+  }, [enrollments, enrollmentSearch]);
+
+  const filteredGrants = useMemo(() => {
+    const q = grantSearch.trim().toLowerCase();
+    if (!q) return grants;
+    return grants.filter((row) => {
+      const customerName = getCustomerName(row).toLowerCase();
+      const customerEmail = String(getCustomerEmail(row)).toLowerCase();
+      const scope = String(row?.scope || "").toLowerCase();
+      const status = String(row?.status || "").toLowerCase();
+      return customerName.includes(q) || customerEmail.includes(q) || scope.includes(q) || status.includes(q);
+    });
+  }, [grants, grantSearch]);
+
+  const enrollmentColumns = useMemo(
+    () => [
+      {
+        title: "Customer Name",
+        key: "customer_name",
+        width: 220,
+        render: (_, row) => (
+          <span style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
+            {getCustomerName(row)}
+          </span>
+        ),
+      },
+      {
+        title: "Enrolled At",
+        key: "enrolled_at",
+        width: 190,
+        render: (_, row) => displayDateTime(row?.enrolled_at || row?.created_at),
+      },
+      {
+        title: "Customer Email",
+        key: "customer_email",
+        width: 240,
+        render: (_, row) => displayValue(getCustomerEmail(row)),
+      },
+      {
+        title: "Eligibility Status",
+        key: "eligibility_status",
+        width: 180,
+        render: (_, row) => displayValue(row?.eligibility_status || row?.status),
+      },
+      {
+        title: "Verification Deadline",
+        key: "verification_deadline",
+        width: 210,
+        render: (_, row) => displayDateTime(row?.verification_deadline || row?.verification_due_at),
+      },
+    ],
+    []
+  );
+
+  const grantColumns = useMemo(
+    () => [
+      {
+        title: "Customer Name",
+        key: "customer_name",
+        width: 220,
+        render: (_, row) => (
+          <span style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
+            {getCustomerName(row)}
+          </span>
+        ),
+      },
+      {
+        title: "Scope",
+        dataIndex: "scope",
+        key: "scope",
+        width: 130,
+        render: (v) => displayValue(v),
+      },
+      {
+        title: "Status",
+        dataIndex: "status",
+        key: "status",
+        width: 140,
+        render: (v) => displayValue(v),
+      },
+      {
+        title: "Validity Date",
+        key: "validity_date",
+        width: 190,
+        render: (_, row) => displayDateTime(row?.validity_date || row?.valid_until || row?.expires_at),
+      },
+      {
+        title: "Percentage",
+        key: "percentage",
+        width: 130,
+        render: (_, row) => displayValue(row?.percentage || row?.discount_percentage),
+      },
+      {
+        title: "Minimum Spend",
+        key: "minimum_spend",
+        width: 150,
+        render: (_, row) => displayValue(row?.minimum_spend || row?.min_spend),
+      },
+      {
+        title: "Customer Email",
+        key: "customer_email",
+        width: 240,
+        render: (_, row) => displayValue(getCustomerEmail(row)),
+      },
+    ],
+    []
+  );
 
   const statusText = String(campaignDetail?.status || "").toLowerCase();
   const publicationStatusText = String(campaignDetail?.publication_status || "").toLowerCase();
@@ -655,38 +794,108 @@ export default function CampaignsPage() {
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                <div className="rounded-xl p-3" style={{ border: "1px solid rgba(79,122,168,0.2)", background: "#fff" }}>
-                  <p className="text-xs font-semibold mb-2" style={{ marginTop: 0, color: "#2d5a84", fontFamily: "'Poppins', sans-serif" }}>Enrollments ({getCollectionCount(enrollmentsRaw)})</p>
-                  {enrollmentsLoading ? <p style={{ margin: 0, color: "#987554", fontSize: 12 }}>Loading enrollments...</p> : enrollments.length === 0 ? <p style={{ margin: 0, color: "#987554", fontSize: 12 }}>No enrollments.</p> : (
-                    <div className="flex flex-col gap-2 max-h-52 overflow-y-auto pr-1">
-                      {enrollments.map((row, idx) => (
-                        <div key={String(row.id || row.public_id || idx)} className="rounded-lg px-2.5 py-2" style={{ background: "rgba(79,122,168,0.06)", border: "1px solid rgba(79,122,168,0.14)" }}>
-                          <p className="text-xs font-medium mb-0.5" style={{ margin: 0, color: "#272727", fontFamily: "'Poppins', sans-serif" }}>{row.customer_name || row.name || row.user_name || row.email || "Enrollment"}</p>
-                          <p className="text-[11px]" style={{ margin: 0, color: "#987554", fontFamily: "'Poppins', sans-serif" }}>{row.public_id || row.id || "-"}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setEnrollmentsDrawerOpen(true)}
+                  disabled={!campaignPublicId}
+                  className="rounded-xl p-4 text-left transition-all duration-200 disabled:opacity-60"
+                  style={{
+                    border: "1px solid rgba(79,122,168,0.2)",
+                    background: "linear-gradient(135deg, rgba(79,122,168,0.09), rgba(45,90,132,0.03))",
+                    cursor: campaignPublicId ? "pointer" : "not-allowed",
+                  }}
+                >
+                  <p className="text-[10px] uppercase tracking-widest mb-1" style={{ margin: 0, color: "#2d5a84", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>
+                    Enrollments
+                  </p>
+                  <p className="text-xl font-semibold mb-1" style={{ margin: 0, color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
+                    {enrollmentsLoading ? "..." : getCollectionCount(enrollmentsRaw)}
+                  </p>
+                  <p className="text-xs" style={{ margin: 0, color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+                    Open detailed enrollments view
+                  </p>
+                </button>
 
-                <div className="rounded-xl p-3" style={{ border: "1px solid rgba(79,168,122,0.2)", background: "#fff" }}>
-                  <p className="text-xs font-semibold mb-2" style={{ marginTop: 0, color: "#2d845a", fontFamily: "'Poppins', sans-serif" }}>Grants ({getCollectionCount(grantsRaw)})</p>
-                  {grantsLoading ? <p style={{ margin: 0, color: "#987554", fontSize: 12 }}>Loading grants...</p> : grants.length === 0 ? <p style={{ margin: 0, color: "#987554", fontSize: 12 }}>No grants.</p> : (
-                    <div className="flex flex-col gap-2 max-h-52 overflow-y-auto pr-1">
-                      {grants.map((row, idx) => (
-                        <div key={String(row.id || row.public_id || idx)} className="rounded-lg px-2.5 py-2" style={{ background: "rgba(79,168,122,0.06)", border: "1px solid rgba(79,168,122,0.14)" }}>
-                          <p className="text-xs font-medium mb-0.5" style={{ margin: 0, color: "#272727", fontFamily: "'Poppins', sans-serif" }}>{row.title || row.name || row.customer_name || "Grant"}</p>
-                          <p className="text-[11px]" style={{ margin: 0, color: "#987554", fontFamily: "'Poppins', sans-serif" }}>{row.public_id || row.id || "-"}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setGrantsDrawerOpen(true)}
+                  disabled={!campaignPublicId}
+                  className="rounded-xl p-4 text-left transition-all duration-200 disabled:opacity-60"
+                  style={{
+                    border: "1px solid rgba(79,168,122,0.2)",
+                    background: "linear-gradient(135deg, rgba(79,168,122,0.09), rgba(45,132,90,0.03))",
+                    cursor: campaignPublicId ? "pointer" : "not-allowed",
+                  }}
+                >
+                  <p className="text-[10px] uppercase tracking-widest mb-1" style={{ margin: 0, color: "#2d845a", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>
+                    Grants
+                  </p>
+                  <p className="text-xl font-semibold mb-1" style={{ margin: 0, color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
+                    {grantsLoading ? "..." : getCollectionCount(grantsRaw)}
+                  </p>
+                  <p className="text-xs" style={{ margin: 0, color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+                    Open detailed grants view
+                  </p>
+                </button>
               </div>
             </>
           )}
         </section>
       </div>
+
+      <Drawer
+        title={`Enrollments (${getCollectionCount(enrollmentsRaw)})`}
+        open={enrollmentsDrawerOpen}
+        onClose={() => setEnrollmentsDrawerOpen(false)}
+        placement="right"
+        width={960}
+      >
+        <div className="mb-3">
+          <Input
+            allowClear
+            value={enrollmentSearch}
+            onChange={(e) => setEnrollmentSearch(e.target.value)}
+            placeholder="Search by customer, email, or eligibility status"
+          />
+        </div>
+        <Table
+          rowKey={(row, idx) => String(row?.id || row?.public_id || idx)}
+          loading={enrollmentsLoading}
+          columns={enrollmentColumns}
+          dataSource={filteredEnrollments}
+          pagination={{ pageSize: 10, showSizeChanger: true }}
+          scroll={{ x: 1040 }}
+          locale={{ emptyText: "No enrollments." }}
+          size="middle"
+        />
+      </Drawer>
+
+      <Drawer
+        title={`Grants (${getCollectionCount(grantsRaw)})`}
+        open={grantsDrawerOpen}
+        onClose={() => setGrantsDrawerOpen(false)}
+        placement="right"
+        width={1020}
+      >
+        <div className="mb-3">
+          <Input
+            allowClear
+            value={grantSearch}
+            onChange={(e) => setGrantSearch(e.target.value)}
+            placeholder="Search by customer, email, scope, or status"
+          />
+        </div>
+        <Table
+          rowKey={(row, idx) => String(row?.id || row?.public_id || idx)}
+          loading={grantsLoading}
+          columns={grantColumns}
+          dataSource={filteredGrants}
+          pagination={{ pageSize: 10, showSizeChanger: true }}
+          scroll={{ x: 1180 }}
+          locale={{ emptyText: "No grants." }}
+          size="middle"
+        />
+      </Drawer>
     </div>
   );
 }

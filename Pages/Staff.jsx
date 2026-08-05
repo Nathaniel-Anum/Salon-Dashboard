@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Modal, Form, Input, Select, Button, Switch, message, Tag, Tooltip } from "antd";
+import { Modal, Drawer, Form, Input, Select, Button, Switch, Checkbox, message, Tag, Tooltip } from "antd";
 import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiGrid, FiList, FiScissors } from "react-icons/fi";
 import { FaUserAlt } from "react-icons/fa";
 import _axios from "../src/api/_axios";
@@ -84,11 +84,11 @@ export default function Staff() {
   const [viewMode, setViewMode] = useState("cards"); // "cards" | "table"
   const [addForm] = Form.useForm();
   const [editForm] = Form.useForm();
-  const [assignForm] = Form.useForm();
 
   // Assign-services modal state
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignStaff, setAssignStaff] = useState(null);
+  const [assignServiceIds, setAssignServiceIds] = useState([]);
 
   // --- FETCH STAFF ---
   const { data: staffRaw, isLoading: staffLoading } = useQuery({
@@ -106,6 +106,25 @@ export default function Staff() {
     () => (Array.isArray(servicesRaw) ? servicesRaw : servicesRaw?.results || []),
     [servicesRaw]
   );
+
+  const servicesByCategory = useMemo(() => {
+    const grouped = new Map();
+    servicesData.forEach((svc) => {
+      const categoryId = svc.category ?? "__uncategorized__";
+      const categoryName = svc.category_name || (svc.category != null ? `Category ${svc.category}` : "Uncategorised");
+      const key = String(categoryId);
+      if (!grouped.has(key)) {
+        grouped.set(key, { key, id: categoryId, name: categoryName, services: [] });
+      }
+      grouped.get(key).services.push(svc);
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      if (a.key === "__uncategorized__") return 1;
+      if (b.key === "__uncategorized__") return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [servicesData]);
 
   // --- FETCH ROLES — normalise to array regardless of API shape ---
   const { data: rolesRaw, isLoading: rolesLoading } = useQuery({
@@ -175,8 +194,7 @@ export default function Staff() {
     onSuccess: () => {
       message.success("Services assigned successfully");
       queryClient.invalidateQueries(["services"]);
-      setAssignOpen(false);
-      assignForm.resetFields();
+      closeAssignDrawer();
     },
     onError: (err) => {
       message.error(err.response?.data?.message || "Failed to assign services");
@@ -223,8 +241,36 @@ export default function Staff() {
         );
       })
       .map((svc) => svc.id);
-    assignForm.setFieldsValue({ service_ids: currentIds });
+    setAssignServiceIds(currentIds);
     setAssignOpen(true);
+  };
+
+  const toggleServiceSelection = (serviceId, checked) => {
+    setAssignServiceIds((prev) => {
+      if (checked) return prev.includes(serviceId) ? prev : [...prev, serviceId];
+      return prev.filter((id) => String(id) !== String(serviceId));
+    });
+  };
+
+  const toggleCategorySelection = (category, checked) => {
+    const ids = category.services.map((svc) => svc.id);
+    setAssignServiceIds((prev) => {
+      const prevSet = new Set(prev.map((x) => String(x)));
+      if (checked) {
+        ids.forEach((id) => prevSet.add(String(id)));
+      } else {
+        ids.forEach((id) => prevSet.delete(String(id)));
+      }
+      return Array.from(prevSet).map((id) => Number(id));
+    });
+  };
+
+  const handleSaveAssignedServices = () => {
+    if (!assignStaff?.id) return;
+    assignServices.mutate({
+      staff_id: assignStaff.id,
+      service_ids: assignServiceIds,
+    });
   };
 
   // --- HANDLE EDIT ---
@@ -250,6 +296,12 @@ export default function Staff() {
   );
 
   const goldBtn = "!bg-[#BBA14F] !border-none hover:!bg-[#a08340] !text-white";
+
+  const closeAssignDrawer = () => {
+    setAssignOpen(false);
+    setAssignStaff(null);
+    setAssignServiceIds([]);
+  };
 
   return (
     <div>
@@ -697,59 +749,148 @@ export default function Staff() {
         </Form>
       </Modal>
 
-      {/* ── Assign Services Modal ── */}
-      <Modal
-        title={modalTitle(`Assign Services`)}
+      {/* ── Assign Services Drawer ── */}
+      <Drawer
+        title={null}
+        placement="right"
+        width={560}
         open={assignOpen}
-        onCancel={() => { setAssignOpen(false); assignForm.resetFields(); }}
-        footer={null}
-        centered
-        style={{ borderRadius: 16 }}
+        onClose={closeAssignDrawer}
+        closable={false}
+        styles={{
+          body: { padding: 0, background: "#FDFAF5" },
+          mask: { backdropFilter: "blur(4px)", background: "rgba(39,39,39,0.45)" },
+        }}
       >
-        <Form
-          form={assignForm}
-          layout="vertical"
-          onFinish={(values) =>
-            assignServices.mutate({
-              staff_id: assignStaff?.id,
-              service_ids: values.service_ids || [],
-            })
-          }
-          className="pt-3"
+        <div
+          className="relative overflow-hidden px-6 pt-6 pb-5"
+          style={{ background: "linear-gradient(120deg, #272727 0%, #3a2e1e 60%, #4a3a22 100%)" }}
         >
-          <p style={{ margin: "0 0 16px", fontSize: 12, color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
-            Select the services that{" "}
-            <strong style={{ color: "#272727" }}>{assignStaff?.full_name}</strong>{" "}
-            is permitted to perform. Leaving it empty means no service restriction.
-          </p>
-          <Form.Item name="service_ids" label="Services">
-            <Select
-              mode="multiple"
-              placeholder="Choose services…"
-              showSearch
-              filterOption={(input, opt) =>
-                (opt?.label || "").toLowerCase().includes(input.toLowerCase())
-              }
-              options={servicesData.map((s) => ({ value: s.id, label: s.name }))}
-              allowClear
-              style={{ width: "100%" }}
-            />
-          </Form.Item>
-          <Form.Item className="flex justify-end mb-0 mt-4">
-            <div className="flex justify-end gap-3">
-              <Button onClick={() => setAssignOpen(false)}>Cancel</Button>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={assignServices.isPending}
-                className={goldBtn}
-              >
-                Save
-              </Button>
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage: "radial-gradient(circle, rgba(187,161,79,0.18) 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          />
+          <div className="relative z-10 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.2em] mb-0.5" style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}>
+                Assign Services
+              </p>
+              <h3 className="text-base font-bold text-white leading-none" style={{ fontFamily: "'Playfair Display', serif" }}>
+                {assignStaff?.full_name || "Staff"}
+              </h3>
             </div>
-          </Form.Item>
-        </Form>
-      </Modal>
+            <button
+              onClick={closeAssignDrawer}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 hover:opacity-70"
+              style={{
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: 18,
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div className="px-6 py-5">
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+            Choose services by category. Tick a category checkbox to select all services under that category.
+          </p>
+
+          <div className="flex flex-col gap-3" style={{ maxHeight: "calc(100vh - 250px)", overflowY: "auto", paddingRight: 2 }}>
+            {servicesByCategory.map((category) => {
+              const categoryIds = category.services.map((svc) => String(svc.id));
+              const selectedCount = categoryIds.filter((id) => assignServiceIds.map(String).includes(id)).length;
+              const allSelected = categoryIds.length > 0 && selectedCount === categoryIds.length;
+              const partiallySelected = selectedCount > 0 && selectedCount < categoryIds.length;
+
+              return (
+                <div
+                  key={category.key}
+                  className="rounded-2xl p-4"
+                  style={{
+                    background: "#fff",
+                    border: "1px solid rgba(187,161,79,0.2)",
+                    boxShadow: "0 2px 8px rgba(39,39,39,0.04)",
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={allSelected}
+                        indeterminate={partiallySelected}
+                        onChange={(e) => toggleCategorySelection(category, e.target.checked)}
+                      />
+                      <p className="text-sm font-semibold m-0" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
+                        {category.name}
+                      </p>
+                    </div>
+                    <span
+                      className="text-[10px] px-2 py-0.5 rounded-full"
+                      style={{
+                        background: "rgba(187,161,79,0.12)",
+                        color: "#8a6f2e",
+                        fontFamily: "'Poppins', sans-serif",
+                      }}
+                    >
+                      {selectedCount}/{category.services.length} selected
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {category.services.map((svc) => {
+                      const checked = assignServiceIds.some((id) => String(id) === String(svc.id));
+                      return (
+                        <label
+                          key={svc.id}
+                          className="flex items-start gap-2.5 rounded-xl px-3 py-2.5"
+                          style={{
+                            background: checked ? "rgba(187,161,79,0.12)" : "rgba(187,161,79,0.04)",
+                            border: checked ? "1px solid rgba(187,161,79,0.35)" : "1px solid rgba(187,161,79,0.15)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onChange={(e) => toggleServiceSelection(svc.id, e.target.checked)}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold m-0 truncate" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
+                              {svc.name}
+                            </p>
+                            <p className="text-[11px] m-0" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+                              {svc.duration ? `${svc.duration} mins` : "Duration —"}
+                            </p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end gap-3 mt-5 pt-4" style={{ borderTop: "1px solid rgba(187,161,79,0.16)" }}>
+            <Button onClick={closeAssignDrawer}>Cancel</Button>
+            <Button
+              type="primary"
+              loading={assignServices.isPending}
+              className={goldBtn}
+              onClick={handleSaveAssignedServices}
+            >
+              Save Services
+            </Button>
+          </div>
+        </div>
+      </Drawer>
 
       {/* ── Edit Staff Modal ── */}
       <Modal
