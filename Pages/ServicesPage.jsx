@@ -920,17 +920,11 @@ function ServiceFormFields({
   categoriesLoading = false,
   staffList = [],
   staffLoading = false,
-  serviceOptionsData = [],
-  serviceOptionsLoading = false,
-  onCreateServiceOption,
-  onUpdateServiceOption,
   onDeleteServiceOption,
-  currentServiceId = null,
-  currentServiceName = "",
   showServiceOptions = false,
-  serviceOptionSaving = false,
   serviceOptionDeleting = false,
 }) {
+  const form = Form.useFormInstance();
   /* Watch price_type to conditionally show/hide the price input */
   const priceType = Form.useWatch("price_type");
   const showPrice = priceType !== "free";
@@ -1110,47 +1104,185 @@ function ServiceFormFields({
       </Form.Item>
 
       {showServiceOptions && (
-        <Form.Item
-          name="service_option_ids"
-          label={<span style={labelStyle}>Service Options</span>}
-          className="mb-5"
+        <div
+          className="rounded-2xl p-4 mb-5"
+          style={{
+            background: "rgba(187,161,79,0.06)",
+            border: "1px solid rgba(187,161,79,0.18)",
+          }}
         >
-          <Select
-            mode="multiple"
-            allowClear
-            showSearch
-            placeholder="Select service options..."
-            loading={serviceOptionsLoading}
-            optionFilterProp="label"
-            filterOption={(input, option) =>
-              String(option?.label ?? "")
-                .toLowerCase()
-                .includes(String(input).toLowerCase())
-            }
-            options={serviceOptionsData
-              .filter((opt) => opt?.is_active !== false)
-              .map((opt) => ({
-                value: opt.id,
-                label: `${opt.name} · GHS ${Number(opt.price ?? 0).toLocaleString()}`,
-              }))}
-            className="rounded-xl"
-          />
-        </Form.Item>
-      )}
+          <div className="flex items-center gap-2 mb-3">
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg,#BBA14F,#987554)" }}
+            >
+              <FiLayers size={13} color="#fff" />
+            </div>
+            <div>
+              <p
+                className="text-[10px] uppercase tracking-widest leading-none mb-1"
+                style={{ color: "#987554", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}
+              >
+                Service Options
+              </p>
+              <p
+                className="text-[11px] leading-none"
+                style={{ color: "#7a6030", fontFamily: "'Poppins', sans-serif" }}
+              >
+                Add all options here. They will be submitted in the same service request.
+              </p>
+            </div>
+          </div>
 
-      {showServiceOptions && (
-        <ServiceOptionsManager
-          optionsData={serviceOptionsData}
-          optionsLoading={serviceOptionsLoading}
-          onCreateOption={onCreateServiceOption}
-          onUpdateOption={onUpdateServiceOption}
-          onDeleteOption={onDeleteServiceOption}
-          currentServiceId={currentServiceId}
-          currentServiceName={currentServiceName}
-          defaultDuration={Number(serviceDuration || 15)}
-          saving={serviceOptionSaving}
-          deleting={serviceOptionDeleting}
-        />
+          <Form.List name="service_options">
+            {(fields, { add, remove }) => (
+              <div className="flex flex-col gap-3">
+                {fields.map((field, idx) => {
+                  const current = form.getFieldValue(["service_options", field.name]);
+                  const hasExistingId = Number.isFinite(Number(current?.id));
+                  return (
+                    <div
+                      key={field.key}
+                      className="rounded-xl p-3"
+                      style={{ background: "#fff", border: "1px solid rgba(187,161,79,0.2)" }}
+                    >
+                      <Form.Item name={[field.name, "id"]} hidden>
+                        <Input />
+                      </Form.Item>
+
+                      <div className="flex items-center justify-between mb-2">
+                        <p
+                          className="text-xs font-semibold mb-0"
+                          style={{ color: "#7a6030", fontFamily: "'Poppins', sans-serif" }}
+                        >
+                          Option {idx + 1}{hasExistingId ? " (existing)" : " (new)"}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          {hasExistingId && onDeleteServiceOption ? (
+                            <button
+                              type="button"
+                              disabled={serviceOptionDeleting}
+                              onClick={async () => {
+                                try {
+                                  await onDeleteServiceOption(Number(current.id));
+                                  remove(field.name);
+                                } catch {
+                                  // Error toast handled by mutation.
+                                }
+                              }}
+                              className="px-2.5 py-1 rounded-full text-[11px] disabled:opacity-60"
+                              style={{
+                                background: "rgba(196,50,50,0.1)",
+                                color: "#c43232",
+                                border: "1px solid rgba(196,50,50,0.22)",
+                                fontFamily: "'Poppins', sans-serif",
+                                cursor: serviceOptionDeleting ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              Delete option
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => remove(field.name)}
+                            className="px-2.5 py-1 rounded-full text-[11px]"
+                            style={{
+                              background: "rgba(152,117,84,0.1)",
+                              color: "#987554",
+                              border: "1px solid rgba(152,117,84,0.22)",
+                              fontFamily: "'Poppins', sans-serif",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Remove row
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Form.Item
+                          name={[field.name, "name"]}
+                          label={<span style={labelStyle}>Option Name</span>}
+                          rules={[{ required: true, message: "Required" }]}
+                          className="mb-0"
+                        >
+                          <Input placeholder="e.g. Deluxe Facial" className={inputCls} />
+                        </Form.Item>
+
+                        <Form.Item
+                          name={[field.name, "price"]}
+                          label={<span style={labelStyle}>Price (GHS)</span>}
+                          rules={[{ required: true, message: "Required" }]}
+                          className="mb-0"
+                        >
+                          <Input placeholder="e.g. 75.00" className={inputCls} />
+                        </Form.Item>
+
+                        <Form.Item
+                          name={[field.name, "duration"]}
+                          label={<span style={labelStyle}>Duration</span>}
+                          rules={[{ required: true, message: "Required" }]}
+                          className="mb-0"
+                        >
+                          <Select
+                            placeholder="Select…"
+                            options={DURATION_OPTIONS}
+                            showSearch
+                            optionFilterProp="label"
+                            className="rounded-xl"
+                          />
+                        </Form.Item>
+
+                        <Form.Item
+                          name={[field.name, "is_active"]}
+                          valuePropName="checked"
+                          label={<span style={labelStyle}>Active</span>}
+                          className="mb-0"
+                        >
+                          <Switch />
+                        </Form.Item>
+                      </div>
+
+                      <Form.Item
+                        name={[field.name, "description"]}
+                        label={<span style={labelStyle}>Description</span>}
+                        className="mb-0 mt-3"
+                      >
+                        <Input.TextArea rows={2} placeholder="Optional description" className={inputCls} />
+                      </Form.Item>
+                    </div>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    add({
+                      name: "",
+                      price: "",
+                      duration: Number(serviceDuration || 15),
+                      description: "",
+                      is_active: true,
+                    })
+                  }
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl sm:rounded-full text-xs sm:text-sm font-semibold transition-all duration-200 hover:opacity-90"
+                  style={{
+                    background: "linear-gradient(135deg, #BBA14F, #987554)",
+                    color: "#fff",
+                    border: "none",
+                    fontFamily: "'Poppins', sans-serif",
+                    cursor: "pointer",
+                    boxShadow: "0 6px 16px rgba(187,161,79,0.28)",
+                    minHeight: 40,
+                  }}
+                >
+                  <FiPlus size={14} />
+                  Add Option Row
+                </button>
+              </div>
+            )}
+          </Form.List>
+        </div>
       )}
 
       {/* ── Section: Status ── */}
@@ -1495,12 +1627,6 @@ export default function ServicesPage() {
     queryFn: () => _axios.get("/api/portal/v1/accounts/staff/").then((r) => r.data),
   });
 
-  /* ── Fetch service options for inline create/edit management ── */
-  const { data: serviceOptionsRaw, isLoading: serviceOptionsLoading } = useQuery({
-    queryKey: ["service-options"],
-    queryFn: () => _axios.get("/api/portal/v1/booking/service-options").then((r) => r.data),
-  });
-
   /* Normalise arrays */
   const servicesData = useMemo(
     () => (Array.isArray(servicesRaw) ? servicesRaw : servicesRaw?.results || []),
@@ -1517,40 +1643,31 @@ export default function ServicesPage() {
     [staffRaw]
   );
 
-  const serviceOptionsData = useMemo(
-    () => (Array.isArray(serviceOptionsRaw) ? serviceOptionsRaw : serviceOptionsRaw?.results || []),
-    [serviceOptionsRaw]
-  );
-
-  const resolveServiceOptionIds = (serviceObj) => {
-    const fromIds = serviceObj?.service_option_ids ?? serviceObj?.option_ids;
-    if (Array.isArray(fromIds)) return fromIds.map((x) => Number(x)).filter((x) => Number.isFinite(x));
-
-    const list = serviceObj?.service_options ?? serviceObj?.options ?? serviceObj?.service_option_details;
-    if (Array.isArray(list)) {
-      return list
-        .map((entry) => (typeof entry === "object" ? entry.id : entry))
-        .map((x) => Number(x))
-        .filter((x) => Number.isFinite(x));
-    }
-    return [];
-  };
-
-  const detectServiceOptionPayloadKey = (serviceObj) => {
-    if (serviceObj && Object.prototype.hasOwnProperty.call(serviceObj, "service_option_ids")) return "service_option_ids";
-    if (serviceObj && Object.prototype.hasOwnProperty.call(serviceObj, "option_ids")) return "option_ids";
-
-    const sample = servicesData.find(
-      (s) =>
-        Object.prototype.hasOwnProperty.call(s, "service_option_ids") ||
-        Object.prototype.hasOwnProperty.call(s, "option_ids")
-    );
-
-    if (sample && Object.prototype.hasOwnProperty.call(sample, "service_option_ids")) return "service_option_ids";
-    if (sample && Object.prototype.hasOwnProperty.call(sample, "option_ids")) return "option_ids";
-
-    return "service_option_ids";
-  };
+  const normalizeServiceOptionsForPayload = (rows = []) =>
+    (Array.isArray(rows) ? rows : [])
+      .map((row) => ({
+        id: Number(row?.id),
+        name: String(row?.name ?? "").trim(),
+        price: String(row?.price ?? "").trim(),
+        duration: Number(row?.duration),
+        description: String(row?.description ?? "").trim(),
+        is_active: row?.is_active !== false,
+      }))
+      .filter((row) => row.name && row.price && Number.isFinite(row.duration))
+      .map((row) => {
+        const payloadRow = {
+          name: row.name,
+          price: row.price,
+          duration: row.duration,
+          description: row.description,
+          is_active: row.is_active,
+        };
+        // Existing option updates must include id; new options must not include id.
+        if (Number.isFinite(row.id) && row.id > 0) {
+          payloadRow.id = row.id;
+        }
+        return payloadRow;
+      });
 
   /* Category options for Select dropdowns */
   const categoryOptions = useMemo(
@@ -1648,9 +1765,11 @@ export default function ServicesPage() {
   const createService = useMutation({
     mutationFn: (data) => {
       const isFree = data.price_type === "free";
+      const serviceOptions = normalizeServiceOptionsForPayload(data.service_options);
       return _axios.post("/api/portal/v1/booking/services/", {
         ...data,
         price: isFree ? "0" : String(data.price ?? 0),
+        service_options: serviceOptions,
       });
     },
     onSuccess: () => {
@@ -1670,13 +1789,12 @@ export default function ServicesPage() {
   const updateService = useMutation({
     mutationFn: (data) => {
       const isFree = data.price_type === "free";
-      const optionIds = Array.isArray(data.service_option_ids) ? data.service_option_ids : [];
+      const serviceOptions = normalizeServiceOptionsForPayload(data.service_options);
       const payload = {
         ...data,
         price: isFree ? "0" : String(data.price ?? 0),
+        service_options: serviceOptions,
       };
-      delete payload.service_option_ids;
-      payload[detectServiceOptionPayloadKey(editService)] = optionIds;
       return _axios.patch(`/api/portal/v1/booking/services/${data.id}/`, {
         ...payload,
       });
@@ -1692,36 +1810,10 @@ export default function ServicesPage() {
     },
   });
 
-  /* ─────────────────────────────────────
-     CREATE/UPDATE SERVICE OPTION
-  ───────────────────────────────────── */
-  const createServiceOption = useMutation({
-    mutationFn: (data) => _axios.post("/api/portal/v1/booking/service-options/", data),
-    onSuccess: () => {
-      message.success("Service option created");
-      queryClient.invalidateQueries(["service-options"]);
-    },
-    onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to create service option");
-    },
-  });
-
-  const updateServiceOption = useMutation({
-    mutationFn: ({ id, data }) => _axios.patch(`/api/portal/v1/booking/service-options/${id}`, data),
-    onSuccess: () => {
-      message.success("Service option updated");
-      queryClient.invalidateQueries(["service-options"]);
-    },
-    onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to update service option");
-    },
-  });
-
   const deleteServiceOption = useMutation({
-    mutationFn: (id) => _axios.delete(`/api/portal/v1/booking/service-options/${id}`),
+    mutationFn: (id) => _axios.delete(`/api/portal/v1/booking/service-options/${id}/`),
     onSuccess: () => {
       message.success("Service option deleted");
-      queryClient.invalidateQueries(["service-options"]);
       queryClient.invalidateQueries(["services"]);
     },
     onError: (err) => {
@@ -1729,8 +1821,6 @@ export default function ServicesPage() {
     },
   });
 
-  const createServiceOptionFromForm = (payload) => createServiceOption.mutateAsync(payload);
-  const updateServiceOptionFromForm = (id, payload) => updateServiceOption.mutateAsync({ id, data: payload });
   const deleteServiceOptionFromForm = (id) => deleteServiceOption.mutateAsync(id);
 
   /* ─────────────────────────────────────
@@ -1835,6 +1925,14 @@ export default function ServicesPage() {
     setEditService(service);
     const priceVal = parseFloat(service.price);
     const priceType = service.price_type || (priceVal === 0 ? "free" : "fixed");
+    const serviceOptions = Array.isArray(service.service_options)
+      ? service.service_options
+      : Array.isArray(service.options)
+      ? service.options
+      : Array.isArray(service.service_option_details)
+      ? service.service_option_details
+      : [];
+
     editForm.setFieldsValue({
       name:        service.name,
       description: service.description,
@@ -1845,7 +1943,14 @@ export default function ServicesPage() {
       category:    service.category ?? undefined,
       // Pre-populate assigned staff from the API response field
       staff_ids:   service.assigned_staff_ids ?? service.staff_ids ?? [],
-      service_option_ids: resolveServiceOptionIds(service),
+      service_options: serviceOptions.map((opt) => ({
+        id: opt?.id,
+        name: opt?.name ?? "",
+        price: String(opt?.price ?? ""),
+        duration: Number(opt?.duration ?? service.duration ?? 15),
+        description: opt?.description ?? "",
+        is_active: opt?.is_active !== false,
+      })),
     });
     setEditOpen(true);
   };
@@ -2425,22 +2530,15 @@ export default function ServicesPage() {
             form={addForm}
             layout="vertical"
             onFinish={(values) => createService.mutate(values)}
-            initialValues={{ is_active: true, price_type: "fixed", staff_ids: [] }}
+            initialValues={{ is_active: true, price_type: "from", staff_ids: [], service_options: [] }}
           >
             <ServiceFormFields
               categoryOptions={categoryOptions}
               categoriesLoading={categoriesLoading}
               staffList={staffData}
               staffLoading={staffLoading}
-              serviceOptionsData={serviceOptionsData}
-              serviceOptionsLoading={serviceOptionsLoading}
-              onCreateServiceOption={createServiceOptionFromForm}
-              onUpdateServiceOption={updateServiceOptionFromForm}
               onDeleteServiceOption={deleteServiceOptionFromForm}
-              currentServiceId={null}
-              currentServiceName={addForm.getFieldValue("name") || ""}
-              showServiceOptions={false}
-              serviceOptionSaving={createServiceOption.isPending || updateServiceOption.isPending}
+              showServiceOptions={true}
               serviceOptionDeleting={deleteServiceOption.isPending}
             />
 
@@ -2577,21 +2675,15 @@ export default function ServicesPage() {
             form={editForm}
             layout="vertical"
             onFinish={(values) => updateService.mutate({ id: editService?.id, ...values })}
+            initialValues={{ service_options: [] }}
           >
             <ServiceFormFields
               categoryOptions={categoryOptions}
               categoriesLoading={categoriesLoading}
               staffList={staffData}
               staffLoading={staffLoading}
-              serviceOptionsData={serviceOptionsData}
-              serviceOptionsLoading={serviceOptionsLoading}
-              onCreateServiceOption={createServiceOptionFromForm}
-              onUpdateServiceOption={updateServiceOptionFromForm}
               onDeleteServiceOption={deleteServiceOptionFromForm}
-              currentServiceId={editService?.id ?? null}
-              currentServiceName={editService?.name || ""}
               showServiceOptions={true}
-              serviceOptionSaving={createServiceOption.isPending || updateServiceOption.isPending}
               serviceOptionDeleting={deleteServiceOption.isPending}
             />
 

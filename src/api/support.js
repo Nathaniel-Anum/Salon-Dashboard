@@ -32,7 +32,9 @@ const buildTicketParams = (filters = {}) => {
 
 export const getSupportTickets = (filters = {}) =>
   _axios
-    .get("/api/portal/v1/support/tickets/", { params: buildTicketParams(filters) })
+    .get("/api/portal/v1/support/tickets/", {
+      params: buildTicketParams(filters),
+    })
     .then((r) => r.data);
 
 export const getSupportTicket = (publicId) =>
@@ -54,7 +56,9 @@ export const getSupportTicketNotes = (publicId) =>
 
 export const getSupportTicketAttachments = (publicId) =>
   _axios
-    .get(`/api/portal/v1/support/tickets/${normalizeTicketId(publicId)}/attachments/`)
+    .get(
+      `/api/portal/v1/support/tickets/${normalizeTicketId(publicId)}/attachments/`,
+    )
     .then((r) => r.data);
 
 export const replyToSupportTicket = (publicId, data) =>
