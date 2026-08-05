@@ -9,6 +9,9 @@
  *   PATCH  /api/portal/v1/booking/services/{id}/     → update a service
  *   DELETE /api/portal/v1/booking/services/{id}/     → delete a service
  *   GET    /api/portal/v1/booking/service-categories/ → list all categories
+ *   GET    /api/portal/v1/booking/service-options      → list service options
+ *   POST   /api/portal/v1/booking/service-options      → create service option
+ *   PATCH  /api/portal/v1/booking/service-options/{id} → update service option
  *
  * React Query keys:
  *   ["services"]           → the full list
@@ -601,6 +604,284 @@ function StaffPickerField({ value = [], onChange, staffList = [], staffLoading =
 }
 
 /* ─────────────────────────────────────────────
+   SERVICE OPTIONS INLINE MANAGER
+   Reused in both Add/Edit Service modals so
+   options can be created and edited in-place.
+───────────────────────────────────────────── */
+function ServiceOptionsManager({
+  optionsData = [],
+  optionsLoading = false,
+  onCreateOption,
+  onUpdateOption,
+  onDeleteOption,
+  currentServiceId = null,
+  currentServiceName = "",
+  defaultDuration = 15,
+  saving = false,
+  deleting = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form] = Form.useForm();
+
+  const openCreate = () => {
+    setEditing(null);
+    form.setFieldsValue({
+      service_id: Number(currentServiceId ?? 0),
+      name: "",
+      price: "0",
+      duration: Number(defaultDuration || 1),
+      description: "",
+      is_active: true,
+    });
+    setOpen(true);
+  };
+
+  const openEdit = (opt) => {
+    setEditing(opt);
+    form.setFieldsValue({
+      service_id: Number(opt.service_id ?? currentServiceId ?? 0),
+      name: opt.name,
+      price: String(opt.price ?? "0"),
+      duration: Number(opt.duration ?? defaultDuration ?? 1),
+      description: opt.description ?? "",
+      is_active: !!opt.is_active,
+    });
+    setOpen(true);
+  };
+
+  const close = () => {
+    setOpen(false);
+    setEditing(null);
+    form.resetFields();
+  };
+
+  const submit = async (values) => {
+    const resolvedServiceId = Number(currentServiceId ?? values.service_id ?? 0);
+    if (!editing?.id && !resolvedServiceId) {
+      message.error("Please create or open an existing service first before adding options.");
+      return;
+    }
+
+    const payload = {
+      service_id: resolvedServiceId,
+      name: values.name,
+      price: String(values.price ?? "0"),
+      duration: Number(values.duration ?? defaultDuration ?? 1),
+      description: values.description ?? "",
+      is_active: !!values.is_active,
+    };
+
+    try {
+      if (editing?.id) {
+        await onUpdateOption(editing.id, payload);
+      } else {
+        await onCreateOption(payload);
+      }
+      close();
+    } catch {
+      // Message toast is already handled by mutation onError.
+    }
+  };
+
+  const confirmDeleteOption = (opt) => {
+    Modal.confirm({
+      title: "Delete Service Option",
+      content: `Are you sure you want to delete "${opt?.name || "this option"}"?`,
+      okText: "Delete",
+      okButtonProps: { danger: true },
+      cancelText: "Cancel",
+      centered: true,
+      onOk: () => onDeleteOption?.(opt.id),
+    });
+  };
+
+  return (
+    <>
+      <div
+        className="rounded-2xl p-4 mb-5"
+        style={{
+          background: "rgba(187,161,79,0.06)",
+          border: "1px solid rgba(187,161,79,0.18)",
+        }}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg,#BBA14F,#987554)" }}
+            >
+              <FiLayers size={13} color="#fff" />
+            </div>
+            <div>
+              <p
+                className="text-[10px] uppercase tracking-widest leading-none mb-1"
+                style={{ color: "#987554", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}
+              >
+                Service Options
+              </p>
+              <p
+                className="text-[11px] leading-none"
+                style={{ color: "#7a6030", fontFamily: "'Poppins', sans-serif" }}
+              >
+                Create or edit option prices while adding/updating a service
+              </p>
+              <p
+                className="text-[10px] leading-none mt-1"
+                style={{ color: currentServiceId ? "#4f7aa8" : "#b08f4a", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}
+              >
+                {currentServiceId
+                  ? `Linked to: ${currentServiceName || `Service #${currentServiceId}`}`
+                  : "Save service first to enable creating options under it"}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={openCreate}
+            disabled={!currentServiceId}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl sm:rounded-full text-xs sm:text-sm font-semibold transition-all duration-200 hover:opacity-90"
+            style={{
+              background: "linear-gradient(135deg, #BBA14F, #987554)",
+              color: "#fff",
+              border: "none",
+              fontFamily: "'Poppins', sans-serif",
+              cursor: currentServiceId ? "pointer" : "not-allowed",
+              opacity: currentServiceId ? 1 : 0.55,
+              boxShadow: "0 6px 16px rgba(187,161,79,0.28)",
+              minHeight: 40,
+            }}
+          >
+            <FiPlus size={14} />
+            Add Options
+          </button>
+        </div>
+
+        {optionsLoading ? (
+          <p style={{ margin: 0, color: "#987554", fontSize: 12, fontFamily: "'Poppins', sans-serif" }}>
+            Loading service options...
+          </p>
+        ) : optionsData.length === 0 ? (
+          <p style={{ margin: 0, color: "#987554", fontSize: 12, fontFamily: "'Poppins', sans-serif" }}>
+            No service options yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2" style={{ maxHeight: 170, overflowY: "auto" }}>
+            {optionsData.map((opt) => (
+              <div
+                key={opt.id}
+                className="flex items-center justify-between gap-2 rounded-xl px-3 py-2"
+                style={{
+                  background: "#fff",
+                  border: "1px solid rgba(187,161,79,0.2)",
+                }}
+              >
+                <div className="min-w-0">
+                  <p
+                    className="text-xs font-semibold mb-0.5 truncate"
+                    style={{ color: "#272727", fontFamily: "'Poppins', sans-serif" }}
+                  >
+                    {opt.name}
+                  </p>
+                  <p
+                    className="text-[11px] mb-0 truncate"
+                    style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}
+                  >
+                    GHS {Number(opt.price ?? 0).toLocaleString()} {opt.is_active ? "• Active" : "• Inactive"}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(opt)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px]"
+                    style={{
+                      background: "rgba(152,117,84,0.1)",
+                      color: "#987554",
+                      border: "1px solid rgba(152,117,84,0.2)",
+                      fontFamily: "'Poppins', sans-serif",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <FiEdit2 size={11} /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => confirmDeleteOption(opt)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] disabled:opacity-60"
+                    style={{
+                      background: "rgba(196,50,50,0.1)",
+                      color: "#c43232",
+                      border: "1px solid rgba(196,50,50,0.22)",
+                      fontFamily: "'Poppins', sans-serif",
+                      cursor: deleting ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    <FiTrash2 size={11} /> Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Modal
+        open={open}
+        onCancel={close}
+        footer={null}
+        centered
+        title={modalTitle(editing ? "Edit Service Option" : "Add Service Option")}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ service_id: Number(currentServiceId ?? 0), is_active: true, price: "0", duration: Number(defaultDuration || 1) }}
+          onFinish={submit}
+          className="pt-2"
+        >
+          <Form.Item name="service_id" hidden>
+            <Input type="hidden" />
+          </Form.Item>
+
+          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Please enter option name" }]}>
+            <Input placeholder="e.g. Shoulder Length" />
+          </Form.Item>
+
+          <Form.Item name="price" label="Price" rules={[{ required: true, message: "Please enter option price" }]}>
+            <Input placeholder="e.g. 0.00" />
+          </Form.Item>
+
+          <Form.Item name="duration" label="Duration (mins)" rules={[{ required: true, message: "Please enter duration" }]}>
+            <InputNumber min={1} step={1} style={{ width: "100%" }} placeholder="15" />
+          </Form.Item>
+
+          <Form.Item name="description" label="Description">
+            <Input.TextArea rows={3} placeholder="Optional description" />
+          </Form.Item>
+
+          <Form.Item name="is_active" valuePropName="checked" label="Active">
+            <Switch />
+          </Form.Item>
+
+          <Form.Item className="mb-0 mt-4">
+            <div className="flex justify-end gap-2">
+              <Button onClick={close}>Cancel</Button>
+              <Button type="primary" htmlType="submit" loading={saving} className={GOLD_BTN}>
+                {editing ? "Update Option" : "Create Option"}
+              </Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────
    CATEGORY FORM FIELDS
    (shared between Add and Edit category modals)
 ───────────────────────────────────────────── */function CategoryFormFields() {
@@ -634,10 +915,26 @@ function StaffPickerField({ value = [], onChange, staffList = [], staffLoading =
  * Reusable form body rendered inside both Add and Edit modals.
  * Defined at module level so React never re-mounts it on re-renders.
  */
-function ServiceFormFields({ categoryOptions = [], categoriesLoading = false, staffList = [], staffLoading = false }) {
+function ServiceFormFields({
+  categoryOptions = [],
+  categoriesLoading = false,
+  staffList = [],
+  staffLoading = false,
+  serviceOptionsData = [],
+  serviceOptionsLoading = false,
+  onCreateServiceOption,
+  onUpdateServiceOption,
+  onDeleteServiceOption,
+  currentServiceId = null,
+  currentServiceName = "",
+  showServiceOptions = false,
+  serviceOptionSaving = false,
+  serviceOptionDeleting = false,
+}) {
   /* Watch price_type to conditionally show/hide the price input */
   const priceType = Form.useWatch("price_type");
   const showPrice = priceType !== "free";
+  const serviceDuration = Form.useWatch("duration");
 
   /* Shared label style */
   const labelStyle = {
@@ -812,6 +1109,50 @@ function ServiceFormFields({ categoryOptions = [], categoriesLoading = false, st
         <StaffPickerField staffList={staffList} staffLoading={staffLoading} />
       </Form.Item>
 
+      {showServiceOptions && (
+        <Form.Item
+          name="service_option_ids"
+          label={<span style={labelStyle}>Service Options</span>}
+          className="mb-5"
+        >
+          <Select
+            mode="multiple"
+            allowClear
+            showSearch
+            placeholder="Select service options..."
+            loading={serviceOptionsLoading}
+            optionFilterProp="label"
+            filterOption={(input, option) =>
+              String(option?.label ?? "")
+                .toLowerCase()
+                .includes(String(input).toLowerCase())
+            }
+            options={serviceOptionsData
+              .filter((opt) => opt?.is_active !== false)
+              .map((opt) => ({
+                value: opt.id,
+                label: `${opt.name} · GHS ${Number(opt.price ?? 0).toLocaleString()}`,
+              }))}
+            className="rounded-xl"
+          />
+        </Form.Item>
+      )}
+
+      {showServiceOptions && (
+        <ServiceOptionsManager
+          optionsData={serviceOptionsData}
+          optionsLoading={serviceOptionsLoading}
+          onCreateOption={onCreateServiceOption}
+          onUpdateOption={onUpdateServiceOption}
+          onDeleteOption={onDeleteServiceOption}
+          currentServiceId={currentServiceId}
+          currentServiceName={currentServiceName}
+          defaultDuration={Number(serviceDuration || 15)}
+          saving={serviceOptionSaving}
+          deleting={serviceOptionDeleting}
+        />
+      )}
+
       {/* ── Section: Status ── */}
       <div
         className="flex items-center justify-between px-4 py-3 rounded-xl"
@@ -867,6 +1208,12 @@ function ServiceCard({ service, onEdit, onDelete, deleting, staffData = [] }) {
   const assignedStaff = assignedIds
     .map((id) => staffData.find((s) => s.id === id || String(s.id) === String(id)))
     .filter(Boolean);
+
+  const serviceOptions =
+    service.service_options ??
+    service.options ??
+    service.service_option_details ??
+    [];
 
   return (
     <div
@@ -1014,6 +1361,41 @@ function ServiceCard({ service, onEdit, onDelete, deleting, staffData = [] }) {
         </div>
       )}
 
+      {Array.isArray(serviceOptions) && serviceOptions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {serviceOptions.slice(0, 4).map((opt, idx) => {
+            const label = typeof opt === "object" ? opt.name || `Option #${opt.id ?? idx + 1}` : `Option #${opt}`;
+            const price = typeof opt === "object" ? Number(opt.price ?? 0) : null;
+            return (
+              <span
+                key={typeof opt === "object" ? `opt-${opt.id ?? idx}` : `opt-id-${opt}`}
+                className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                style={{
+                  background: "rgba(79,122,168,0.1)",
+                  border: "1px solid rgba(79,122,168,0.2)",
+                  color: "#2d5a84",
+                  fontFamily: "'Poppins', sans-serif",
+                }}
+              >
+                {label}{price ? ` · GHS ${price.toLocaleString()}` : ""}
+              </span>
+            );
+          })}
+          {serviceOptions.length > 4 && (
+            <span
+              className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+              style={{
+                background: "rgba(79,122,168,0.08)",
+                color: "#2d5a84",
+                fontFamily: "'Poppins', sans-serif",
+              }}
+            >
+              +{serviceOptions.length - 4} more options
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Divider before actions */}
       <div className="h-px mb-3" style={{ background: "rgba(187,161,79,0.15)" }} />
 
@@ -1113,6 +1495,12 @@ export default function ServicesPage() {
     queryFn: () => _axios.get("/api/portal/v1/accounts/staff/").then((r) => r.data),
   });
 
+  /* ── Fetch service options for inline create/edit management ── */
+  const { data: serviceOptionsRaw, isLoading: serviceOptionsLoading } = useQuery({
+    queryKey: ["service-options"],
+    queryFn: () => _axios.get("/api/portal/v1/booking/service-options").then((r) => r.data),
+  });
+
   /* Normalise arrays */
   const servicesData = useMemo(
     () => (Array.isArray(servicesRaw) ? servicesRaw : servicesRaw?.results || []),
@@ -1128,6 +1516,41 @@ export default function ServicesPage() {
     () => (Array.isArray(staffRaw) ? staffRaw : staffRaw?.results || []),
     [staffRaw]
   );
+
+  const serviceOptionsData = useMemo(
+    () => (Array.isArray(serviceOptionsRaw) ? serviceOptionsRaw : serviceOptionsRaw?.results || []),
+    [serviceOptionsRaw]
+  );
+
+  const resolveServiceOptionIds = (serviceObj) => {
+    const fromIds = serviceObj?.service_option_ids ?? serviceObj?.option_ids;
+    if (Array.isArray(fromIds)) return fromIds.map((x) => Number(x)).filter((x) => Number.isFinite(x));
+
+    const list = serviceObj?.service_options ?? serviceObj?.options ?? serviceObj?.service_option_details;
+    if (Array.isArray(list)) {
+      return list
+        .map((entry) => (typeof entry === "object" ? entry.id : entry))
+        .map((x) => Number(x))
+        .filter((x) => Number.isFinite(x));
+    }
+    return [];
+  };
+
+  const detectServiceOptionPayloadKey = (serviceObj) => {
+    if (serviceObj && Object.prototype.hasOwnProperty.call(serviceObj, "service_option_ids")) return "service_option_ids";
+    if (serviceObj && Object.prototype.hasOwnProperty.call(serviceObj, "option_ids")) return "option_ids";
+
+    const sample = servicesData.find(
+      (s) =>
+        Object.prototype.hasOwnProperty.call(s, "service_option_ids") ||
+        Object.prototype.hasOwnProperty.call(s, "option_ids")
+    );
+
+    if (sample && Object.prototype.hasOwnProperty.call(sample, "service_option_ids")) return "service_option_ids";
+    if (sample && Object.prototype.hasOwnProperty.call(sample, "option_ids")) return "option_ids";
+
+    return "service_option_ids";
+  };
 
   /* Category options for Select dropdowns */
   const categoryOptions = useMemo(
@@ -1201,14 +1624,14 @@ export default function ServicesPage() {
   const isLoading = servicesLoading;
 
   useEffect(() => {
-    const onResize = () => setIsDesktop(window.innerWidth >= 1024);
+    const onResize = () => {
+      const desktop = window.innerWidth >= 1024;
+      setIsDesktop(desktop);
+      if (desktop) setIsMobileCatsOpen(false);
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-
-  useEffect(() => {
-    if (isDesktop) setIsMobileCatsOpen(false);
-  }, [isDesktop]);
 
   useEffect(() => {
     if (!isMobileCatsOpen) return;
@@ -1247,9 +1670,15 @@ export default function ServicesPage() {
   const updateService = useMutation({
     mutationFn: (data) => {
       const isFree = data.price_type === "free";
-      return _axios.patch(`/api/portal/v1/booking/services/${data.id}/`, {
+      const optionIds = Array.isArray(data.service_option_ids) ? data.service_option_ids : [];
+      const payload = {
         ...data,
         price: isFree ? "0" : String(data.price ?? 0),
+      };
+      delete payload.service_option_ids;
+      payload[detectServiceOptionPayloadKey(editService)] = optionIds;
+      return _axios.patch(`/api/portal/v1/booking/services/${data.id}/`, {
+        ...payload,
       });
     },
     onSuccess: () => {
@@ -1262,6 +1691,47 @@ export default function ServicesPage() {
       message.error(err.response?.data?.message || "Failed to update service");
     },
   });
+
+  /* ─────────────────────────────────────
+     CREATE/UPDATE SERVICE OPTION
+  ───────────────────────────────────── */
+  const createServiceOption = useMutation({
+    mutationFn: (data) => _axios.post("/api/portal/v1/booking/service-options/", data),
+    onSuccess: () => {
+      message.success("Service option created");
+      queryClient.invalidateQueries(["service-options"]);
+    },
+    onError: (err) => {
+      message.error(err.response?.data?.message || "Failed to create service option");
+    },
+  });
+
+  const updateServiceOption = useMutation({
+    mutationFn: ({ id, data }) => _axios.patch(`/api/portal/v1/booking/service-options/${id}`, data),
+    onSuccess: () => {
+      message.success("Service option updated");
+      queryClient.invalidateQueries(["service-options"]);
+    },
+    onError: (err) => {
+      message.error(err.response?.data?.message || "Failed to update service option");
+    },
+  });
+
+  const deleteServiceOption = useMutation({
+    mutationFn: (id) => _axios.delete(`/api/portal/v1/booking/service-options/${id}`),
+    onSuccess: () => {
+      message.success("Service option deleted");
+      queryClient.invalidateQueries(["service-options"]);
+      queryClient.invalidateQueries(["services"]);
+    },
+    onError: (err) => {
+      message.error(err.response?.data?.message || "Failed to delete service option");
+    },
+  });
+
+  const createServiceOptionFromForm = (payload) => createServiceOption.mutateAsync(payload);
+  const updateServiceOptionFromForm = (id, payload) => updateServiceOption.mutateAsync({ id, data: payload });
+  const deleteServiceOptionFromForm = (id) => deleteServiceOption.mutateAsync(id);
 
   /* ─────────────────────────────────────
      DELETE SERVICE
@@ -1375,6 +1845,7 @@ export default function ServicesPage() {
       category:    service.category ?? undefined,
       // Pre-populate assigned staff from the API response field
       staff_ids:   service.assigned_staff_ids ?? service.staff_ids ?? [],
+      service_option_ids: resolveServiceOptionIds(service),
     });
     setEditOpen(true);
   };
@@ -1595,58 +2066,90 @@ export default function ServicesPage() {
           </p>
         </div>
 
-        {/* Right: search + add button */}
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-
-          {!isDesktop && (
-            <button
-              onClick={() => setIsMobileCatsOpen(true)}
-              className="flex cursor-pointer items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 hover:opacity-90"
+        {/* Right controls */}
+        {isDesktop ? (
+          <div className="flex items-center gap-3">
+            <div
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full"
               style={{
                 background: "#FDFAF5",
-                border: "1px solid rgba(187,161,79,0.3)",
-                color: "#7a6030",
-                fontFamily: "'Poppins', sans-serif",
+                border: "1px solid rgba(187,161,79,0.25)",
+                boxShadow: "0 1px 6px rgba(39,39,39,0.05)",
               }}
             >
-              <FiMenu size={15} />
-              Categories
+              <FiSearch size={14} style={{ color: "#987554" }} />
+              <input
+                placeholder="Search services…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#b5a47a] w-40"
+                style={{ fontFamily: "'Poppins', sans-serif" }}
+              />
+            </div>
+
+            <button
+              onClick={() => setAddOpen(true)}
+              className="flex cursor-pointer items-center justify-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-200 hover:opacity-90 hover:shadow-lg"
+              style={{
+                background: "linear-gradient(135deg, #BBA14F, #987554)",
+                fontFamily: "'Poppins', sans-serif",
+                boxShadow: "0 4px 14px rgba(187,161,79,0.3)",
+              }}
+            >
+              <FiPlus />
+              Add Service
             </button>
-          )}
-
-          {/* Search bar */}
-          <div
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full"
-            style={{
-              background: "#FDFAF5",
-              border: "1px solid rgba(187,161,79,0.25)",
-              boxShadow: "0 1px 6px rgba(39,39,39,0.05)",
-            }}
-          >
-            <FiSearch size={14} style={{ color: "#987554" }} />
-            <input
-              placeholder="Search services…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#b5a47a] w-40"
-              style={{ fontFamily: "'Poppins', sans-serif" }}
-            />
           </div>
+        ) : (
+          <div className="w-full flex flex-col gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                onClick={() => setIsMobileCatsOpen(true)}
+                className="flex cursor-pointer items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 hover:opacity-90"
+                style={{
+                  background: "#FDFAF5",
+                  border: "1px solid rgba(187,161,79,0.3)",
+                  color: "#7a6030",
+                  fontFamily: "'Poppins', sans-serif",
+                }}
+              >
+                <FiMenu size={15} />
+                Categories
+              </button>
 
-          {/* Add service button */}
-          <button
-            onClick={() => setAddOpen(true)}
-            className="flex cursor-pointer items-center justify-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-200 hover:opacity-90 hover:shadow-lg"
-            style={{
-              background: "linear-gradient(135deg, #BBA14F, #987554)",
-              fontFamily: "'Poppins', sans-serif",
-              boxShadow: "0 4px 14px rgba(187,161,79,0.3)",
-            }}
-          >
-            <FiPlus />
-            Add Service
-          </button>
-        </div>
+              <button
+                onClick={() => setAddOpen(true)}
+                className="flex cursor-pointer items-center justify-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-200 hover:opacity-90 hover:shadow-lg"
+                style={{
+                  background: "linear-gradient(135deg, #BBA14F, #987554)",
+                  fontFamily: "'Poppins', sans-serif",
+                  boxShadow: "0 4px 14px rgba(187,161,79,0.3)",
+                }}
+              >
+                <FiPlus />
+                Add Service
+              </button>
+            </div>
+
+            <div
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full"
+              style={{
+                background: "#FDFAF5",
+                border: "1px solid rgba(187,161,79,0.25)",
+                boxShadow: "0 1px 6px rgba(39,39,39,0.05)",
+              }}
+            >
+              <FiSearch size={14} style={{ color: "#987554" }} />
+              <input
+                placeholder="Search services…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#b5a47a] w-full"
+                style={{ fontFamily: "'Poppins', sans-serif" }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ──────────────────────────────────
@@ -1929,6 +2432,16 @@ export default function ServicesPage() {
               categoriesLoading={categoriesLoading}
               staffList={staffData}
               staffLoading={staffLoading}
+              serviceOptionsData={serviceOptionsData}
+              serviceOptionsLoading={serviceOptionsLoading}
+              onCreateServiceOption={createServiceOptionFromForm}
+              onUpdateServiceOption={updateServiceOptionFromForm}
+              onDeleteServiceOption={deleteServiceOptionFromForm}
+              currentServiceId={null}
+              currentServiceName={addForm.getFieldValue("name") || ""}
+              showServiceOptions={false}
+              serviceOptionSaving={createServiceOption.isPending || updateServiceOption.isPending}
+              serviceOptionDeleting={deleteServiceOption.isPending}
             />
 
             {/* ── Footer ── */}
@@ -2070,6 +2583,16 @@ export default function ServicesPage() {
               categoriesLoading={categoriesLoading}
               staffList={staffData}
               staffLoading={staffLoading}
+              serviceOptionsData={serviceOptionsData}
+              serviceOptionsLoading={serviceOptionsLoading}
+              onCreateServiceOption={createServiceOptionFromForm}
+              onUpdateServiceOption={updateServiceOptionFromForm}
+              onDeleteServiceOption={deleteServiceOptionFromForm}
+              currentServiceId={editService?.id ?? null}
+              currentServiceName={editService?.name || ""}
+              showServiceOptions={true}
+              serviceOptionSaving={createServiceOption.isPending || updateServiceOption.isPending}
+              serviceOptionDeleting={deleteServiceOption.isPending}
             />
 
             {/* ── Footer ── */}

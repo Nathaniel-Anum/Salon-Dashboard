@@ -1374,16 +1374,135 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
 /* ─────────────────────────────────────────────
    BOOKING DETAIL MODAL
 ───────────────────────────────────────────── */
-function BookingModal({ booking, staff, allServices = [], allStaff = [], onClose, onCancel, cancelLoading, onDelete, deleteLoading, onStatusChange, statusLoading, onReschedule, rescheduleLoading }) {
-  /* ── Reschedule state ── */
+function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
+  if (!booking) return null;
+
+  const cfg = STATUS_CFG[booking.status] || STATUS_CFG.pending;
+  const [from, to] = avatarGradient(staff?.full_name || "");
+  const startMins = timeToMins(booking.startTime);
+  const endMins = startMins + booking.durationMins;
+  const endTimeStr = `${String(Math.floor((endMins + HOUR_START * 60) / 60) % 24).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+  const durLabel = booking.durationMins >= 60
+    ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
+    : `${booking.durationMins}m`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "rgba(30,24,14,0.55)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative rounded-2xl w-full max-w-sm mx-4 shadow-2xl"
+        style={{
+          background: "#FDFAF5",
+          border: "1px solid rgba(187,161,79,0.25)",
+          animation: "fadeInUp 0.2s ease both",
+          overflow: "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="h-1" style={{ background: "linear-gradient(90deg, #BBA14F, #c9ae5e)" }} />
+        <div style={{ padding: "20px 24px 24px" }}>
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center text-sm transition hover:bg-black/5"
+            style={{ color: "#987554" }}
+          >
+            ✕
+          </button>
+
+          <div className="flex items-center gap-3 mb-4">
+            <div
+              className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white shrink-0"
+              style={{ background: `linear-gradient(135deg, ${from}, ${to})`, fontSize: 15, fontFamily: "'Poppins', sans-serif" }}
+            >
+              {initials(staff?.full_name)}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#272727]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+                {staff?.full_name || "Staff"}
+              </p>
+              <p className="text-xs text-[#987554]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+                {staff?.role}
+              </p>
+            </div>
+          </div>
+
+          <h3 className="text-lg font-bold text-[#272727] mb-4" style={{ fontFamily: "'Playfair Display', serif", margin: "0 0 16px" }}>
+            {booking.service}
+          </h3>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+            <DetailRow icon={<FiUser size={13} />} label="Client" value={booking.client} />
+            <DetailRow
+              icon={<FiClock size={13} />}
+              label="Time"
+              value={`${formatDisplayTime(booking.startTime)} → ${formatDisplayTime(endTimeStr)}  (${durLabel})`}
+            />
+            <DetailRow
+              icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: cfg.dot, display: "inline-block" }} />}
+              label="Status"
+              value={
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: `${cfg.dot}18`, color: cfg.dot, border: `1px solid ${cfg.dot}44` }}>
+                  {cfg.label}
+                </span>
+              }
+            />
+          </div>
+
+          <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <button
+              onClick={onClose}
+              style={{
+                padding: "10px 0",
+                borderRadius: 12,
+                background: "#fff",
+                border: "1px solid rgba(187,161,79,0.35)",
+                color: "#987554",
+                fontSize: 13,
+                fontWeight: 700,
+                fontFamily: "'Poppins', sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              Close
+            </button>
+            <button
+              onClick={() => onOpenStatusDrawer(booking)}
+              style={{
+                padding: "10px 0",
+                borderRadius: 12,
+                background: "linear-gradient(135deg, #BBA14F, #987554)",
+                border: "none",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 700,
+                fontFamily: "'Poppins', sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              Update Status
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingStatusDrawer({ booking, staff, allServices = [], allStaff = [], onClose, onStatusChange, statusLoading, onReschedule, rescheduleLoading, onCancel, cancelLoading, onDelete, deleteLoading }) {
+  const [showAddonForm, setShowAddonForm] = useState(false);
+  const [voidingAddonId, setVoidingAddonId] = useState(null);
   const [showReschedule, setShowReschedule] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(null);
   const [rescheduleTime, setRescheduleTime] = useState(null);
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showAddons, setShowAddons] = useState(false);
-  const [voidingAddonId, setVoidingAddonId] = useState(null);
+  const [localStatus, setLocalStatus] = useState(booking?.status || "pending");
 
   const [addonForm, setAddonForm] = useState({
     service_id: null,
@@ -1396,40 +1515,104 @@ function BookingModal({ booking, staff, allServices = [], allStaff = [], onClose
 
   const queryClient = useQueryClient();
   const bookingId = booking?.id;
+  const cfg =
+    STATUS_CFG[localStatus] ||
+    STATUS_CFG[localStatus?.replace("-", "_")] ||
+    STATUS_CFG.pending;
+
+  const toMoneyNumber = (raw) => {
+    const n = parseFloat(String(raw ?? "0").replace(/,/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const staffMatchesId = (person, rawId) => {
+    const needle = String(rawId);
+    return (
+      String(person.id) === needle ||
+      String(person.user) === needle ||
+      String(person.user_id) === needle ||
+      String(person.account_id) === needle
+    );
+  };
+
+  const getEligibleStaffForService = (serviceObj) => {
+    const ids = serviceObj?.assignedStaffIds ?? [];
+    if (!ids.length) return allStaff;
+    const filtered = allStaff.filter((person) => ids.some((rawId) => staffMatchesId(person, rawId)));
+    return filtered.length ? filtered : allStaff;
+  };
 
   const serviceOptions = useMemo(() => {
-    const bookingServices = Array.isArray(booking?.services) ? booking.services : [];
-    const fromBooking = bookingServices
-      .map((s) => {
-        const id = s.service_id ?? s.service ?? s.id;
-        const name =
-          s.service_name ??
-          s.name ??
-          allServices.find((svc) => String(svc.id) === String(id))?.name;
-        if (!id || !name) return null;
-        return { id: Number(id), name };
-      })
-      .filter(Boolean);
+    const map = new Map();
 
-    const unique = new Map();
-    [...fromBooking, ...allServices.map((s) => ({ id: Number(s.id), name: s.name }))].forEach((s) => {
-      if (!unique.has(String(s.id))) unique.set(String(s.id), s);
+    allServices.forEach((s) => {
+      map.set(String(s.id), {
+        id: Number(s.id),
+        name: s.name || `Service #${s.id}`,
+        price: toMoneyNumber(s.price ?? s.amount),
+        assignedStaffIds: (s.assigned_staff_ids ?? s.staff_ids ?? []).map(String),
+      });
     });
-    return Array.from(unique.values());
+
+    const bookingServices = Array.isArray(booking?.services) ? booking.services : [];
+    bookingServices.forEach((s) => {
+      const id = s.service_id ?? s.service ?? s.id;
+      if (!id) return;
+      const existing = map.get(String(id));
+      map.set(String(id), {
+        id: Number(id),
+        name: s.service_name ?? s.name ?? existing?.name ?? `Service #${id}`,
+        price: existing?.price ?? toMoneyNumber(s.price ?? s.amount),
+        assignedStaffIds: existing?.assignedStaffIds ?? [],
+      });
+    });
+
+    return Array.from(map.values());
   }, [booking, allServices]);
+
+  const selectedAddonService = useMemo(
+    () => serviceOptions.find((s) => String(s.id) === String(addonForm.service_id)),
+    [serviceOptions, addonForm.service_id]
+  );
+
+  const eligibleAddonStaff = getEligibleStaffForService(selectedAddonService);
+
+  const applyServiceSelection = (serviceId) => {
+    if (!serviceId) {
+      setAddonForm((p) => ({ ...p, service_id: null }));
+      return;
+    }
+    const svc = serviceOptions.find((s) => String(s.id) === String(serviceId));
+    const eligible = getEligibleStaffForService(svc);
+    const currentStaffStillValid = eligible.some((person) => String(person.id) === String(addonForm.staff_member_id));
+    const nextStaffId = currentStaffStillValid
+      ? addonForm.staff_member_id
+      : (eligible[0]?.id ?? booking?.staffId ?? allStaff[0]?.id ?? null);
+
+    setAddonForm((p) => ({
+      ...p,
+      service_id: Number(serviceId),
+      staff_member_id: nextStaffId,
+      total: (svc?.price ?? 0).toFixed(2),
+    }));
+  };
 
   const resetAddonForm = () => {
     const defaultServiceId = serviceOptions[0]?.id ?? null;
-    const defaultStaffId = booking?.staffId ?? allStaff[0]?.id ?? null;
+    const defaultService = serviceOptions.find((s) => String(s.id) === String(defaultServiceId));
+    const eligible = getEligibleStaffForService(defaultService);
+    const defaultStaffId = eligible[0]?.id ?? booking?.staffId ?? allStaff[0]?.id ?? null;
     setAddonForm({
       service_id: defaultServiceId,
       quantity: 1,
       staff_member_id: defaultStaffId,
       performed_at: dayjs().format("YYYY-MM-DDTHH:mm"),
-      total: "",
+      total: (defaultService?.price ?? 0).toFixed(2),
       discount: "0",
     });
   };
+
+  const canUseAddon = localStatus === "completed";
 
   const { data: addonsRaw, isFetching: addonsLoading } = useQuery({
     queryKey: ["appointment-addons", bookingId],
@@ -1437,7 +1620,7 @@ function BookingModal({ booking, staff, allServices = [], allStaff = [], onClose
       _axios
         .get(`/api/portal/v1/booking/appointments/${bookingId}/addons/`)
         .then((r) => r.data),
-    enabled: showAddons && Boolean(bookingId),
+    enabled: canUseAddon && Boolean(bookingId),
     staleTime: 20_000,
   });
 
@@ -1504,228 +1687,217 @@ function BookingModal({ booking, staff, allServices = [], allStaff = [], onClose
     });
   };
 
-  if (!booking) return null;
-
-  const cfg = STATUS_CFG[booking.status] || STATUS_CFG.pending;
-  const [from, to] = avatarGradient(staff?.full_name || "");
-
-  /* ── End time ── */
-  const startMins = timeToMins(booking.startTime);
-  const endMins   = startMins + booking.durationMins;
-  const endTimeStr = `${String(Math.floor((endMins + HOUR_START * 60) / 60) % 24).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
-
-  const durLabel = booking.durationMins >= 60
-    ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
-    : `${booking.durationMins}m`;
-
-  /* Status action buttons config */
-  const statusActions = [
-    { key: "arrived",   label: "Arrived",   color: "#22a050", bg: "rgba(34,160,80,0.1)",   border: "rgba(34,160,80,0.35)"   },
-    { key: "completed", label: "Completed", color: "#BBA14F", bg: "rgba(187,161,79,0.12)", border: "rgba(187,161,79,0.4)"   },
+  const statusOptions = [
+    { value: "pending", label: "Pending" },
+    { value: "arrived", label: "Arrived" },
+    { value: "in-progress", label: "In Progress" },
+    { value: "completed", label: "Completed" },
+    { value: "no_show", label: "No Show" },
   ];
+
+  if (!booking) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(30,24,14,0.55)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 z-80"
+      style={{ background: "rgba(18,12,6,0.45)" }}
       onClick={onClose}
     >
       <div
-        className="relative rounded-2xl w-full max-w-sm mx-4 shadow-2xl"
         style={{
-          background: "#FDFAF5",
-          border: "1px solid rgba(187,161,79,0.25)",
-          animation: "fadeInUp 0.2s ease both",
-          overflow: "hidden",
+          position: "absolute",
+          right: 0,
+          top: 0,
+          height: "100%",
+          width: showAddonForm ? "min(560px, 100vw)" : "min(460px, 100vw)",
+          background: "linear-gradient(180deg, #fffdf8 0%, #f9f3e8 100%)",
+          borderLeft: "1px solid rgba(187,161,79,0.2)",
+          boxShadow: "-12px 0 32px rgba(0,0,0,0.28)",
+          overflowY: "auto",
+          transition: "width 0.24s ease",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* gold top bar */}
-        <div className="h-1" style={{ background: "linear-gradient(90deg, #BBA14F, #c9ae5e)" }} />
-
-        <div style={{ padding: "20px 24px 24px" }}>
-          {/* close */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center text-sm transition hover:bg-black/5"
-            style={{ color: "#987554" }}
-          >
-            ✕
-          </button>
-
-          {/* staff avatar */}
-          <div className="flex items-center gap-3 mb-4">
-            <div
-              className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white shrink-0"
-              style={{ background: `linear-gradient(135deg, ${from}, ${to})`, fontSize: 15, fontFamily: "'Poppins', sans-serif" }}
-            >
-              {initials(staff?.full_name)}
-            </div>
+        <div style={{ padding: "18px 18px 22px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <div>
-              <p className="text-sm font-semibold text-[#272727]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
-                {staff?.full_name || "Staff"}
+              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "#987554", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins', sans-serif" }}>
+                Appointment Actions
               </p>
-              <p className="text-xs text-[#987554]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
-                {staff?.role}
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
+                {booking.client}
               </p>
             </div>
+            <button
+              onClick={onClose}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 999,
+                border: "1px solid rgba(187,161,79,0.2)",
+                color: "#987554",
+                background: "#fff",
+                fontSize: 15,
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
           </div>
 
-          {/* service title */}
-          <h3 className="text-lg font-bold text-[#272727] mb-4" style={{ fontFamily: "'Playfair Display', serif", margin: "0 0 16px" }}>
-            {booking.service}
-          </h3>
-
-          {/* detail rows */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
-            <DetailRow icon={<FiUser size={13} />} label="Client" value={booking.client} />
-            <DetailRow
-              icon={<FiClock size={13} />}
-              label="Time"
-              value={`${formatDisplayTime(booking.startTime)} → ${formatDisplayTime(endTimeStr)}  (${durLabel})`}
-            />
-            <DetailRow
-              icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: cfg.dot, display: "inline-block" }} />}
-              label="Status"
-              value={
-                <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: `${cfg.dot}18`, color: cfg.dot, border: `1px solid ${cfg.dot}44` }}>
-                  {cfg.label}
-                </span>
-              }
-            />
+          <div style={{ padding: "10px 12px", borderRadius: 12, background: "#fff", border: "1px solid rgba(187,161,79,0.2)", marginBottom: 12 }}>
+            <DetailRow icon={<FiScissors size={13} />} label="Service" value={booking.service} />
+            <DetailRow icon={<FiUser size={13} />} label="Staff" value={staff?.full_name || "Staff"} />
+            <DetailRow icon={<FiClock size={13} />} label="Time" value={formatDisplayTime(booking.startTime)} />
           </div>
 
-          {/* divider */}
-          <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
-
-          {/* ── Status action buttons ── */}
-          <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, color: "#987554", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins', sans-serif" }}>
-            Update Status
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
-            {statusActions.map((a) => {
-              const isActive = booking.status === a.key;
-              return (
-                <button
-                  key={a.key}
-                  disabled={statusLoading}
-                  onClick={() => onStatusChange(booking.id, a.key)}
-                  style={{
-                    padding: "8px 4px",
-                    borderRadius: 10,
-                    border: `${isActive ? "2px" : "1px"} solid ${isActive ? a.color : a.border}`,
-                    background: isActive ? `${a.color}22` : a.bg,
-                    color: a.color,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    fontFamily: "'Poppins', sans-serif",
-                    cursor: statusLoading ? "not-allowed" : "pointer",
-                    opacity: statusLoading ? 0.5 : 1,
-                    transition: "all 0.15s ease",
-                    boxShadow: isActive ? `0 0 0 2px ${a.color}33` : "none",
-                  }}
-                >
-                  {isActive ? `✓ ${a.label}` : a.label}
-                </button>
-              );
-            })}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ ...WZ.label, marginBottom: 6 }}>Status</label>
+            <select
+              value={localStatus}
+              onChange={(e) => {
+                const next = e.target.value;
+                setLocalStatus(next);
+                if (next !== "completed") setShowAddonForm(false);
+                if (next === "completed") {
+                  setShowAddonForm(true);
+                  resetAddonForm();
+                }
+                onStatusChange(booking.id, next);
+              }}
+              disabled={statusLoading}
+              style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
+            >
+              {statusOptions.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            <p style={{ margin: "6px 0 0", fontSize: 11, color: cfg.dot, fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
+              Current: {cfg.label}
+            </p>
           </div>
 
-          {booking.status === "arrived" && (
-            <>
+          {canUseAddon && (
+            <div style={{ marginBottom: 12, padding: "12px", borderRadius: 12, background: "rgba(82,130,255,0.06)", border: "1px solid rgba(82,130,255,0.2)", display: "flex", flexDirection: "column", gap: 10 }}>
               <button
                 onClick={() => {
-                  setShowAddons((v) => {
+                  setShowAddonForm((v) => {
                     const next = !v;
                     if (next) resetAddonForm();
                     return next;
                   });
-                  setShowReschedule(false);
-                  setShowCancelConfirm(false);
-                  setShowDeleteConfirm(false);
                 }}
                 style={{
                   width: "100%",
-                  padding: "9px 14px",
+                  padding: "9px 10px",
                   borderRadius: 10,
                   border: "1px solid rgba(82,130,255,0.35)",
-                  background: showAddons ? "rgba(82,130,255,0.13)" : "rgba(82,130,255,0.07)",
+                  background: showAddonForm ? "rgba(82,130,255,0.13)" : "rgba(82,130,255,0.08)",
                   color: "#355cc9",
                   fontSize: 12,
                   fontWeight: 700,
                   fontFamily: "'Poppins', sans-serif",
                   cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
-                  marginBottom: 10,
                 }}
               >
-                <FiPlus size={13} />
-                {showAddons ? "Close Add On" : "Add On"}
+                {showAddonForm ? "Hide Add On" : "Add On"}
               </button>
 
-              {showAddons && (
-                <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 12, background: "rgba(82,130,255,0.06)", border: "1px solid rgba(82,130,255,0.2)", display: "flex", flexDirection: "column", gap: 10 }}>
-                  <p style={{ margin: 0, fontSize: 11, color: "#355cc9", fontFamily: "'Poppins', sans-serif", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                    Appointment Add Ons
-                  </p>
+              {showAddonForm && (
+                <>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                    <div>
+                      <label style={{ ...WZ.label, marginBottom: 4 }}>Service</label>
+                      <select
+                        value={addonForm.service_id ?? ""}
+                        onChange={(e) => applyServiceSelection(e.target.value ? Number(e.target.value) : null)}
+                        style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
+                      >
+                        <option value="">Select service</option>
+                        {serviceOptions.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name} · GH₵ {s.price.toFixed(2)}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <select
-                      value={addonForm.service_id ?? ""}
-                      onChange={(e) => setAddonForm((p) => ({ ...p, service_id: e.target.value ? Number(e.target.value) : null }))}
-                      style={{ ...WZ.inputBase, padding: "8px 10px", fontSize: 12 }}
-                    >
-                      <option value="">Select service</option>
-                      {serviceOptions.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
+                    {selectedAddonService && (
+                      <div style={{
+                        border: "1px solid rgba(82,130,255,0.25)",
+                        background: "rgba(255,255,255,0.78)",
+                        borderRadius: 10,
+                        padding: "8px 10px",
+                      }}>
+                        <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700, color: "#2e3b63", fontFamily: "'Poppins', sans-serif" }}>
+                          {selectedAddonService.name}
+                        </p>
+                        <p style={{ margin: "0 0 4px", fontSize: 11, color: "#4e6bc4", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
+                          Base Price: GH₵ {selectedAddonService.price.toFixed(2)}
+                        </p>
+                        <p style={{ margin: 0, fontSize: 10, color: "#6f80b8", fontFamily: "'Poppins', sans-serif" }}>
+                          Assigned staff: {eligibleAddonStaff.length ? eligibleAddonStaff.map((s) => s.full_name || `Staff #${s.id}`).join(", ") : "None"}
+                        </p>
+                      </div>
+                    )}
 
-                    <select
-                      value={addonForm.staff_member_id ?? ""}
-                      onChange={(e) => setAddonForm((p) => ({ ...p, staff_member_id: e.target.value ? Number(e.target.value) : null }))}
-                      style={{ ...WZ.inputBase, padding: "8px 10px", fontSize: 12 }}
-                    >
-                      <option value="">Select staff</option>
-                      {allStaff.map((s) => (
-                        <option key={s.id} value={s.id}>{s.full_name || `Staff #${s.id}`}</option>
-                      ))}
-                    </select>
+                    <div>
+                      <label style={{ ...WZ.label, marginBottom: 4 }}>Staff</label>
+                      <select
+                        value={addonForm.staff_member_id ?? ""}
+                        onChange={(e) => setAddonForm((p) => ({ ...p, staff_member_id: e.target.value ? Number(e.target.value) : null }))}
+                        style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
+                      >
+                        <option value="">Select staff</option>
+                        {eligibleAddonStaff.map((s) => (
+                          <option key={s.id} value={s.id}>{s.full_name || `Staff #${s.id}`}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                    <input
-                      type="number"
-                      min={1}
-                      value={addonForm.quantity}
-                      onChange={(e) => setAddonForm((p) => ({ ...p, quantity: Number(e.target.value || 1) }))}
-                      placeholder="Quantity"
-                      style={{ ...WZ.inputBase, padding: "8px 10px", fontSize: 12 }}
-                    />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div>
+                        <label style={{ ...WZ.label, marginBottom: 4 }}>Quantity</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={addonForm.quantity}
+                          onChange={(e) => setAddonForm((p) => ({ ...p, quantity: Number(e.target.value || 1) }))}
+                          placeholder="Quantity"
+                          style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ ...WZ.label, marginBottom: 4 }}>Performed At</label>
+                        <input
+                          type="datetime-local"
+                          value={addonForm.performed_at}
+                          onChange={(e) => setAddonForm((p) => ({ ...p, performed_at: e.target.value }))}
+                          style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
+                        />
+                      </div>
+                    </div>
 
-                    <input
-                      type="datetime-local"
-                      value={addonForm.performed_at}
-                      onChange={(e) => setAddonForm((p) => ({ ...p, performed_at: e.target.value }))}
-                      style={{ ...WZ.inputBase, padding: "8px 10px", fontSize: 12 }}
-                    />
-
-                    <input
-                      type="text"
-                      value={addonForm.total}
-                      onChange={(e) => setAddonForm((p) => ({ ...p, total: e.target.value }))}
-                      placeholder="Total"
-                      style={{ ...WZ.inputBase, padding: "8px 10px", fontSize: 12 }}
-                    />
-
-                    <input
-                      type="text"
-                      value={addonForm.discount}
-                      onChange={(e) => setAddonForm((p) => ({ ...p, discount: e.target.value }))}
-                      placeholder="Discount"
-                      style={{ ...WZ.inputBase, padding: "8px 10px", fontSize: 12 }}
-                    />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div>
+                        <label style={{ ...WZ.label, marginBottom: 4 }}>Amount</label>
+                        <input
+                          type="text"
+                          value={addonForm.total}
+                          onChange={(e) => setAddonForm((p) => ({ ...p, total: e.target.value }))}
+                          placeholder="Total"
+                          style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ ...WZ.label, marginBottom: 4 }}>Discount</label>
+                        <input
+                          type="text"
+                          value={addonForm.discount}
+                          onChange={(e) => setAddonForm((p) => ({ ...p, discount: e.target.value }))}
+                          placeholder="Discount"
+                          style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <button
@@ -1745,80 +1917,83 @@ function BookingModal({ booking, staff, allServices = [], allStaff = [], onClose
                       cursor: createAddon.isPending ? "not-allowed" : "pointer",
                     }}
                   >
-                    {createAddon.isPending ? "Adding…" : "Add On"}
+                    {createAddon.isPending ? "Adding..." : "Add On"}
                   </button>
+                </>
+              )}
 
-                  <div style={{ height: 1, background: "rgba(82,130,255,0.15)" }} />
+              <div style={{ height: 1, background: "rgba(82,130,255,0.15)" }} />
 
-                  {addonsLoading ? (
-                    <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}>
-                      <Spin size="small" />
-                    </div>
-                  ) : addons.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: 12, color: "#7e8dbd", fontFamily: "'Poppins', sans-serif" }}>
-                      No add-ons yet.
-                    </p>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {addons.map((addon) => {
-                        const addonId = addon.id ?? addon.addon_id;
-                        const addonService =
-                          addon.service_name ||
-                          addon.service?.name ||
-                          serviceOptions.find((s) => String(s.id) === String(addon.service_id))?.name ||
-                          `Service #${addon.service_id ?? "-"}`;
-                        const isVoided = Boolean(addon.is_voided || addon.voided_at || addon.status === "voided");
-                        return (
-                          <div
-                            key={addonId}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              borderRadius: 10,
-                              border: "1px solid rgba(82,130,255,0.2)",
-                              background: isVoided ? "rgba(160,160,160,0.1)" : "#fff",
-                              padding: "8px 10px",
-                            }}
-                          >
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#2e3b63", fontFamily: "'Poppins', sans-serif" }}>
-                                {addonService}
-                              </p>
-                              <p style={{ margin: 0, fontSize: 11, color: "#7e8dbd", fontFamily: "'Poppins', sans-serif" }}>
-                                Qty {addon.quantity ?? 1} · Total {addon.total ?? "0"} · Discount {addon.discount ?? "0"}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => addonId && voidAddon.mutate({ addonId })}
-                              disabled={isVoided || voidAddon.isPending || !addonId}
-                              style={{
-                                padding: "6px 10px",
-                                borderRadius: 8,
-                                border: "1px solid rgba(224,80,80,0.35)",
-                                background: isVoided ? "rgba(120,120,120,0.12)" : "rgba(224,80,80,0.1)",
-                                color: isVoided ? "#888" : "#c73a3a",
-                                fontSize: 11,
-                                fontWeight: 700,
-                                fontFamily: "'Poppins', sans-serif",
-                                cursor: isVoided ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {voidAddon.isPending && voidingAddonId === addonId ? "Voiding…" : isVoided ? "Voided" : "Void"}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+              {addonsLoading ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}>
+                  <Spin size="small" />
+                </div>
+              ) : addons.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 12, color: "#7e8dbd", fontFamily: "'Poppins', sans-serif" }}>
+                  No add-ons yet.
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {addons.map((addon) => {
+                    const addonId = addon.id ?? addon.addon_id;
+                    const addonService =
+                      addon.service_name ||
+                      addon.service?.name ||
+                      serviceOptions.find((s) => String(s.id) === String(addon.service_id))?.name ||
+                      `Service #${addon.service_id ?? "-"}`;
+                    const isVoided = Boolean(addon.is_voided || addon.voided_at || addon.status === "voided");
+                    return (
+                      <div
+                        key={addonId}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          borderRadius: 10,
+                          border: "1px solid rgba(82,130,255,0.2)",
+                          background: isVoided ? "rgba(160,160,160,0.1)" : "#fff",
+                          padding: "8px 10px",
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#2e3b63", fontFamily: "'Poppins', sans-serif" }}>
+                            {addonService}
+                          </p>
+                          <p style={{ margin: 0, fontSize: 11, color: "#7e8dbd", fontFamily: "'Poppins', sans-serif" }}>
+                            Qty {addon.quantity ?? 1} · Total {addon.total ?? "0"} · Discount {addon.discount ?? "0"}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => addonId && voidAddon.mutate({ addonId })}
+                          disabled={isVoided || voidAddon.isPending || !addonId}
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: 8,
+                            border: "1px solid rgba(224,80,80,0.35)",
+                            background: isVoided ? "rgba(120,120,120,0.12)" : "rgba(224,80,80,0.1)",
+                            color: isVoided ? "#888" : "#c73a3a",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            fontFamily: "'Poppins', sans-serif",
+                            cursor: isVoided ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {voidAddon.isPending && voidingAddonId === addonId ? "Voiding..." : isVoided ? "Voided" : "Void"}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-            </>
+            </div>
           )}
 
-          {/* ── Reschedule toggle ── */}
           <button
-            onClick={() => { setShowReschedule((v) => !v); setShowCancelConfirm(false); setShowAddons(false); }}
+            onClick={() => {
+              setShowReschedule((v) => !v);
+              setShowCancelConfirm(false);
+              setShowDeleteConfirm(false);
+            }}
             style={{
               width: "100%",
               padding: "9px 14px",
@@ -1841,11 +2016,10 @@ function BookingModal({ booking, staff, allServices = [], allStaff = [], onClose
             {showReschedule ? "Cancel Reschedule" : "Reschedule"}
           </button>
 
-          {/* ── Reschedule panel ── */}
           {showReschedule && (
             <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 12, background: "rgba(187,161,79,0.06)", border: "1px solid rgba(187,161,79,0.2)", display: "flex", flexDirection: "column", gap: 10 }}>
               <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
-                Choose new date &amp; time
+                Choose new date and time
               </p>
               <DatePicker
                 value={rescheduleDate}
@@ -1892,8 +2066,6 @@ function BookingModal({ booking, staff, allServices = [], allStaff = [], onClose
                     booking.staffId,
                     rescheduleReason.trim(),
                   );
-                  setShowReschedule(false);
-                  setRescheduleReason("");
                 }}
                 style={{
                   padding: "9px 14px",
@@ -1909,167 +2081,116 @@ function BookingModal({ booking, staff, allServices = [], allStaff = [], onClose
                   cursor: (!rescheduleDate || !rescheduleTime || rescheduleLoading) ? "not-allowed" : "pointer",
                 }}
               >
-                {rescheduleLoading ? "Saving…" : "Confirm Reschedule"}
+                {rescheduleLoading ? "Saving..." : "Confirm Reschedule"}
               </button>
             </div>
           )}
 
-          {/* divider */}
-          <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
+          <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 12 }} />
 
-          {/* bottom actions */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {/* Cancel appointment */}
-            {!showCancelConfirm ? (
-              <button
-                onClick={() => { setShowCancelConfirm(true); setShowReschedule(false); setShowDeleteConfirm(false); setShowAddons(false); }}
-                style={{
-                  width: "100%", padding: "10px 0", borderRadius: 12,
-                  background: "rgba(200,50,50,0.08)",
-                  border: "1px solid rgba(200,50,50,0.3)",
-                  color: "#e05050", fontSize: 13, fontWeight: 700,
-                  fontFamily: "'Poppins', sans-serif", cursor: "pointer",
-                }}
-              >
-                Cancel Appointment
-              </button>
-            ) : (
-              <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(200,50,50,0.06)", border: "1px solid rgba(200,50,50,0.25)", display: "flex", flexDirection: "column", gap: 8 }}>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#e05050", fontFamily: "'Poppins', sans-serif" }}>
-                  Are you sure you want to cancel this appointment?
-                </p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => setShowCancelConfirm(false)}
-                    style={{
-                      flex: 1, padding: "8px 0", borderRadius: 10,
-                      border: "1px solid rgba(187,161,79,0.3)", background: "#fff",
-                      color: "#987554", fontSize: 12, fontWeight: 700,
-                      fontFamily: "'Poppins', sans-serif", cursor: "pointer",
-                    }}
-                  >
-                    No, Keep It
-                  </button>
-                  <button
-                    onClick={() => onCancel(booking.id)}
-                    disabled={cancelLoading}
-                    style={{
-                      flex: 1, padding: "8px 0", borderRadius: 10,
-                      border: "none",
-                      background: cancelLoading ? "rgba(200,50,50,0.3)" : "#e05050",
-                      color: "#fff", fontSize: 12, fontWeight: 700,
-                      fontFamily: "'Poppins', sans-serif",
-                      cursor: cancelLoading ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {cancelLoading ? "Cancelling…" : "Yes, Cancel"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Delete appointment */}
-            {!showDeleteConfirm ? (
-              <button
-                onClick={() => { setShowDeleteConfirm(true); setShowReschedule(false); setShowCancelConfirm(false); setShowAddons(false); }}
-                style={{
-                  width: "100%", padding: "10px 0", borderRadius: 12,
-                  background: "transparent",
-                  border: "1px solid rgba(150,30,30,0.25)",
-                  color: "#a83232", fontSize: 13, fontWeight: 700,
-                  fontFamily: "'Poppins', sans-serif", cursor: "pointer",
-                }}
-              >
-                Delete Appointment
-              </button>
-            ) : (
-              <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(150,30,30,0.05)", border: "1px solid rgba(150,30,30,0.2)", display: "flex", flexDirection: "column", gap: 8 }}>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#a83232", fontFamily: "'Poppins', sans-serif" }}>
-                  ⚠️ This will permanently delete the appointment. Are you sure?
-                </p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => setShowDeleteConfirm(false)}
-                    style={{
-                      flex: 1, padding: "8px 0", borderRadius: 10,
-                      border: "1px solid rgba(187,161,79,0.3)", background: "#fff",
-                      color: "#987554", fontSize: 12, fontWeight: 700,
-                      fontFamily: "'Poppins', sans-serif", cursor: "pointer",
-                    }}
-                  >
-                    No, Go Back
-                  </button>
-                  <button
-                    onClick={() => onDelete(booking.id)}
-                    disabled={deleteLoading}
-                    style={{
-                      flex: 1, padding: "8px 0", borderRadius: 10,
-                      border: "none",
-                      background: deleteLoading ? "rgba(150,30,30,0.3)" : "#a83232",
-                      color: "#fff", fontSize: 12, fontWeight: 700,
-                      fontFamily: "'Poppins', sans-serif",
-                      cursor: deleteLoading ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {deleteLoading ? "Deleting…" : "Yes, Delete"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* WhatsApp + Close row */}
-            <div style={{ display: "flex", gap: 8 }}>
-            {booking.phone && (() => {
-              const rawPhone = booking.phone.replace(/\D/g, "");
-              const intlPhone = rawPhone.startsWith("0") ? `233${rawPhone.slice(1)}` : rawPhone;
-              const msg = encodeURIComponent(
-                `Hello ${booking.client}, this is a reminder for your appointment at our salon.\n\n` +
-                `📋 Service: ${booking.service}\n` +
-                `📅 Date: ${booking.date}\n` +
-                `⏰ Time: ${formatDisplayTime(booking.startTime)}\n\n` +
-                `We look forward to seeing you! 💛`
-              );
-              return (
-                <a
-                  href={`https://wa.me/${intlPhone}?text=${msg}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+          {!showCancelConfirm ? (
+            <button
+              onClick={() => {
+                setShowCancelConfirm(true);
+                setShowDeleteConfirm(false);
+                setShowReschedule(false);
+              }}
+              style={{
+                width: "100%", padding: "10px 0", borderRadius: 12,
+                background: "rgba(200,50,50,0.08)",
+                border: "1px solid rgba(200,50,50,0.3)",
+                color: "#e05050", fontSize: 13, fontWeight: 700,
+                fontFamily: "'Poppins', sans-serif", cursor: "pointer", marginBottom: 8,
+              }}
+            >
+              Cancel Appointment
+            </button>
+          ) : (
+            <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(200,50,50,0.06)", border: "1px solid rgba(200,50,50,0.25)", display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#e05050", fontFamily: "'Poppins', sans-serif" }}>
+                Are you sure you want to cancel this appointment?
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => setShowCancelConfirm(false)}
                   style={{
-                    flex: 1, padding: "10px 0", borderRadius: 12,
-                    background: "rgba(37,211,102,0.1)",
-                    border: "1px solid rgba(37,211,102,0.4)",
-                    color: "#1DA851",
-                    fontSize: 13, fontWeight: 700,
-                    fontFamily: "'Poppins', sans-serif",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 5,
-                    textDecoration: "none",
+                    flex: 1, padding: "8px 0", borderRadius: 10,
+                    border: "1px solid rgba(187,161,79,0.3)", background: "#fff",
+                    color: "#987554", fontSize: 12, fontWeight: 700,
+                    fontFamily: "'Poppins', sans-serif", cursor: "pointer",
                   }}
                 >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
-                    <path d="M12 0C5.373 0 0 5.373 0 12c0 2.136.558 4.136 1.532 5.875L0 24l6.322-1.499A11.934 11.934 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.814 9.814 0 01-4.996-1.371l-.358-.214-3.752.89.948-3.647-.234-.375A9.812 9.812 0 012.182 12C2.182 6.578 6.578 2.182 12 2.182S21.818 6.578 21.818 12 17.422 21.818 12 21.818z"/>
-                  </svg>
-                  WhatsApp
-                </a>
-              );
-            })()}
+                  No, Keep It
+                </button>
+                <button
+                  onClick={() => onCancel(booking.id)}
+                  disabled={cancelLoading}
+                  style={{
+                    flex: 1, padding: "8px 0", borderRadius: 10,
+                    border: "none",
+                    background: cancelLoading ? "rgba(200,50,50,0.3)" : "#e05050",
+                    color: "#fff", fontSize: 12, fontWeight: 700,
+                    fontFamily: "'Poppins', sans-serif",
+                    cursor: cancelLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {cancelLoading ? "Cancelling..." : "Yes, Cancel"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!showDeleteConfirm ? (
             <button
-              onClick={onClose}
+              onClick={() => {
+                setShowDeleteConfirm(true);
+                setShowCancelConfirm(false);
+                setShowReschedule(false);
+              }}
               style={{
-                flex: 1, padding: "10px 0", borderRadius: 12,
-                background: "linear-gradient(135deg, #BBA14F, #987554)",
-                border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
+                width: "100%", padding: "10px 0", borderRadius: 12,
+                background: "transparent",
+                border: "1px solid rgba(150,30,30,0.25)",
+                color: "#a83232", fontSize: 13, fontWeight: 700,
                 fontFamily: "'Poppins', sans-serif", cursor: "pointer",
               }}
             >
-              Close
+              Delete Appointment
             </button>
-          </div>
-          </div>
+          ) : (
+            <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(150,30,30,0.05)", border: "1px solid rgba(150,30,30,0.2)", display: "flex", flexDirection: "column", gap: 8 }}>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#a83232", fontFamily: "'Poppins', sans-serif" }}>
+                This will permanently delete the appointment. Are you sure?
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  style={{
+                    flex: 1, padding: "8px 0", borderRadius: 10,
+                    border: "1px solid rgba(187,161,79,0.3)", background: "#fff",
+                    color: "#987554", fontSize: 12, fontWeight: 700,
+                    fontFamily: "'Poppins', sans-serif", cursor: "pointer",
+                  }}
+                >
+                  No, Go Back
+                </button>
+                <button
+                  onClick={() => onDelete(booking.id)}
+                  disabled={deleteLoading}
+                  style={{
+                    flex: 1, padding: "8px 0", borderRadius: 10,
+                    border: "none",
+                    background: deleteLoading ? "rgba(150,30,30,0.3)" : "#a83232",
+                    color: "#fff", fontSize: 12, fontWeight: 700,
+                    fontFamily: "'Poppins', sans-serif",
+                    cursor: deleteLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {deleteLoading ? "Deleting..." : "Yes, Delete"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -2613,6 +2734,7 @@ export default function CalendarPage() {
   const [dragOverCol, setDragOverCol] = useState(null);  // staffId
   const [dragOverSlot, setDragOverSlot] = useState(null); // slot index
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [statusDrawerBooking, setStatusDrawerBooking] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm] = Form.useForm();
   const [nowMins, setNowMins] = useState(() => {
@@ -3024,6 +3146,7 @@ export default function CalendarPage() {
       const label = STATUS_CFG[status]?.label || status;
       message.success(`Status updated to ${label}`);
       setSelectedBooking((prev) => prev ? { ...prev, status } : prev);
+      setStatusDrawerBooking((prev) => prev ? { ...prev, status } : prev);
       queryClient.invalidateQueries(["appointments", dateStr]);
       refetchApts();
     },
@@ -3044,6 +3167,7 @@ export default function CalendarPage() {
     onSuccess: () => {
       message.success("Appointment rescheduled");
       setSelectedBooking(null);
+      setStatusDrawerBooking(null);
       queryClient.invalidateQueries(["appointments", dateStr]);
       refetchApts();
     },
@@ -3059,6 +3183,7 @@ export default function CalendarPage() {
     onSuccess: () => {
       message.success("Appointment cancelled");
       setSelectedBooking(null);
+      setStatusDrawerBooking(null);
       queryClient.invalidateQueries(["appointments", dateStr]);
       refetchApts();
     },
@@ -3074,6 +3199,7 @@ export default function CalendarPage() {
     onSuccess: () => {
       message.success("Appointment deleted");
       setSelectedBooking(null);
+      setStatusDrawerBooking(null);
       queryClient.invalidateQueries(["appointments", dateStr]);
       refetchApts();
     },
@@ -3940,19 +4066,33 @@ export default function CalendarPage() {
       {/* Booking detail modal */}
       {selectedBooking && (
         <BookingModal
+          key={selectedBooking.id}
           booking={selectedBooking}
           staff={visibleStaff.find((s) => s.id === selectedBooking.staffId)}
+          onClose={() => setSelectedBooking(null)}
+          onOpenStatusDrawer={(booking) => {
+            setSelectedBooking(null);
+            setStatusDrawerBooking(booking);
+          }}
+        />
+      )}
+
+      {statusDrawerBooking && (
+        <BookingStatusDrawer
+          key={statusDrawerBooking.id}
+          booking={statusDrawerBooking}
+          staff={visibleStaff.find((s) => s.id === statusDrawerBooking.staffId)}
           allServices={servicesData}
           allStaff={visibleStaff}
-          onClose={() => setSelectedBooking(null)}
-          onCancel={(id) => cancelAppointment.mutate(id)}
-          cancelLoading={cancelAppointment.isPending}
-          onDelete={(id) => deleteAppointment.mutate(id)}
-          deleteLoading={deleteAppointment.isPending}
+          onClose={() => setStatusDrawerBooking(null)}
           onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
           statusLoading={updateStatus.isPending}
           onReschedule={(id, date, time, staffId, reason) => rescheduleFromModal.mutate({ id, date, time, staffId, reason })}
           rescheduleLoading={rescheduleFromModal.isPending}
+          onCancel={(id) => cancelAppointment.mutate(id)}
+          cancelLoading={cancelAppointment.isPending}
+          onDelete={(id) => deleteAppointment.mutate(id)}
+          deleteLoading={deleteAppointment.isPending}
         />
       )}
 

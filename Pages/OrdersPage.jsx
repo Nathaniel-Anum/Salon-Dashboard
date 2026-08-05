@@ -18,6 +18,7 @@ import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Modal,
+  Drawer,
   Form,
   Input,
   InputNumber,
@@ -42,6 +43,7 @@ import {
   FiClock,
   FiAlertCircle,
   FiMinusCircle,
+  FiMapPin,
 } from "react-icons/fi";
 import {
   getOrders,
@@ -136,9 +138,9 @@ function StatCard({ label, value, color, bg, icon }) {
 }
 
 /* ─────────────────────────────────────────────
-   ORDER DETAIL MODAL
+   ORDER DETAIL DRAWER
 ───────────────────────────────────────────── */
-function OrderDetailModal({ orderId, open, onClose }) {
+function OrderDetailDrawer({ orderId, open, onClose }) {
   const { data: order, isLoading } = useQuery({
     queryKey: ["commerce-order", orderId],
     queryFn: () => getOrder(orderId),
@@ -147,16 +149,76 @@ function OrderDetailModal({ orderId, open, onClose }) {
 
   const itemsData = order?.items ?? [];
 
+  const shippingDetailSource = useMemo(() => {
+    if (!order) return null;
+
+    const hasShippingShape = (obj) => {
+      if (!obj || typeof obj !== "object") return false;
+      const keys = [
+        "address_line1",
+        "city",
+        "country_code",
+        "recipient_name",
+        "recipient_phone",
+        "ghana_post_gps_code",
+        "delivery_instructions",
+      ];
+      return keys.some((key) => obj[key] != null && String(obj[key]).trim() !== "");
+    };
+
+    const candidates = [
+      order.shipping_address,
+      order.shipping,
+      order.delivery_address,
+      order.address,
+      ...itemsData.flatMap((item) => [
+        item.shipping_address,
+        item.shipping,
+        item.delivery_address,
+        item.address,
+      ]),
+    ].filter((candidate) => candidate && typeof candidate === "object");
+
+    return candidates.find(hasShippingShape) || null;
+  }, [order, itemsData]);
+
+  const shippingFieldRows = useMemo(() => {
+    if (!shippingDetailSource) return [];
+
+    const fields = [
+      ["Address Line 1", "address_line1"],
+      ["Address Line 2", "address_line2"],
+      ["Area", "area"],
+      ["City", "city"],
+      ["Country Code", "country_code"],
+      ["Delivery Instructions", "delivery_instructions"],
+      ["Ghana Post GPS Code", "ghana_post_gps_code"],
+      ["Landmark", "landmark"],
+      ["Order Item", "order_item"],
+      ["Postal Code", "postal_code"],
+      ["Provider", "provider"],
+      ["Recipient Name", "recipient_name"],
+      ["Recipient Phone", "recipient_phone"],
+      ["Region", "region"],
+    ];
+
+    return fields.map(([label, key]) => {
+      const rawValue = shippingDetailSource[key];
+      const value = rawValue == null || String(rawValue).trim() === "" ? "—" : String(rawValue);
+      return { label, value };
+    });
+  }, [shippingDetailSource]);
+
   return (
-    <Modal
+    <Drawer
       open={open}
-      onCancel={onClose}
-      footer={null}
-      centered
+      onClose={onClose}
+      placement="right"
       width={560}
       closable={false}
+      title={null}
       styles={{
-        content: { padding: 0, borderRadius: 20, overflow: "hidden" },
+        body: { padding: 0, background: "#FDFAF5" },
         mask: { backdropFilter: "blur(4px)", background: "rgba(39,39,39,0.5)" },
       }}
     >
@@ -220,7 +282,7 @@ function OrderDetailModal({ orderId, open, onClose }) {
       </div>
 
       {/* Body */}
-      <div className="px-6 py-5" style={{ background: "#FDFAF5" }}>
+      <div className="px-6 py-5" style={{ background: "#FDFAF5", minHeight: "100%" }}>
         {isLoading ? (
           <div className="flex justify-center py-10">
             <div
@@ -231,7 +293,7 @@ function OrderDetailModal({ orderId, open, onClose }) {
         ) : order ? (
           <div className="space-y-4">
             {/* Meta */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <div
                 className="px-4 py-3 rounded-xl"
                 style={{ background: "rgba(187,161,79,0.07)", border: "1px solid rgba(187,161,79,0.15)" }}
@@ -239,15 +301,63 @@ function OrderDetailModal({ orderId, open, onClose }) {
                 <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>Status</p>
                 <StatusBadge status={order.status} />
               </div>
-              <div
-                className="px-4 py-3 rounded-xl"
-                style={{ background: "rgba(187,161,79,0.07)", border: "1px solid rgba(187,161,79,0.15)" }}
-              >
-                <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>Customer</p>
-                <p className="text-sm font-semibold text-[#272727]" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                  {order.customer_name ?? `#${order.customer}`}
+            </div>
+
+            {/* Shipping Address */}
+            <div
+              className="px-4 py-3 rounded-xl"
+              style={{
+                background: "linear-gradient(135deg, rgba(79,122,168,0.08), rgba(79,168,122,0.06))",
+                border: "1px solid rgba(79,122,168,0.2)",
+              }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span
+                  className="w-7 h-7 rounded-lg flex items-center justify-center"
+                  style={{ background: "rgba(79,122,168,0.16)", color: "#2d5a84" }}
+                >
+                  <FiMapPin size={13} />
+                </span>
+                <p
+                  className="text-[10px] uppercase tracking-widest"
+                  style={{ margin: 0, color: "#2d5a84", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}
+                >
+                  Shipping Address
                 </p>
               </div>
+
+              {shippingFieldRows.length ? (
+                <div
+                  className="grid grid-cols-1 md:grid-cols-2 gap-2"
+                  style={{
+                    background: "rgba(255,255,255,0.62)",
+                    border: "1px solid rgba(79,122,168,0.14)",
+                    borderRadius: 10,
+                    padding: 10,
+                  }}
+                >
+                  {shippingFieldRows.map((field) => (
+                    <div key={field.label} className="px-2 py-1.5 rounded-lg" style={{ background: "rgba(255,255,255,0.7)" }}>
+                      <p
+                        className="text-[10px] uppercase tracking-wider"
+                        style={{ margin: 0, color: "#5e7ca4", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}
+                      >
+                        {field.label}
+                      </p>
+                      <p
+                        className="text-xs"
+                        style={{ margin: 0, color: "#1f3f61", fontFamily: "'Poppins', sans-serif", wordBreak: "break-word" }}
+                      >
+                        {field.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm" style={{ margin: 0, color: "#5e7ca4", fontFamily: "'Poppins', sans-serif" }}>
+                  No shipping address provided.
+                </p>
+              )}
             </div>
 
             {/* Items */}
@@ -320,7 +430,7 @@ function OrderDetailModal({ orderId, open, onClose }) {
           <p className="text-center text-sm py-8" style={{ color: "#987554" }}>Order not found.</p>
         )}
       </div>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -542,7 +652,7 @@ function NewOrderModal({ open, onClose, products, customers, onSuccess }) {
                     min={1}
                     value={item.quantity}
                     onChange={(v) => handleItemChange(idx, "quantity", v ?? 1)}
-                    className="!w-20"
+                    className="w-20!"
                     placeholder="Qty"
                   />
                   {items.length > 1 && (
@@ -570,17 +680,17 @@ function NewOrderModal({ open, onClose, products, customers, onSuccess }) {
             <Input.TextArea
               rows={2}
               placeholder="Any special instructions…"
-              className="!rounded-xl"
+              className="rounded-xl!"
             />
           </Form.Item>
 
           {/* Tax + Discount */}
           <div className="flex gap-4">
             <Form.Item name="tax" label="Tax" className="flex-1">
-              <Input placeholder="0.00" className="!rounded-xl" />
+              <Input placeholder="0.00" className="rounded-xl!" />
             </Form.Item>
             <Form.Item name="discount" label="Discount" className="flex-1">
-              <Input placeholder="0.00" className="!rounded-xl" />
+              <Input placeholder="0.00" className="rounded-xl!" />
             </Form.Item>
           </div>
         </Form>
@@ -588,14 +698,14 @@ function NewOrderModal({ open, onClose, products, customers, onSuccess }) {
         <div className="flex justify-end gap-3 mt-2">
           <Button
             onClick={onClose}
-            className="!rounded-xl !h-9"
+            className="rounded-xl! h-9!"
             style={{ fontFamily: "'Poppins', sans-serif" }}
           >
             Cancel
           </Button>
           <Button
             loading={createMutation.isPending}
-            className={`${GOLD_BTN} !rounded-xl !h-9 !px-6`}
+            className={`${GOLD_BTN} rounded-xl! h-9! px-6!`}
             style={{ fontFamily: "'Poppins', sans-serif" }}
             onClick={handleSubmit}
           >
@@ -895,7 +1005,7 @@ export default function OrdersPage() {
           </div>
           <Button
             icon={<FiPlus />}
-            className={`${GOLD_BTN} !rounded-xl !h-10 !px-5 !font-medium !text-sm shrink-0`}
+            className={`${GOLD_BTN} rounded-xl! h-10! px-5! font-medium! text-sm! shrink-0`}
             onClick={() => setNewOrderOpen(true)}
             style={{ fontFamily: "'Poppins', sans-serif" }}
           >
@@ -1003,7 +1113,7 @@ export default function OrdersPage() {
                 {!search && (
                   <Button
                     icon={<FiPlus />}
-                    className={`${GOLD_BTN} !rounded-xl !h-9 !px-5 !text-sm`}
+                    className={`${GOLD_BTN} rounded-xl! h-9! px-5! text-sm!`}
                     onClick={() => setNewOrderOpen(true)}
                     style={{ fontFamily: "'Poppins', sans-serif" }}
                   >
@@ -1026,8 +1136,8 @@ export default function OrdersPage() {
         onSuccess={() => setNewOrderOpen(false)}
       />
 
-      {/* ── Order Detail Modal ── */}
-      <OrderDetailModal
+      {/* ── Order Detail Drawer ── */}
+      <OrderDetailDrawer
         orderId={detailOrderId}
         open={!!detailOrderId}
         onClose={() => setDetailOrderId(null)}

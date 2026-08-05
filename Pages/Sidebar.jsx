@@ -15,12 +15,13 @@ import {
   FiMenu,
   FiSlash,
   FiList,
+  FiTarget,
+  FiLifeBuoy,
 } from "react-icons/fi";
 import { FaClock } from "react-icons/fa";
 import { FaUserAlt } from "react-icons/fa";
 import { MdManageAccounts } from "react-icons/md";
 import { FiShoppingCart, FiPackage, FiGrid, FiBox } from "react-icons/fi";
-import pic1 from "../src/9.svg";
 import { useMutation } from "@tanstack/react-query";
 import { LoadingOutlined } from "@ant-design/icons";
 import _axios from "../src/api/_axios";
@@ -39,6 +40,7 @@ const menuItems = [
 
 const USER_MGMT_PATHS = ["/staff", "/role-management", "/clients"];
 const COMMERCE_PATHS = ["/commerce/categories", "/commerce/products", "/commerce/orders", "/commerce/inventory"];
+const SETTINGS_PATHS = ["/settings", "/settings/campaign", "/settings/campaigns", "/settings/support"];
 
 const userMgmtItems = [
   { name: "Staff",           icon: <FaUserAlt size={14} />,        path: "/staff" },
@@ -53,16 +55,24 @@ const commerceItems = [
   { name: "Inventory",  icon: <FiBox size={14} />,          path: "/commerce/inventory" },
 ];
 
+const settingsItems = [
+  { name: "General", icon: <FiSettings size={14} />, path: "/settings" },
+  { name: "Campaigns", icon: <FiTarget size={14} />, path: "/settings/campaigns" },
+  { name: "Support", icon: <FiLifeBuoy size={14} />, path: "/settings/support" },
+];
+
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMgmtOpen, setUserMgmtOpen] = useState(false);
   const [commerceOpen, setCommerceOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   const isUserMgmtActive = USER_MGMT_PATHS.some((p) => location.pathname === p);
   const isCommerceActive = COMMERCE_PATHS.some((p) => location.pathname === p);
+  const isSettingsActive = SETTINGS_PATHS.some((p) => location.pathname === p);
 
   const logoutMutation = useMutation({
     mutationFn: (refresh) =>
@@ -112,7 +122,7 @@ const Sidebar = () => {
     </Tooltip>
   );
 
-  const SidebarContent = ({ isMobile = false }) => (
+  const renderSidebarContent = (isMobile = false) => (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-5 py-6 border-b" style={{ borderColor: "rgba(187,161,79,0.2)" }}>
         {(!collapsed || isMobile) && (
@@ -261,7 +271,72 @@ const Sidebar = () => {
             )}
           </div>
 
-          {menuItems.slice(4).map((item) => renderNavLink(item, isMobile, collapsed))}
+          {menuItems.slice(4, 7).map((item) => renderNavLink(item, isMobile, collapsed))}
+
+          {/* ── Settings ── */}
+          <div>
+            <Tooltip title={collapsed && !isMobile ? "Settings" : ""} placement="right">
+              <button
+                onClick={() => {
+                  if (collapsed && !isMobile) { setCollapsed(false); setSettingsOpen(true); }
+                  else { setSettingsOpen((v) => !v); }
+                }}
+                className={`w-full group flex items-center rounded-xl transition-all duration-200 ${collapsed && !isMobile ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"}`}
+                style={{
+                  background: isSettingsActive ? "rgba(187,161,79,0.12)" : "transparent",
+                  color: isSettingsActive ? "#BBA14F" : "rgba(255,255,255,0.78)",
+                  border: isSettingsActive ? "1px solid rgba(187,161,79,0.25)" : "1px solid transparent",
+                  fontFamily: "'Poppins',sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                <span className={`text-[17px] shrink-0 transition-transform duration-200 ${!isSettingsActive ? "group-hover:scale-110" : ""}`}>
+                  <FiSettings />
+                </span>
+                {(!collapsed || isMobile) && (
+                  <>
+                    <span className="text-sm tracking-wide flex-1 text-left">Settings</span>
+                    <FiChevronDown
+                      size={14}
+                      style={{
+                        transition: "transform 0.2s ease",
+                        transform: settingsOpen || isSettingsActive ? "rotate(180deg)" : "rotate(0deg)",
+                        color: isSettingsActive ? "#BBA14F" : "rgba(255,255,255,0.45)",
+                      }}
+                    />
+                  </>
+                )}
+              </button>
+            </Tooltip>
+
+            {(!collapsed || isMobile) && (settingsOpen || isSettingsActive) && (
+              <div style={{ marginLeft: 14, paddingLeft: 14, borderLeft: "1.5px solid rgba(187,161,79,0.25)", marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+                {settingsItems.map((item) => (
+                  <NavLink
+                    key={item.name}
+                    to={item.path}
+                    end={item.path === "/settings"}
+                    onClick={() => isMobile && setMobileOpen(false)}
+                    className="group relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 no-underline"
+                    style={({ isActive }) =>
+                      isActive
+                        ? { background: "linear-gradient(90deg,#BBA14F 0%,#c9ae5e 100%)", boxShadow: "0 4px 14px rgba(187,161,79,0.3)", fontWeight: 600, color: "#272727" }
+                        : { background: "transparent", color: "rgba(255,255,255,0.72)" }
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span className={`text-[15px] shrink-0 transition-transform duration-200 ${!isActive ? "group-hover:scale-110" : ""}`}>
+                          {item.icon}
+                        </span>
+                        <span className="text-sm tracking-wide" style={{ fontFamily: "'Poppins',sans-serif" }}>{item.name}</span>
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
 
         </div>
       </nav>
@@ -305,14 +380,14 @@ const Sidebar = () => {
         className="fixed top-0 left-0 h-full z-50 lg:hidden transition-transform duration-300"
         style={{ width: 270, background: "linear-gradient(180deg,#1c1a15 0%,#272727 60%,#2e2318 100%)", transform: mobileOpen ? "translateX(0)" : "translateX(-100%)" }}
       >
-        <SidebarContent isMobile />
+        {renderSidebarContent(true)}
       </div>
 
       <div
         className="hidden lg:flex flex-col relative transition-all duration-300"
         style={{ width: collapsed ? 80 : 260, height: "100vh", position: "sticky", top: 0, flexShrink: 0, background: "linear-gradient(180deg,#1c1a15 0%,#272727 60%,#2e2318 100%)", borderRight: "1px solid rgba(187,161,79,0.15)", zIndex: 40 }}
       >
-        <SidebarContent />
+        {renderSidebarContent(false)}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="absolute -right-3.5 top-16 w-7 h-7 cursor-pointer rounded-full flex items-center justify-center shadow-lg z-50 transition-all duration-200 hover:scale-110"

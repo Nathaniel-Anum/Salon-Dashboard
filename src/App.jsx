@@ -22,6 +22,8 @@ import OrdersPage from "../Pages/OrdersPage";
 import InventoryPage from "../Pages/InventoryPage";
 import AnalyticsPage from "../Pages/AnalyticsPage";
 import SettingsPage from "../Pages/SettingsPage";
+import CampaignsPage from "../Pages/CampaignsPage";
+import SupportPage from "../Pages/SupportPage";
 import WaitlistPage from "../Pages/WaitlistPage";
 import SchedulePage from "../Pages/SchedulePage";
 
@@ -75,6 +77,9 @@ export default function App() {
             <Route path="/waitlist" element={<WaitlistPage/>}/>
             <Route path="/schedules" element={<SchedulePage/>}/>
             <Route path="/settings" element={<SettingsPage/>}/>
+            <Route path="/settings/campaign" element={<CampaignsPage/>}/>
+            <Route path="/settings/campaigns" element={<CampaignsPage/>}/>
+            <Route path="/settings/support" element={<SupportPage/>}/>
           </Route>
         </Route>
       </Routes>

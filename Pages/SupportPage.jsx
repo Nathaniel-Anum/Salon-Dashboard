@@ -1,0 +1,1091 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Empty, Input, Modal, Select, Tabs, Tag, message } from "antd";
+import {
+  FiAlertTriangle,
+  FiCheckCircle,
+  FiClock,
+  FiFileText,
+  FiLifeBuoy,
+  FiPaperclip,
+  FiRefreshCw,
+  FiSend,
+  FiXCircle,
+} from "react-icons/fi";
+import {
+  addSupportTicketNote,
+  assignSupportTicket,
+  closeSupportTicket,
+  getSupportAssignees,
+  getSupportTicket,
+  getSupportTicketAttachments,
+  getSupportTicketMessages,
+  getSupportTicketNotes,
+  getSupportTickets,
+  reopenSupportTicket,
+  replyToSupportTicket,
+  resolveSupportTicket,
+  updateSupportTicketPriority,
+} from "../src/api/support";
+
+const normalizeList = (raw) => {
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.results)) return raw.results;
+  if (Array.isArray(raw?.data)) return raw.data;
+  return [];
+};
+
+const makeIdempotencyKey = (prefix = "support") => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `${prefix}-${Date.now()}-${rand}`;
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString();
+};
+
+const QUEUE_VIEWS = [
+  { key: "waiting_for_staff", label: "Action Required", filters: { status: "waiting_for_staff" } },
+  { key: "waiting_for_customer", label: "Waiting for Customer", filters: { status: "waiting_for_customer" } },
+  { key: "resolved", label: "Resolved", filters: { status: "resolved" } },
+  { key: "closed", label: "Closed", filters: { status: "closed" } },
+  { key: "my_tickets", label: "My Tickets", filters: { assignee: "me" } },
+  { key: "unassigned", label: "Unassigned", filters: { unassigned: true } },
+  { key: "high_urgent", label: "High/Urgent", filters: { priority: "high,urgent" } },
+  { key: "sla_breached", label: "SLA Breached", filters: { aging_bucket: "sla_breached" } },
+];
+
+const PRIORITY_OPTIONS = ["low", "normal", "high", "urgent"];
+
+const RESOLUTION_CODES = [
+  "answered",
+  "booking_resolved",
+  "payment_resolved",
+  "order_resolved",
+  "account_resolved",
+  "technical_resolved",
+  "duplicate",
+  "no_action_required",
+  "other",
+];
+
+const PERMISSION_KEYS = {
+  view: "support_tickets.view",
+  reply: "support_replies.create",
+  note: "support_internal_notes.create",
+  assign: "support_assignments.edit",
+  priority: "support_priorities.edit",
+  resolve: "support_resolutions.edit",
+  close: "support_closures.edit",
+  reopen: "support_reopens.edit",
+  attachments: "support_attachments.view",
+};
+
+const getTicketPublicId = (ticket) =>
+  String(ticket?.public_id || ticket?.reference || ticket?.id || "");
+
+const getTicketReference = (ticket) =>
+  ticket?.reference || ticket?.public_id || ticket?.ticket_number || ticket?.id || "—";
+
+const getTicketSubject = (ticket) => ticket?.subject || ticket?.title || "Untitled ticket";
+
+const collectTicketPermissions = (ticket) => {
+  const raw = ticket?.permissions || ticket?.available_permissions || ticket?.allowed_actions;
+  if (!raw) return new Set();
+
+  if (Array.isArray(raw)) {
+    return new Set(
+      raw
+        .map((item) => {
+          if (typeof item === "string") return item;
+          if (typeof item === "object") return item.codename || item.code || item.name;
+          return null;
+        })
+        .filter(Boolean),
+    );
+  }
+
+  if (typeof raw === "object") {
+    return new Set(Object.keys(raw).filter((key) => raw[key]));
+  }
+
+  return new Set();
+};
+
+const extractTicketFromMutation = (raw) => {
+  const data = raw?.data ?? raw;
+  if (!data || typeof data !== "object") return null;
+
+  const isTicketLike = (obj) => obj && typeof obj === "object" && (obj.public_id || obj.status || obj.reference);
+  if (isTicketLike(data)) return data;
+
+  const candidates = [data.ticket, data.result, data.data];
+  return candidates.find(isTicketLike) || null;
+};
+
+const getStatusColor = (status) => {
+  const key = String(status || "").toLowerCase();
+  if (key === "waiting_for_staff") return "gold";
+  if (key === "waiting_for_customer") return "blue";
+  if (key === "resolved") return "green";
+  if (key === "closed") return "default";
+  return "default";
+};
+
+const field = (obj, ...keys) => {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return "—";
+};
+
+const BROWN_BTN_STYLE = {
+  background: "linear-gradient(135deg,#BBA14F,#987554)",
+  border: "none",
+  color: "#fff",
+  fontFamily: "'Poppins', sans-serif",
+  boxShadow: "0 4px 14px rgba(187,161,79,0.25)",
+};
+
+const OPEN_BTN_STYLE = {
+  background: "#fff",
+  border: "1px solid #272727",
+  color: "#272727",
+  fontFamily: "'Poppins', sans-serif",
+};
+
+const RESOLVE_BTN_STYLE = {
+  background: "linear-gradient(135deg,#2f9e44,#1f7a33)",
+  border: "none",
+  color: "#fff",
+  fontFamily: "'Poppins', sans-serif",
+  boxShadow: "0 4px 14px rgba(47,158,68,0.28)",
+};
+
+const CLOSE_BTN_STYLE = {
+  background: "linear-gradient(135deg,#cf3f3f,#a92a2a)",
+  border: "none",
+  color: "#fff",
+  fontFamily: "'Poppins', sans-serif",
+  boxShadow: "0 4px 14px rgba(207,63,63,0.28)",
+};
+
+const BROWN_BTN_CLASS = "rounded-xl!";
+
+const getActionButtonStyle = (baseStyle, disabled) => {
+  if (!disabled) return baseStyle;
+  return {
+    ...baseStyle,
+    opacity: 0.45,
+    boxShadow: "none",
+    cursor: "not-allowed",
+    pointerEvents: "none",
+  };
+};
+
+const getDisabledControlStyle = (disabled) =>
+  disabled
+    ? { opacity: 0.45, pointerEvents: "none", filter: "grayscale(0.25)" }
+    : undefined;
+
+export default function SupportPage() {
+  const qc = useQueryClient();
+
+  const [queueView, setQueueView] = useState("waiting_for_staff");
+  const [queueSearch, setQueueSearch] = useState("");
+  const [openTicketInput, setOpenTicketInput] = useState("");
+  const [activeTicketId, setActiveTicketId] = useState("");
+  const [activeTab, setActiveTab] = useState("messages");
+
+  const [replyBody, setReplyBody] = useState("");
+  const [noteBody, setNoteBody] = useState("");
+  const [closeReason, setCloseReason] = useState("");
+  const [reopenMessage, setReopenMessage] = useState("");
+
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolveCode, setResolveCode] = useState("answered");
+  const [resolvePublicMessage, setResolvePublicMessage] = useState("");
+  const [resolveInternalReason, setResolveInternalReason] = useState("");
+
+  const opKeyRef = useRef({});
+  const getOpKey = (name) => {
+    if (!opKeyRef.current[name]) {
+      opKeyRef.current[name] = makeIdempotencyKey(name);
+    }
+    return opKeyRef.current[name];
+  };
+  const clearOpKey = (name) => {
+    delete opKeyRef.current[name];
+  };
+
+  const selectedQueue = QUEUE_VIEWS.find((view) => view.key === queueView) || QUEUE_VIEWS[0];
+
+  const ticketFilters = useMemo(() => {
+    const base = { ...selectedQueue.filters };
+    if (queueSearch.trim()) base.search = queueSearch.trim();
+    return base;
+  }, [selectedQueue, queueSearch]);
+
+  const {
+    data: ticketsRaw,
+    isLoading: ticketsLoading,
+    isFetching: ticketsFetching,
+    refetch: refetchTickets,
+  } = useQuery({
+    queryKey: ["support-tickets", ticketFilters],
+    queryFn: () => getSupportTickets(ticketFilters),
+  });
+
+  const tickets = useMemo(() => normalizeList(ticketsRaw), [ticketsRaw]);
+
+  useEffect(() => {
+    if (!activeTicketId && tickets.length > 0) {
+      setActiveTicketId(getTicketPublicId(tickets[0]));
+    }
+  }, [tickets, activeTicketId]);
+
+  const {
+    data: ticket,
+    isLoading: ticketLoading,
+    refetch: refetchTicket,
+  } = useQuery({
+    queryKey: ["support-ticket", activeTicketId],
+    queryFn: () => getSupportTicket(activeTicketId),
+    enabled: !!activeTicketId,
+  });
+
+  const {
+    data: messagesRaw,
+    isLoading: messagesLoading,
+    refetch: refetchMessages,
+  } = useQuery({
+    queryKey: ["support-ticket-messages", activeTicketId],
+    queryFn: () => getSupportTicketMessages(activeTicketId),
+    enabled: !!activeTicketId,
+  });
+
+  const {
+    data: notesRaw,
+    isLoading: notesLoading,
+    refetch: refetchNotes,
+  } = useQuery({
+    queryKey: ["support-ticket-notes", activeTicketId],
+    queryFn: () => getSupportTicketNotes(activeTicketId),
+    enabled: !!activeTicketId,
+  });
+
+  const {
+    data: attachmentsRaw,
+    isLoading: attachmentsLoading,
+    refetch: refetchAttachments,
+  } = useQuery({
+    queryKey: ["support-ticket-attachments", activeTicketId],
+    queryFn: () => getSupportTicketAttachments(activeTicketId),
+    enabled: !!activeTicketId,
+  });
+
+  const { data: assigneesRaw } = useQuery({
+    queryKey: ["support-assignees"],
+    queryFn: getSupportAssignees,
+  });
+
+  const messagesList = useMemo(() => normalizeList(messagesRaw), [messagesRaw]);
+  const notesList = useMemo(() => normalizeList(notesRaw), [notesRaw]);
+  const attachmentsList = useMemo(() => normalizeList(attachmentsRaw), [attachmentsRaw]);
+  const assignees = useMemo(() => normalizeList(assigneesRaw), [assigneesRaw]);
+
+  const permissionSet = useMemo(() => collectTicketPermissions(ticket), [ticket]);
+  const can = (perm) => permissionSet.size === 0 || permissionSet.has(perm);
+
+  const status = String(ticket?.status || "").toLowerCase();
+  const isWaiting = status === "waiting_for_staff" || status === "waiting_for_customer";
+  const isResolved = status === "resolved";
+  const isClosed = status === "closed";
+
+  const canResolveAction = can(PERMISSION_KEYS.resolve);
+  const canCloseAction = can(PERMISSION_KEYS.close);
+  const canReopenAction = can(PERMISSION_KEYS.reopen);
+  const canAssignAction = can(PERMISSION_KEYS.assign);
+  const canPriorityAction = can(PERMISSION_KEYS.priority);
+  const canReplyAction = can(PERMISSION_KEYS.reply) && !isResolved && !isClosed;
+  const canNoteAction = can(PERMISSION_KEYS.note);
+
+  const canResolveNow = canResolveAction && isWaiting;
+  const canCloseNow = canCloseAction && isResolved;
+  const canReopenNow = canReopenAction && (isResolved || isClosed);
+
+  const refreshWorkspace = () => {
+    qc.invalidateQueries({ queryKey: ["support-tickets"] });
+    if (activeTicketId) {
+      qc.invalidateQueries({ queryKey: ["support-ticket", activeTicketId] });
+      qc.invalidateQueries({ queryKey: ["support-ticket-messages", activeTicketId] });
+      qc.invalidateQueries({ queryKey: ["support-ticket-notes", activeTicketId] });
+      qc.invalidateQueries({ queryKey: ["support-ticket-attachments", activeTicketId] });
+    }
+  };
+
+  const handleMutationTicketSuccess = (raw, successText) => {
+    const updatedTicket = extractTicketFromMutation(raw);
+    if (updatedTicket && activeTicketId) {
+      qc.setQueryData(["support-ticket", activeTicketId], updatedTicket);
+    }
+    message.success(successText);
+    refreshWorkspace();
+  };
+
+  const replyMutation = useMutation({
+    mutationFn: ({ ticketId, body }) =>
+      replyToSupportTicket(ticketId, {
+        body,
+        idempotency_key: getOpKey("reply"),
+      }),
+    onSuccess: (res) => {
+      clearOpKey("reply");
+      handleMutationTicketSuccess(res, "Reply sent");
+      setReplyBody("");
+      refetchMessages();
+      refetchTicket();
+    },
+    onError: (err) => {
+      const apiMsg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.response?.data?.body?.[0] ||
+        "Failed to send reply";
+      message.error(apiMsg);
+    },
+  });
+
+  const noteMutation = useMutation({
+    mutationFn: ({ ticketId, body }) =>
+      addSupportTicketNote(ticketId, {
+        body,
+        idempotency_key: getOpKey("note"),
+      }),
+    onSuccess: (res) => {
+      clearOpKey("note");
+      handleMutationTicketSuccess(res, "Internal note added");
+      setNoteBody("");
+      refetchNotes();
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.detail || "Failed to add note");
+    },
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: ({ ticketId, assignee }) =>
+      assignSupportTicket(ticketId, {
+        assignee,
+        idempotency_key: getOpKey("assign"),
+      }),
+    onSuccess: (res) => {
+      clearOpKey("assign");
+      handleMutationTicketSuccess(res, "Assignee updated");
+      refetchTicket();
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.detail || "Failed to assign ticket");
+    },
+  });
+
+  const priorityMutation = useMutation({
+    mutationFn: ({ ticketId, priority }) =>
+      updateSupportTicketPriority(ticketId, {
+        priority,
+        idempotency_key: getOpKey("priority"),
+      }),
+    onSuccess: (res) => {
+      clearOpKey("priority");
+      handleMutationTicketSuccess(res, "Priority updated");
+      refetchTicket();
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.detail || "Failed to update priority");
+    },
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: ({ ticketId, payload }) => resolveSupportTicket(ticketId, payload),
+    onSuccess: (res) => {
+      clearOpKey("resolve");
+      handleMutationTicketSuccess(res, "Ticket resolved");
+      setResolveOpen(false);
+      setResolveCode("answered");
+      setResolvePublicMessage("");
+      setResolveInternalReason("");
+      refetchMessages();
+      refetchNotes();
+      refetchTicket();
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.detail || "Failed to resolve ticket");
+    },
+  });
+
+  const closeMutation = useMutation({
+    mutationFn: ({ ticketId, reason }) =>
+      closeSupportTicket(ticketId, {
+        reason,
+        idempotency_key: getOpKey("close"),
+      }),
+    onSuccess: (res) => {
+      clearOpKey("close");
+      handleMutationTicketSuccess(res, "Ticket closed");
+      setCloseReason("");
+      refetchTicket();
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.detail || "Failed to close ticket");
+    },
+  });
+
+  const reopenMutation = useMutation({
+    mutationFn: ({ ticketId, note }) =>
+      reopenSupportTicket(ticketId, {
+        message: note,
+        idempotency_key: getOpKey("reopen"),
+      }),
+    onSuccess: (res) => {
+      clearOpKey("reopen");
+      handleMutationTicketSuccess(res, "Ticket reopened");
+      setReopenMessage("");
+      refetchTicket();
+      refetchMessages();
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.detail || "Failed to reopen ticket");
+    },
+  });
+
+  const handleOpenTicket = () => {
+    const ticketId = openTicketInput.trim();
+    if (!ticketId) {
+      message.warning("Enter a ticket public ID");
+      return;
+    }
+    setActiveTicketId(ticketId);
+    setActiveTab("messages");
+  };
+
+  const handleSendReply = () => {
+    if (!activeTicketId) return;
+    if (isResolved || isClosed) {
+      message.warning("Reopen this ticket before sending a public reply");
+      return;
+    }
+
+    const body = replyBody.trim();
+    if (!body) {
+      message.warning("Reply body is required");
+      return;
+    }
+
+    replyMutation.mutate({ ticketId: activeTicketId, body });
+  };
+
+  const handleAddNote = () => {
+    if (!activeTicketId) return;
+    const body = noteBody.trim();
+    if (!body) {
+      message.warning("Note body is required");
+      return;
+    }
+
+    noteMutation.mutate({ ticketId: activeTicketId, body });
+  };
+
+  const handleResolve = () => {
+    if (!activeTicketId) return;
+    if (!isWaiting) {
+      message.warning("Only waiting tickets can be resolved");
+      return;
+    }
+    if (!resolvePublicMessage.trim()) {
+      message.warning("Public response is required");
+      return;
+    }
+    if (!resolveInternalReason.trim()) {
+      message.warning("Internal reason is required");
+      return;
+    }
+
+    resolveMutation.mutate({
+      ticketId: activeTicketId,
+      payload: {
+        resolution_code: resolveCode,
+        public_message: resolvePublicMessage.trim(),
+        internal_reason: resolveInternalReason.trim(),
+        idempotency_key: getOpKey("resolve"),
+      },
+    });
+  };
+
+  const handleClose = () => {
+    if (!activeTicketId || !isResolved) {
+      message.warning("Only resolved tickets can be closed");
+      return;
+    }
+    closeMutation.mutate({
+      ticketId: activeTicketId,
+      reason: closeReason.trim() || "Customer did not request further assistance.",
+    });
+  };
+
+  const handleReopen = () => {
+    if (!activeTicketId || (status !== "resolved" && status !== "closed")) {
+      message.warning("Only resolved or closed tickets can be reopened");
+      return;
+    }
+    reopenMutation.mutate({
+      ticketId: activeTicketId,
+      note: reopenMessage.trim() || "Reopening this ticket for additional investigation.",
+    });
+  };
+
+  const assigneeOptions = assignees.map((item) => ({
+    value: item.id,
+    label: item.name || item.full_name || item.username || `Staff #${item.id}`,
+  }));
+
+  const attachmentsAllowed = can(PERMISSION_KEYS.attachments);
+  const canViewWorkspace = can(PERMISSION_KEYS.view);
+
+  const linkedBooking = field(ticket, "booking_reference", "booking_public_id", "booking_id");
+  const linkedOrder = field(ticket, "order_reference", "order_public_id", "order_id");
+
+  const ticketPriority = String(ticket?.priority || "normal").toLowerCase();
+  const hasSlaBreach =
+    ticket?.is_sla_breached === true ||
+    String(ticket?.sla_state || "").toLowerCase() === "breached" ||
+    String(ticket?.aging_bucket || "").toLowerCase() === "sla_breached";
+
+  const resolutionCode = field(ticket, "resolution_code");
+  const resolvedAt = field(ticket, "resolved_at");
+  const reopenDeadline = field(ticket, "reopen_deadline", "reopen_until", "reopen_expires_at");
+
+  const renderConversationBlock = (item, idx, kind = "public") => {
+    const author =
+      item.sender_name ||
+      item.author_name ||
+      item.created_by_name ||
+      item.author ||
+      item.role ||
+      (kind === "note" ? "Internal" : "Support");
+    const body = item.body || item.message || item.text || "";
+    const when = formatDateTime(item.created_at || item.timestamp || item.updated_at);
+
+    return (
+      <div
+        key={item.public_id || item.id || `${kind}-${idx}`}
+        className="p-3 rounded-xl"
+        style={{
+          background:
+            kind === "note"
+              ? "linear-gradient(135deg, rgba(152,117,84,0.1), rgba(187,161,79,0.08))"
+              : "linear-gradient(135deg, rgba(187,161,79,0.1), rgba(152,117,84,0.08))",
+          border: "1px solid rgba(187,161,79,0.18)",
+        }}
+      >
+        <div className="flex items-center justify-between mb-1.5 gap-2">
+          <p className="text-xs font-semibold m-0" style={{ color: "#2f2f2f" }}>{author}</p>
+          {when ? (
+            <p className="text-[11px] m-0" style={{ color: "#7b7b7b" }}>{when}</p>
+          ) : null}
+        </div>
+        <p className="text-sm m-0" style={{ color: "#3d3d3d", whiteSpace: "pre-wrap" }}>{body || "—"}</p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="px-4 sm:px-6 py-5 sm:py-7" style={{ background: "#FDFAF5", minHeight: "100vh", fontFamily: "'Poppins', sans-serif" }}>
+      <div
+        className="relative overflow-hidden rounded-3xl p-5 sm:p-6 mb-5"
+        style={{
+          background: "linear-gradient(120deg, #272727 0%, #3a2e1e 62%, #5a4728 100%)",
+          boxShadow: "0 12px 34px rgba(39,39,39,0.18)",
+        }}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: "radial-gradient(circle, rgba(187,161,79,0.18) 1px, transparent 1px)",
+            backgroundSize: "20px 20px",
+          }}
+        />
+
+        <div className="relative z-10 flex items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg,#BBA14F,#987554)" }}
+            >
+              <FiLifeBuoy size={20} color="#fff" />
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-widest mb-0.5" style={{ margin: 0, color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}>
+                Settings
+              </p>
+              <h1 className="text-xl sm:text-2xl leading-none" style={{ margin: 0, color: "#fff", fontFamily: "'Playfair Display', serif" }}>
+                Support
+              </h1>
+              <p className="text-xs sm:text-sm mt-1" style={{ margin: 0, color: "rgba(255,255,255,0.82)", fontFamily: "'Poppins', sans-serif" }}>
+                Queue-based ticket workspace for replies, notes, resolve, close, and reopen.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              refetchTickets();
+              if (activeTicketId) {
+                refetchTicket();
+                refetchMessages();
+                refetchNotes();
+                refetchAttachments();
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-full text-xs sm:text-sm"
+            style={{
+              background: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.22)",
+              color: "#fff",
+              fontFamily: "'Poppins', sans-serif",
+              cursor: "pointer",
+            }}
+          >
+            <FiRefreshCw size={13} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-5">
+        <div
+          className="rounded-2xl p-4"
+          style={{
+            background: "#fff",
+            border: "1px solid rgba(187,161,79,0.15)",
+            boxShadow: "0 4px 14px rgba(39,39,39,0.06)",
+            minHeight: 640,
+          }}
+        >
+          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "#987554" }}>Support Queue</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {QUEUE_VIEWS.map((view) => {
+              const active = queueView === view.key;
+              return (
+                <button
+                  key={view.key}
+                  type="button"
+                  onClick={() => setQueueView(view.key)}
+                  className="px-2.5 py-1 rounded-full text-xs"
+                  style={{
+                    border: active ? "1px solid rgba(187,161,79,0.45)" : "1px solid rgba(187,161,79,0.2)",
+                    background: active ? "rgba(187,161,79,0.16)" : "#fff",
+                    color: active ? "#8d6f2c" : "#6f5a42",
+                    cursor: "pointer",
+                    fontFamily: "'Poppins', sans-serif",
+                  }}
+                >
+                  {view.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <Input
+            value={queueSearch}
+            onChange={(e) => setQueueSearch(e.target.value)}
+            placeholder="Search by subject, ref, customer"
+            style={{ marginBottom: 10 }}
+          />
+
+          <div className="flex gap-2 mb-3">
+            <Input
+              value={openTicketInput}
+              onChange={(e) => setOpenTicketInput(e.target.value)}
+              placeholder="Open ticket by public ID"
+            />
+            <Button className={BROWN_BTN_CLASS} style={OPEN_BTN_STYLE} onClick={handleOpenTicket}>Open</Button>
+          </div>
+
+          <div className="space-y-2" style={{ maxHeight: 470, overflow: "auto", paddingRight: 2 }}>
+            {ticketsLoading || ticketsFetching ? (
+              <p className="text-sm" style={{ color: "#987554" }}>Loading queue...</p>
+            ) : tickets.length ? (
+              tickets.map((queueTicket) => {
+                const id = getTicketPublicId(queueTicket);
+                const isActive = id === activeTicketId;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setActiveTicketId(id);
+                      setActiveTab("messages");
+                    }}
+                    className="w-full text-left p-3 rounded-xl"
+                    style={{
+                      background: isActive ? "linear-gradient(135deg, rgba(187,161,79,0.2), rgba(152,117,84,0.1))" : "#fff",
+                      border: isActive ? "1px solid rgba(187,161,79,0.45)" : "1px solid rgba(187,161,79,0.18)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs m-0" style={{ color: "#7a664f" }}>{getTicketReference(queueTicket)}</p>
+                      <Tag color={getStatusColor(queueTicket.status)} style={{ marginInlineEnd: 0 }}>
+                        {String(queueTicket.status || "unknown").replaceAll("_", " ")}
+                      </Tag>
+                    </div>
+                    <p className="text-sm font-semibold mt-1 mb-1" style={{ color: "#2f2f2f" }}>
+                      {getTicketSubject(queueTicket)}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs m-0" style={{ color: "#987554" }}>
+                        {field(queueTicket, "customer_name", "customer", "requester_name")}
+                      </p>
+                      <Tag
+                        color={String(queueTicket.priority || "normal").toLowerCase() === "urgent" ? "red" : "orange"}
+                        style={{ marginInlineEnd: 0 }}
+                      >
+                        {String(queueTicket.priority || "normal")}
+                      </Tag>
+                    </div>
+                  </button>
+                );
+              })
+            ) : (
+              <Empty description="No tickets in this queue" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </div>
+        </div>
+
+        <div
+          className="rounded-2xl p-5"
+          style={{
+            background: "#fff",
+            border: "1px solid rgba(187,161,79,0.2)",
+            boxShadow: "0 4px 14px rgba(39,39,39,0.06)",
+            minHeight: 640,
+          }}
+        >
+          {!activeTicketId ? (
+            <Empty description="Select a ticket from the queue" />
+          ) : !canViewWorkspace ? (
+            <Empty description="You do not have permission to view ticket details." />
+          ) : (
+            <>
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
+                <div>
+                  <p className="text-xs m-0" style={{ color: "#987554" }}>
+                    {ticketLoading ? "Loading ticket..." : getTicketReference(ticket)}
+                  </p>
+                  <h2 className="text-lg m-0" style={{ color: "#272727", fontFamily: "'Playfair Display', serif" }}>
+                    {ticketLoading ? "Support Ticket" : getTicketSubject(ticket)}
+                  </h2>
+                  <div className="mt-1 flex items-center flex-wrap gap-2">
+                    <Tag color={getStatusColor(status)}>{String(status || "unknown").replaceAll("_", " ")}</Tag>
+                    <Tag color={ticketPriority === "urgent" ? "red" : ticketPriority === "high" ? "orange" : "default"}>
+                      {ticketPriority}
+                    </Tag>
+                    {hasSlaBreach ? (
+                      <Tag color="red" icon={<FiAlertTriangle size={12} />}>
+                        SLA Breached
+                      </Tag>
+                    ) : (
+                      <Tag color="gold" icon={<FiClock size={12} />}>
+                        SLA On Track
+                      </Tag>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {canResolveAction && (
+                    <Button
+                      className={BROWN_BTN_CLASS}
+                      style={getActionButtonStyle(RESOLVE_BTN_STYLE, !canResolveNow)}
+                      disabled={!canResolveNow}
+                      icon={<FiCheckCircle size={14} />}
+                      onClick={() => setResolveOpen(true)}
+                    >
+                      Resolve
+                    </Button>
+                  )}
+                  {canCloseAction && (
+                    <Button
+                      className={BROWN_BTN_CLASS}
+                      style={getActionButtonStyle(CLOSE_BTN_STYLE, !canCloseNow)}
+                      disabled={!canCloseNow}
+                      icon={<FiXCircle size={14} />}
+                      loading={closeMutation.isPending}
+                      onClick={handleClose}
+                    >
+                      Close
+                    </Button>
+                  )}
+                  {canReopenAction && (
+                    <Button
+                      className={BROWN_BTN_CLASS}
+                      style={getActionButtonStyle(BROWN_BTN_STYLE, !canReopenNow)}
+                      disabled={!canReopenNow}
+                      icon={<FiRefreshCw size={14} />}
+                      loading={reopenMutation.isPending}
+                      onClick={handleReopen}
+                    >
+                      Reopen
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "rgba(187,161,79,0.07)" }}>
+                  <p className="text-[11px] uppercase tracking-widest m-0" style={{ color: "#8d6f2c" }}>Customer</p>
+                  <p className="text-sm mt-1 mb-0" style={{ color: "#272727" }}>{field(ticket, "customer_name", "requester_name")}</p>
+                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>{field(ticket, "customer_email", "requester_email")}</p>
+                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>{field(ticket, "customer_phone", "requester_phone")}</p>
+                </div>
+                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "rgba(187,161,79,0.07)" }}>
+                  <p className="text-[11px] uppercase tracking-widest m-0" style={{ color: "#8d6f2c" }}>Ticket Meta</p>
+                  <p className="text-sm mt-1 mb-0" style={{ color: "#272727" }}>Category: {field(ticket, "category", "issue_category")}</p>
+                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Assigned: {field(ticket, "assignee_name", "assigned_to_name", "assignee")}</p>
+                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Booking: {linkedBooking}</p>
+                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Order: {linkedOrder}</p>
+                </div>
+              </div>
+
+              {(isResolved || isClosed) && (
+                <div className="p-3 rounded-xl mb-4" style={{ border: "1px solid rgba(187,161,79,0.32)", background: "rgba(187,161,79,0.1)" }}>
+                  <p className="text-[11px] uppercase tracking-widest m-0" style={{ color: "#8d6f2c" }}>Resolution Summary</p>
+                  <p className="text-sm mt-1 mb-0" style={{ color: "#6f5a42" }}>Code: {resolutionCode}</p>
+                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Resolved At: {resolvedAt}</p>
+                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Reopen Deadline: {reopenDeadline}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+                <div style={getDisabledControlStyle(!canAssignAction || assignMutation.isPending)}>
+                  <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Assign</p>
+                  <Select
+                    style={{ width: "100%" }}
+                    options={assigneeOptions}
+                    value={ticket?.assignee || ticket?.assignee_id}
+                    placeholder="Select assignee"
+                    disabled={!canAssignAction || assignMutation.isPending}
+                    onChange={(value) => assignMutation.mutate({ ticketId: activeTicketId, assignee: value })}
+                    allowClear
+                  />
+                </div>
+                <div style={getDisabledControlStyle(!canPriorityAction || priorityMutation.isPending)}>
+                  <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Priority</p>
+                  <Select
+                    style={{ width: "100%" }}
+                    options={PRIORITY_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+                    value={ticketPriority}
+                    disabled={!canPriorityAction || priorityMutation.isPending}
+                    onChange={(value) => priorityMutation.mutate({ ticketId: activeTicketId, priority: value })}
+                  />
+                </div>
+              </div>
+
+              <Tabs
+                activeKey={activeTab}
+                onChange={setActiveTab}
+                items={[
+                  {
+                    key: "messages",
+                    label: "Public Conversation",
+                    children: messagesLoading ? (
+                      <p className="text-sm" style={{ color: "#987554" }}>Loading messages...</p>
+                    ) : messagesList.length ? (
+                      <div className="space-y-3">{messagesList.map((item, idx) => renderConversationBlock(item, idx, "public"))}</div>
+                    ) : (
+                      <Empty description="No public messages" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    ),
+                  },
+                  {
+                    key: "notes",
+                    label: "Internal Notes",
+                    children: notesLoading ? (
+                      <p className="text-sm" style={{ color: "#987554" }}>Loading notes...</p>
+                    ) : notesList.length ? (
+                      <div className="space-y-3">{notesList.map((item, idx) => renderConversationBlock(item, idx, "note"))}</div>
+                    ) : (
+                      <Empty description="No internal notes" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    ),
+                  },
+                  {
+                    key: "attachments",
+                    label: "Attachments",
+                    children: !attachmentsAllowed ? (
+                      <Empty description="No permission to view attachments" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    ) : attachmentsLoading ? (
+                      <p className="text-sm" style={{ color: "#987554" }}>Loading attachments...</p>
+                    ) : attachmentsList.length ? (
+                      <div className="space-y-2">
+                        {attachmentsList.map((fileItem, idx) => {
+                          const href = fileItem.url || fileItem.file_url || fileItem.attachment_url;
+                          const name = fileItem.name || fileItem.filename || `Attachment ${idx + 1}`;
+                          return (
+                            <a
+                              key={fileItem.id || `${name}-${idx}`}
+                              href={href || "#"}
+                              target={href ? "_blank" : undefined}
+                              rel={href ? "noreferrer" : undefined}
+                              className="block p-3 rounded-xl"
+                              style={{
+                                border: "1px solid rgba(187,161,79,0.24)",
+                                background: "rgba(187,161,79,0.08)",
+                                color: "#6f5a42",
+                                textDecoration: "none",
+                                pointerEvents: href ? "auto" : "none",
+                                opacity: href ? 1 : 0.65,
+                              }}
+                            >
+                              <div className="flex items-center gap-2">
+                                <FiPaperclip size={14} />
+                                <span>{name}</span>
+                              </div>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <Empty description="No attachments" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    ),
+                  },
+                ]}
+              />
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
+                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
+                  <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Public Reply</p>
+                  <Input.TextArea
+                    rows={5}
+                    value={replyBody}
+                    disabled={!can(PERMISSION_KEYS.reply) || isResolved || isClosed}
+                    onChange={(e) => setReplyBody(e.target.value)}
+                    placeholder={
+                      isResolved || isClosed
+                        ? "Reopen this ticket before replying"
+                        : "Reply to the customer"
+                    }
+                  />
+                  <Button
+                    className={`mt-3 ${BROWN_BTN_CLASS}`}
+                    style={getActionButtonStyle(BROWN_BTN_STYLE, !canReplyAction)}
+                    icon={<FiSend size={14} />}
+                    loading={replyMutation.isPending}
+                    disabled={!canReplyAction}
+                    onClick={handleSendReply}
+                  >
+                    Send Reply
+                  </Button>
+                </div>
+
+                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
+                  <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Internal Note</p>
+                  <Input.TextArea
+                    rows={5}
+                    value={noteBody}
+                    disabled={!can(PERMISSION_KEYS.note)}
+                    onChange={(e) => setNoteBody(e.target.value)}
+                    placeholder="Add private note for staff"
+                  />
+                  <Button
+                    className={`mt-3 ${BROWN_BTN_CLASS}`}
+                    style={getActionButtonStyle(BROWN_BTN_STYLE, !canNoteAction)}
+                    icon={<FiFileText size={14} />}
+                    loading={noteMutation.isPending}
+                    disabled={!canNoteAction}
+                    onClick={handleAddNote}
+                  >
+                    Add Note
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
+                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
+                  <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Close Reason</p>
+                  <Input.TextArea
+                    rows={3}
+                    value={closeReason}
+                    onChange={(e) => setCloseReason(e.target.value)}
+                    placeholder="Customer did not request further assistance."
+                    disabled={!can(PERMISSION_KEYS.close) || !isResolved}
+                  />
+                </div>
+                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
+                  <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Reopen Message</p>
+                  <Input.TextArea
+                    rows={3}
+                    value={reopenMessage}
+                    onChange={(e) => setReopenMessage(e.target.value)}
+                    placeholder="Reopening this ticket to investigate additional information."
+                    disabled={!can(PERMISSION_KEYS.reopen) || (!isResolved && !isClosed)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <Modal
+        title="Resolve Ticket"
+        open={resolveOpen}
+        onCancel={() => setResolveOpen(false)}
+        onOk={handleResolve}
+        okText="Confirm Resolve"
+        confirmLoading={resolveMutation.isPending}
+        okButtonProps={{
+          className: BROWN_BTN_CLASS,
+          style: BROWN_BTN_STYLE,
+        }}
+      >
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Resolution Code</p>
+            <Select
+              style={{ width: "100%" }}
+              value={resolveCode}
+              onChange={setResolveCode}
+              options={RESOLUTION_CODES.map((code) => ({ value: code, label: code }))}
+            />
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Public Response</p>
+            <Input.TextArea
+              rows={3}
+              value={resolvePublicMessage}
+              onChange={(e) => setResolvePublicMessage(e.target.value)}
+              placeholder="Visible to customer"
+            />
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Internal Reason</p>
+            <Input.TextArea
+              rows={3}
+              value={resolveInternalReason}
+              onChange={(e) => setResolveInternalReason(e.target.value)}
+              placeholder="Visible to staff only"
+            />
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
