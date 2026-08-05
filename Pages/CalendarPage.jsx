@@ -565,8 +565,31 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
     );
   };
 
+  const getAssignedIds = (svc) => {
+    const fromIds = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
+    const fromObjects = Array.isArray(svc.assigned_staff)
+      ? svc.assigned_staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
+      : [];
+    const singleAssignedStaff =
+      svc.assigned_staff && !Array.isArray(svc.assigned_staff)
+        ? [svc.assigned_staff?.id ?? svc.assigned_staff?.user_id ?? svc.assigned_staff?.account_id ?? svc.assigned_staff]
+        : [];
+    const rawStaff = Array.isArray(svc.staff)
+      ? svc.staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
+      : [];
+    const singleStaff =
+      svc.staff && !Array.isArray(svc.staff)
+        ? [svc.staff?.id ?? svc.staff?.user_id ?? svc.staff?.account_id ?? svc.staff]
+        : [];
+    const scalarIds = [svc.assigned_staff_id, svc.staff_id];
+
+    return [...fromIds, ...fromObjects, ...singleAssignedStaff, ...rawStaff, ...singleStaff, ...scalarIds]
+      .filter((x) => x !== null && x !== undefined && x !== "")
+      .map(String);
+  };
+
   const assignedStaffForService = (svc) => {
-    const ids = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
+    const ids = getAssignedIds(svc);
     if (!ids.length) return staffList; // no restriction — all staff can do it
     return staffList.filter((s) => ids.some((rawId) => staffMatchesId(s, rawId)));
   };
@@ -582,7 +605,7 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
       {selectedServices.map((svc) => {
         const cur = current(svc.id);
         const eligibleStaff = assignedStaffForService(svc);
-        const hasRestriction = (svc.assigned_staff_ids ?? svc.staff_ids ?? []).length > 0;
+        const hasRestriction = getAssignedIds(svc).length > 0;
 
         return (
           <div key={svc.id}>
@@ -606,36 +629,38 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {/* Any Team Member */}
-              <button
-                onClick={() => setStaff(svc.id, ANY)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 12,
-                  padding: "10px 14px", borderRadius: 12, cursor: "pointer",
-                  border: `1.5px solid ${cur === ANY ? "#BBA14F" : "#ede8de"}`,
-                  background: cur === ANY ? "linear-gradient(135deg,rgba(187,161,79,0.1),rgba(152,117,84,0.07))" : "#faf8f4",
-                  transition: "all 0.15s", textAlign: "left",
-                }}
-              >
-                <div style={{
-                  width: 36, height: 36, borderRadius: "50%",
-                  background: cur === ANY ? "linear-gradient(135deg,#BBA14F,#987554)" : "rgba(187,161,79,0.12)",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                }}>
-                  <FiUsers size={15} color={cur === ANY ? "#fff" : "#BBA14F"} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif" }}>Any Team Member</p>
-                  <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
-                    Auto-assign from {eligibleStaff.length} available member{eligibleStaff.length !== 1 ? "s" : ""}
-                  </p>
-                </div>
-                {cur === ANY && (
-                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#BBA14F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <FiCheck size={12} color="#fff" />
+              {/* Any Team Member (only when service has no assigned-staff restriction) */}
+              {!hasRestriction && (
+                <button
+                  onClick={() => setStaff(svc.id, ANY)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 12,
+                    padding: "10px 14px", borderRadius: 12, cursor: "pointer",
+                    border: `1.5px solid ${cur === ANY ? "#BBA14F" : "#ede8de"}`,
+                    background: cur === ANY ? "linear-gradient(135deg,rgba(187,161,79,0.1),rgba(152,117,84,0.07))" : "#faf8f4",
+                    transition: "all 0.15s", textAlign: "left",
+                  }}
+                >
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%",
+                    background: cur === ANY ? "linear-gradient(135deg,#BBA14F,#987554)" : "rgba(187,161,79,0.12)",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}>
+                    <FiUsers size={15} color={cur === ANY ? "#fff" : "#BBA14F"} />
                   </div>
-                )}
-              </button>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif" }}>Any Team Member</p>
+                    <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+                      Auto-assign from {eligibleStaff.length} available member{eligibleStaff.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  {cur === ANY && (
+                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#BBA14F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <FiCheck size={12} color="#fff" />
+                    </div>
+                  )}
+                </button>
+              )}
 
               {/* Only show staff assigned to this service */}
               {eligibleStaff.map((s) => {
@@ -4328,16 +4353,45 @@ export default function CalendarPage() {
                   );
                 };
 
+                const getAssignedIds = (svc) => {
+                  const fromIds = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
+                  const fromObjects = Array.isArray(svc.assigned_staff)
+                    ? svc.assigned_staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
+                    : [];
+                  const singleAssignedStaff =
+                    svc.assigned_staff && !Array.isArray(svc.assigned_staff)
+                      ? [svc.assigned_staff?.id ?? svc.assigned_staff?.user_id ?? svc.assigned_staff?.account_id ?? svc.assigned_staff]
+                      : [];
+                  const rawStaff = Array.isArray(svc.staff)
+                    ? svc.staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
+                    : [];
+                  const singleStaff =
+                    svc.staff && !Array.isArray(svc.staff)
+                      ? [svc.staff?.id ?? svc.staff?.user_id ?? svc.staff?.account_id ?? svc.staff]
+                      : [];
+                  const scalarIds = [svc.assigned_staff_id, svc.staff_id];
+
+                  return [...fromIds, ...fromObjects, ...singleAssignedStaff, ...rawStaff, ...singleStaff, ...scalarIds]
+                    .filter((x) => x !== null && x !== undefined && x !== "")
+                    .map(String);
+                };
+
                 const resolveStaffForService = (svc) => {
                   const picked = staffPerService[svc.id];
-                  if (picked && picked !== "any") return Number(picked);
-
-                  // Auto-pick from assigned staff
-                  const assignedIds = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
-
+                  const assignedIds = getAssignedIds(svc);
                   const pool = assignedIds.length
                     ? visibleStaff.filter((s) => assignedIds.some((rawId) => staffMatchesId(s, rawId)))
                     : visibleStaff;
+
+                  // If user picked a specific staff, accept it only if it's allowed by this service.
+                  if (picked && picked !== "any") {
+                    const pickedStaff = visibleStaff.find((s) => String(s.id) === String(picked));
+                    if (!pickedStaff) return null;
+                    const pickedAllowed = assignedIds.length
+                      ? assignedIds.some((rawId) => staffMatchesId(pickedStaff, rawId))
+                      : true;
+                    if (pickedAllowed) return Number(picked);
+                  }
 
                   return pickRandomFrom(pool);
                 };
@@ -4358,6 +4412,20 @@ export default function CalendarPage() {
                     ? { service_id: s.id, staff_id: staffId }
                     : { service_id: s.id };
                 });
+
+                // Guard: for restricted services, a resolved assigned staff must exist.
+                const hasUnresolvedRestrictedService = selectedServices.some((svc) => {
+                  const assignedIds = getAssignedIds(svc);
+                  if (!assignedIds.length) return false;
+                  const chosen = services.find((x) => String(x.service_id) === String(svc.id));
+                  return !chosen?.staff_id;
+                });
+
+                if (hasUnresolvedRestrictedService) {
+                  message.error("One or more selected services has no valid assigned staff. Please assign staff to that service first.");
+                  setWizStep(2);
+                  return;
+                }
 
                 let payload;
 
