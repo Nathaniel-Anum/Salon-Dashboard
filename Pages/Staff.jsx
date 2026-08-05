@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Modal, Drawer, Form, Input, Select, Button, Switch, Checkbox, message, Tag, Tooltip } from "antd";
-import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiGrid, FiList, FiScissors } from "react-icons/fi";
+import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiGrid, FiList, FiScissors, FiChevronDown, FiChevronRight } from "react-icons/fi";
 import { FaUserAlt } from "react-icons/fa";
 import _axios from "../src/api/_axios";
 
@@ -89,6 +89,7 @@ export default function Staff() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignStaff, setAssignStaff] = useState(null);
   const [assignServiceIds, setAssignServiceIds] = useState([]);
+  const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState({});
 
   // --- FETCH STAFF ---
   const { data: staffRaw, isLoading: staffLoading } = useQuery({
@@ -271,6 +272,13 @@ export default function Staff() {
       staff_id: assignStaff.id,
       service_ids: assignServiceIds,
     });
+  };
+
+  const toggleCategoryCollapsed = (categoryKey) => {
+    setCollapsedCategoryKeys((prev) => ({
+      ...prev,
+      [categoryKey]: !prev[categoryKey],
+    }));
   };
 
   // --- HANDLE EDIT ---
@@ -810,6 +818,7 @@ export default function Staff() {
               const selectedCount = categoryIds.filter((id) => assignServiceIds.map(String).includes(id)).length;
               const allSelected = categoryIds.length > 0 && selectedCount === categoryIds.length;
               const partiallySelected = selectedCount > 0 && selectedCount < categoryIds.length;
+              const isCollapsed = !!collapsedCategoryKeys[category.key];
 
               return (
                 <div
@@ -822,16 +831,35 @@ export default function Staff() {
                   }}
                 >
                   <div className="flex items-center justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={allSelected}
-                        indeterminate={partiallySelected}
-                        onChange={(e) => toggleCategorySelection(category, e.target.checked)}
-                      />
-                      <p className="text-sm font-semibold m-0" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
-                        {category.name}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleCategoryCollapsed(category.key)}
+                        className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md"
+                        style={{
+                          border: "1px solid rgba(187,161,79,0.3)",
+                          background: "rgba(187,161,79,0.07)",
+                          color: "#8a6f2e",
+                          fontFamily: "'Poppins', sans-serif",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {isCollapsed ? <FiChevronRight size={12} /> : <FiChevronDown size={12} />}
+                        {isCollapsed ? "Expand" : "Collapse"}
+                      </button>
+
+                      <div className="flex items-center gap-2 ml-1">
+                        <Checkbox
+                          checked={allSelected}
+                          indeterminate={partiallySelected}
+                          onChange={(e) => toggleCategorySelection(category, e.target.checked)}
+                        />
+                        <p className="text-sm font-semibold m-0" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
+                          {category.name}
+                        </p>
+                      </div>
                     </div>
+
                     <span
                       className="text-[10px] px-2 py-0.5 rounded-full"
                       style={{
@@ -844,7 +872,8 @@ export default function Staff() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {!isCollapsed && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {category.services.map((svc) => {
                       const checked = assignServiceIds.some((id) => String(id) === String(svc.id));
                       return (
@@ -872,7 +901,8 @@ export default function Staff() {
                         </label>
                       );
                     })}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
