@@ -7,6 +7,7 @@ import {
   FiClock,
   FiFileText,
   FiLifeBuoy,
+  FiMoreVertical,
   FiPaperclip,
   FiRefreshCw,
   FiSend,
@@ -49,17 +50,6 @@ const formatDateTime = (value) => {
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString();
 };
-
-const QUEUE_VIEWS = [
-  { key: "waiting_for_staff", label: "Action Required", filters: { status: "waiting_for_staff" } },
-  { key: "waiting_for_customer", label: "Waiting for Customer", filters: { status: "waiting_for_customer" } },
-  { key: "resolved", label: "Resolved", filters: { status: "resolved" } },
-  { key: "closed", label: "Closed", filters: { status: "closed" } },
-  { key: "my_tickets", label: "My Tickets", filters: { assignee: "me" } },
-  { key: "unassigned", label: "Unassigned", filters: { unassigned: true } },
-  { key: "high_urgent", label: "High/Urgent", filters: { priority: "high,urgent" } },
-  { key: "sla_breached", label: "SLA Breached", filters: { aging_bucket: "sla_breached" } },
-];
 
 const PRIORITY_OPTIONS = ["low", "normal", "high", "urgent"];
 
@@ -156,13 +146,6 @@ const BROWN_BTN_STYLE = {
   boxShadow: "0 4px 14px rgba(187,161,79,0.25)",
 };
 
-const OPEN_BTN_STYLE = {
-  background: "#fff",
-  border: "1px solid #272727",
-  color: "#272727",
-  fontFamily: "'Poppins', sans-serif",
-};
-
 const RESOLVE_BTN_STYLE = {
   background: "linear-gradient(135deg,#2f9e44,#1f7a33)",
   border: "none",
@@ -200,11 +183,10 @@ const getDisabledControlStyle = (disabled) =>
 export default function SupportPage() {
   const qc = useQueryClient();
 
-  const [queueView, setQueueView] = useState("waiting_for_staff");
   const [queueSearch, setQueueSearch] = useState("");
-  const [openTicketInput, setOpenTicketInput] = useState("");
   const [activeTicketId, setActiveTicketId] = useState("");
   const [activeTab, setActiveTab] = useState("messages");
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
 
   const [replyBody, setReplyBody] = useState("");
   const [noteBody, setNoteBody] = useState("");
@@ -227,13 +209,11 @@ export default function SupportPage() {
     delete opKeyRef.current[name];
   };
 
-  const selectedQueue = QUEUE_VIEWS.find((view) => view.key === queueView) || QUEUE_VIEWS[0];
-
   const ticketFilters = useMemo(() => {
-    const base = { ...selectedQueue.filters };
+    const base = {};
     if (queueSearch.trim()) base.search = queueSearch.trim();
     return base;
-  }, [selectedQueue, queueSearch]);
+  }, [queueSearch]);
 
   const {
     data: ticketsRaw,
@@ -467,16 +447,6 @@ export default function SupportPage() {
     },
   });
 
-  const handleOpenTicket = () => {
-    const ticketId = openTicketInput.trim();
-    if (!ticketId) {
-      message.warning("Enter a ticket public ID");
-      return;
-    }
-    setActiveTicketId(ticketId);
-    setActiveTab("messages");
-  };
-
   const handleSendReply = () => {
     if (!activeTicketId) return;
     if (isResolved || isClosed) {
@@ -560,14 +530,7 @@ export default function SupportPage() {
   const attachmentsAllowed = can(PERMISSION_KEYS.attachments);
   const canViewWorkspace = can(PERMISSION_KEYS.view);
 
-  const linkedBooking = field(ticket, "booking_reference", "booking_public_id", "booking_id");
-  const linkedOrder = field(ticket, "order_reference", "order_public_id", "order_id");
-
   const ticketPriority = String(ticket?.priority || "normal").toLowerCase();
-  const hasSlaBreach =
-    ticket?.is_sla_breached === true ||
-    String(ticket?.sla_state || "").toLowerCase() === "breached" ||
-    String(ticket?.aging_bucket || "").toLowerCase() === "sla_breached";
 
   const resolutionCode = field(ticket, "resolution_code");
   const resolvedAt = field(ticket, "resolved_at");
@@ -758,7 +721,7 @@ export default function SupportPage() {
                 Support
               </h1>
               <p className="text-xs sm:text-sm mt-1" style={{ margin: 0, color: "rgba(255,255,255,0.82)", fontFamily: "'Poppins', sans-serif" }}>
-                Queue-based ticket workspace for replies, notes, resolve, close, and reopen.
+                Chat-style ticket workspace for replies, notes, assign, priority, close, and reopen.
               </p>
             </div>
           </div>
@@ -798,29 +761,7 @@ export default function SupportPage() {
             minHeight: 640,
           }}
         >
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "#987554" }}>Support Queue</p>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {QUEUE_VIEWS.map((view) => {
-              const active = queueView === view.key;
-              return (
-                <button
-                  key={view.key}
-                  type="button"
-                  onClick={() => setQueueView(view.key)}
-                  className="px-2.5 py-1 rounded-full text-xs"
-                  style={{
-                    border: active ? "1px solid rgba(187,161,79,0.45)" : "1px solid rgba(187,161,79,0.2)",
-                    background: active ? "rgba(187,161,79,0.16)" : "#fff",
-                    color: active ? "#8d6f2c" : "#6f5a42",
-                    cursor: "pointer",
-                    fontFamily: "'Poppins', sans-serif",
-                  }}
-                >
-                  {view.label}
-                </button>
-              );
-            })}
-          </div>
+          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "#987554" }}>People</p>
 
           <Input
             value={queueSearch}
@@ -828,15 +769,6 @@ export default function SupportPage() {
             placeholder="Search by subject, ref, customer"
             style={{ marginBottom: 10 }}
           />
-
-          <div className="flex gap-2 mb-3">
-            <Input
-              value={openTicketInput}
-              onChange={(e) => setOpenTicketInput(e.target.value)}
-              placeholder="Open ticket by public ID"
-            />
-            <Button className={BROWN_BTN_CLASS} style={OPEN_BTN_STYLE} onClick={handleOpenTicket}>Open</Button>
-          </div>
 
           <div className="space-y-2" style={{ maxHeight: 470, overflow: "auto", paddingRight: 2 }}>
             {ticketsLoading || ticketsFetching ? (
@@ -861,30 +793,30 @@ export default function SupportPage() {
                     }}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs m-0" style={{ color: "#7a664f" }}>{getTicketReference(queueTicket)}</p>
-                      <Tag color={getStatusColor(queueTicket.status)} style={{ marginInlineEnd: 0 }}>
-                        {String(queueTicket.status || "unknown").replaceAll("_", " ")}
-                      </Tag>
-                    </div>
-                    <p className="text-sm font-semibold mt-1 mb-1" style={{ color: "#2f2f2f" }}>
-                      {getTicketSubject(queueTicket)}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs m-0" style={{ color: "#987554" }}>
-                        {field(queueTicket, "customer_name", "customer", "requester_name")}
+                        <p className="text-sm font-semibold m-0" style={{ color: "#2f2f2f" }}>
+                          {field(queueTicket, "customer_name", "customer", "requester_name")}
+                        </p>
+                        <Tag color={getStatusColor(queueTicket.status)} style={{ marginInlineEnd: 0 }}>
+                          {String(queueTicket.status || "unknown").replaceAll("_", " ")}
+                        </Tag>
+                      </div>
+                      <p className="text-xs mt-1 mb-0" style={{ color: "#7a664f" }}>{getTicketReference(queueTicket)}</p>
+                      <p className="text-xs mt-1 mb-1" style={{ color: "#6f5a42" }}>
+                        {getTicketSubject(queueTicket)}
                       </p>
-                      <Tag
-                        color={String(queueTicket.priority || "normal").toLowerCase() === "urgent" ? "red" : "orange"}
-                        style={{ marginInlineEnd: 0 }}
-                      >
-                        {String(queueTicket.priority || "normal")}
-                      </Tag>
-                    </div>
+                      <div className="flex justify-end">
+                        <Tag
+                          color={String(queueTicket.priority || "normal").toLowerCase() === "urgent" ? "red" : "orange"}
+                          style={{ marginInlineEnd: 0 }}
+                        >
+                          {String(queueTicket.priority || "normal")}
+                        </Tag>
+                      </div>
                   </button>
                 );
               })
             ) : (
-              <Empty description="No tickets in this queue" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description="No support conversations" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
           </div>
         </div>
@@ -912,75 +844,17 @@ export default function SupportPage() {
                   <h2 className="text-lg m-0" style={{ color: "#272727", fontFamily: "'Playfair Display', serif" }}>
                     {ticketLoading ? "Support Ticket" : getTicketSubject(ticket)}
                   </h2>
-                  <div className="mt-1 flex items-center flex-wrap gap-2">
-                    <Tag color={getStatusColor(status)}>{String(status || "unknown").replaceAll("_", " ")}</Tag>
-                    <Tag color={ticketPriority === "urgent" ? "red" : ticketPriority === "high" ? "orange" : "default"}>
-                      {ticketPriority}
-                    </Tag>
-                    {hasSlaBreach ? (
-                      <Tag color="red" icon={<FiAlertTriangle size={12} />}>
-                        SLA Breached
-                      </Tag>
-                    ) : (
-                      <Tag color="gold" icon={<FiClock size={12} />}>
-                        SLA On Track
-                      </Tag>
-                    )}
-                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {canResolveAction && (
-                    <Button
-                      className={BROWN_BTN_CLASS}
-                      style={getActionButtonStyle(RESOLVE_BTN_STYLE, !canResolveNow)}
-                      disabled={!canResolveNow}
-                      icon={<FiCheckCircle size={14} />}
-                      onClick={() => setResolveOpen(true)}
-                    >
-                      Resolve
-                    </Button>
-                  )}
-                  {canCloseAction && (
-                    <Button
-                      className={BROWN_BTN_CLASS}
-                      style={getActionButtonStyle(CLOSE_BTN_STYLE, !canCloseNow)}
-                      disabled={!canCloseNow}
-                      icon={<FiXCircle size={14} />}
-                      loading={closeMutation.isPending}
-                      onClick={handleClose}
-                    >
-                      Close
-                    </Button>
-                  )}
-                  {canReopenAction && (
-                    <Button
-                      className={BROWN_BTN_CLASS}
-                      style={getActionButtonStyle(BROWN_BTN_STYLE, !canReopenNow)}
-                      disabled={!canReopenNow}
-                      icon={<FiRefreshCw size={14} />}
-                      loading={reopenMutation.isPending}
-                      onClick={handleReopen}
-                    >
-                      Reopen
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
-                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "rgba(187,161,79,0.07)" }}>
-                  <p className="text-[11px] uppercase tracking-widest m-0" style={{ color: "#8d6f2c" }}>Customer</p>
-                  <p className="text-sm mt-1 mb-0" style={{ color: "#272727" }}>{field(ticket, "customer_name", "requester_name")}</p>
-                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>{field(ticket, "customer_email", "requester_email")}</p>
-                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>{field(ticket, "customer_phone", "requester_phone")}</p>
-                </div>
-                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "rgba(187,161,79,0.07)" }}>
-                  <p className="text-[11px] uppercase tracking-widest m-0" style={{ color: "#8d6f2c" }}>Ticket Meta</p>
-                  <p className="text-sm mt-1 mb-0" style={{ color: "#272727" }}>Category: {field(ticket, "category", "issue_category")}</p>
-                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Assigned: {field(ticket, "assignee_name", "assigned_to_name", "assignee")}</p>
-                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Booking: {linkedBooking}</p>
-                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Order: {linkedOrder}</p>
+                  <Button
+                    className={BROWN_BTN_CLASS}
+                    style={BROWN_BTN_STYLE}
+                    icon={<FiMoreVertical size={14} />}
+                    onClick={() => setMoreOptionsOpen(true)}
+                  >
+                    More Options
+                  </Button>
                 </div>
               </div>
 
@@ -992,31 +866,6 @@ export default function SupportPage() {
                   <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Reopen Deadline: {reopenDeadline}</p>
                 </div>
               )}
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
-                <div style={getDisabledControlStyle(!canAssignAction || assignMutation.isPending)}>
-                  <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Assign</p>
-                  <Select
-                    style={{ width: "100%" }}
-                    options={assigneeOptions}
-                    value={ticket?.assignee || ticket?.assignee_id}
-                    placeholder="Select assignee"
-                    disabled={!canAssignAction || assignMutation.isPending}
-                    onChange={(value) => assignMutation.mutate({ ticketId: activeTicketId, assignee: value })}
-                    allowClear
-                  />
-                </div>
-                <div style={getDisabledControlStyle(!canPriorityAction || priorityMutation.isPending)}>
-                  <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Priority</p>
-                  <Select
-                    style={{ width: "100%" }}
-                    options={PRIORITY_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
-                    value={ticketPriority}
-                    disabled={!canPriorityAction || priorityMutation.isPending}
-                    onChange={(value) => priorityMutation.mutate({ ticketId: activeTicketId, priority: value })}
-                  />
-                </div>
-              </div>
 
               <Tabs
                 activeKey={activeTab}
@@ -1096,81 +945,155 @@ export default function SupportPage() {
                   },
                 ]}
               />
-
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
-                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
-                  <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Public Reply</p>
-                  <Input.TextArea
-                    rows={5}
-                    value={replyBody}
-                    disabled={!can(PERMISSION_KEYS.reply) || isResolved || isClosed}
-                    onChange={(e) => setReplyBody(e.target.value)}
-                    placeholder={
-                      isResolved || isClosed
-                        ? "Reopen this ticket before replying"
-                        : "Reply to the customer"
-                    }
-                  />
-                  <Button
-                    className={`mt-3 ${BROWN_BTN_CLASS}`}
-                    style={getActionButtonStyle(BROWN_BTN_STYLE, !canReplyAction)}
-                    icon={<FiSend size={14} />}
-                    loading={replyMutation.isPending}
-                    disabled={!canReplyAction}
-                    onClick={handleSendReply}
-                  >
-                    Send Reply
-                  </Button>
-                </div>
-
-                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
-                  <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Internal Note</p>
-                  <Input.TextArea
-                    rows={5}
-                    value={noteBody}
-                    disabled={!can(PERMISSION_KEYS.note)}
-                    onChange={(e) => setNoteBody(e.target.value)}
-                    placeholder="Add private note for staff"
-                  />
-                  <Button
-                    className={`mt-3 ${BROWN_BTN_CLASS}`}
-                    style={getActionButtonStyle(BROWN_BTN_STYLE, !canNoteAction)}
-                    icon={<FiFileText size={14} />}
-                    loading={noteMutation.isPending}
-                    disabled={!canNoteAction}
-                    onClick={handleAddNote}
-                  >
-                    Add Note
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
-                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
-                  <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Close Reason</p>
-                  <Input.TextArea
-                    rows={3}
-                    value={closeReason}
-                    onChange={(e) => setCloseReason(e.target.value)}
-                    placeholder="Customer did not request further assistance."
-                    disabled={!can(PERMISSION_KEYS.close) || !isResolved}
-                  />
-                </div>
-                <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
-                  <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Reopen Message</p>
-                  <Input.TextArea
-                    rows={3}
-                    value={reopenMessage}
-                    onChange={(e) => setReopenMessage(e.target.value)}
-                    placeholder="Reopening this ticket to investigate additional information."
-                    disabled={!can(PERMISSION_KEYS.reopen) || (!isResolved && !isClosed)}
-                  />
-                </div>
-              </div>
             </>
           )}
         </div>
       </div>
+
+      <Modal
+        title="More Options"
+        open={moreOptionsOpen}
+        onCancel={() => setMoreOptionsOpen(false)}
+        footer={null}
+        width={760}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+          <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
+            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Assign</p>
+            <div style={getDisabledControlStyle(!canAssignAction || assignMutation.isPending)}>
+              <Select
+                style={{ width: "100%" }}
+                options={assigneeOptions}
+                value={ticket?.assignee || ticket?.assignee_id}
+                placeholder="Select assignee"
+                disabled={!canAssignAction || assignMutation.isPending}
+                onChange={(value) => assignMutation.mutate({ ticketId: activeTicketId, assignee: value })}
+                allowClear
+              />
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
+            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: "#987554" }}>Priority</p>
+            <div style={getDisabledControlStyle(!canPriorityAction || priorityMutation.isPending)}>
+              <Select
+                style={{ width: "100%" }}
+                options={PRIORITY_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+                value={ticketPriority}
+                disabled={!canPriorityAction || priorityMutation.isPending}
+                onChange={(value) => priorityMutation.mutate({ ticketId: activeTicketId, priority: value })}
+              />
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
+            <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Public Reply</p>
+            <Input.TextArea
+              rows={4}
+              value={replyBody}
+              disabled={!can(PERMISSION_KEYS.reply) || isResolved || isClosed}
+              onChange={(e) => setReplyBody(e.target.value)}
+              placeholder={
+                isResolved || isClosed
+                  ? "Reopen this ticket before replying"
+                  : "Reply to the customer"
+              }
+            />
+            <Button
+              className={`mt-3 ${BROWN_BTN_CLASS}`}
+              style={getActionButtonStyle(BROWN_BTN_STYLE, !canReplyAction)}
+              icon={<FiSend size={14} />}
+              loading={replyMutation.isPending}
+              disabled={!canReplyAction}
+              onClick={handleSendReply}
+            >
+              Send Reply
+            </Button>
+          </div>
+
+          <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
+            <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Internal Note</p>
+            <Input.TextArea
+              rows={4}
+              value={noteBody}
+              disabled={!can(PERMISSION_KEYS.note)}
+              onChange={(e) => setNoteBody(e.target.value)}
+              placeholder="Add private note for staff"
+            />
+            <Button
+              className={`mt-3 ${BROWN_BTN_CLASS}`}
+              style={getActionButtonStyle(BROWN_BTN_STYLE, !canNoteAction)}
+              icon={<FiFileText size={14} />}
+              loading={noteMutation.isPending}
+              disabled={!canNoteAction}
+              onClick={handleAddNote}
+            >
+              Add Note
+            </Button>
+          </div>
+
+          <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
+            <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Close Reason</p>
+            <Input.TextArea
+              rows={3}
+              value={closeReason}
+              onChange={(e) => setCloseReason(e.target.value)}
+              placeholder="Customer did not request further assistance."
+              disabled={!can(PERMISSION_KEYS.close) || !isResolved}
+            />
+            <Button
+              className={`mt-3 ${BROWN_BTN_CLASS}`}
+              style={getActionButtonStyle(CLOSE_BTN_STYLE, !canCloseNow)}
+              icon={<FiXCircle size={14} />}
+              loading={closeMutation.isPending}
+              disabled={!canCloseNow}
+              onClick={handleClose}
+            >
+              Close Ticket
+            </Button>
+          </div>
+
+          <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
+            <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Reopen Message</p>
+            <Input.TextArea
+              rows={3}
+              value={reopenMessage}
+              onChange={(e) => setReopenMessage(e.target.value)}
+              placeholder="Reopening this ticket to investigate additional information."
+              disabled={!can(PERMISSION_KEYS.reopen) || (!isResolved && !isClosed)}
+            />
+            <Button
+              className={`mt-3 ${BROWN_BTN_CLASS}`}
+              style={getActionButtonStyle(BROWN_BTN_STYLE, !canReopenNow)}
+              icon={<FiRefreshCw size={14} />}
+              loading={reopenMutation.isPending}
+              disabled={!canReopenNow}
+              onClick={handleReopen}
+            >
+              Reopen Ticket
+            </Button>
+          </div>
+
+          <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
+            <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Resolve</p>
+            <p className="text-xs mb-2" style={{ color: "#987554" }}>
+              Opens the resolve dialog for resolution code, public response, and internal reason.
+            </p>
+            <Button
+              className={BROWN_BTN_CLASS}
+              style={getActionButtonStyle(RESOLVE_BTN_STYLE, !canResolveNow)}
+              disabled={!canResolveNow}
+              icon={<FiCheckCircle size={14} />}
+              onClick={() => {
+                setMoreOptionsOpen(false);
+                setResolveOpen(true);
+              }}
+            >
+              Resolve Ticket
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         title="Resolve Ticket"
