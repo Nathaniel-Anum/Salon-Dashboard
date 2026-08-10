@@ -874,22 +874,51 @@ export default function SupportPage() {
                   {
                     key: "messages",
                     label: "Public Conversation",
-                    children: messagesLoading ? (
-                      <p className="text-sm" style={{ color: "#987554" }}>Loading messages...</p>
-                    ) : messagesList.length ? (
-                      <div
-                        className="space-y-3 rounded-2xl p-3"
-                        style={{
-                          background: "rgba(187,161,79,0.06)",
-                          border: "1px solid rgba(187,161,79,0.18)",
-                          maxHeight: 380,
-                          overflowY: "auto",
-                        }}
-                      >
-                        {messagesList.map((item, idx) => renderConversationBlock(item, idx, "public"))}
+                    children: (
+                      <div className="space-y-3">
+                        {messagesLoading ? (
+                          <p className="text-sm" style={{ color: "#987554" }}>Loading messages...</p>
+                        ) : messagesList.length ? (
+                          <div
+                            className="space-y-3 rounded-2xl p-3"
+                            style={{
+                              background: "rgba(187,161,79,0.06)",
+                              border: "1px solid rgba(187,161,79,0.18)",
+                              maxHeight: 380,
+                              overflowY: "auto",
+                            }}
+                          >
+                            {messagesList.map((item, idx) => renderConversationBlock(item, idx, "public"))}
+                          </div>
+                        ) : (
+                          <Empty description="No public messages" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                        )}
+
+                        <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
+                          <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Public Reply</p>
+                          <Input.TextArea
+                            rows={4}
+                            value={replyBody}
+                            disabled={!can(PERMISSION_KEYS.reply) || isResolved || isClosed}
+                            onChange={(e) => setReplyBody(e.target.value)}
+                            placeholder={
+                              isResolved || isClosed
+                                ? "Reopen this ticket before replying"
+                                : "Reply to the customer"
+                            }
+                          />
+                          <Button
+                            className={`mt-3 ${BROWN_BTN_CLASS}`}
+                            style={getActionButtonStyle(BROWN_BTN_STYLE, !canReplyAction)}
+                            icon={<FiSend size={14} />}
+                            loading={replyMutation.isPending}
+                            disabled={!canReplyAction}
+                            onClick={handleSendReply}
+                          >
+                            Send Reply
+                          </Button>
+                        </div>
                       </div>
-                    ) : (
-                      <Empty description="No public messages" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                     ),
                   },
                   {
@@ -984,31 +1013,6 @@ export default function SupportPage() {
                 onChange={(value) => priorityMutation.mutate({ ticketId: activeTicketId, priority: value })}
               />
             </div>
-          </div>
-
-          <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
-            <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Public Reply</p>
-            <Input.TextArea
-              rows={4}
-              value={replyBody}
-              disabled={!can(PERMISSION_KEYS.reply) || isResolved || isClosed}
-              onChange={(e) => setReplyBody(e.target.value)}
-              placeholder={
-                isResolved || isClosed
-                  ? "Reopen this ticket before replying"
-                  : "Reply to the customer"
-              }
-            />
-            <Button
-              className={`mt-3 ${BROWN_BTN_CLASS}`}
-              style={getActionButtonStyle(BROWN_BTN_STYLE, !canReplyAction)}
-              icon={<FiSend size={14} />}
-              loading={replyMutation.isPending}
-              disabled={!canReplyAction}
-              onClick={handleSendReply}
-            >
-              Send Reply
-            </Button>
           </div>
 
           <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.2)", background: "#fff" }}>
