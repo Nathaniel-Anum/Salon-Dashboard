@@ -723,6 +723,7 @@ function NewOrderModal({ open, onClose, products, customers, onSuccess }) {
 export default function OrdersPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState("desc");
   const [newOrderOpen, setNewOrderOpen] = useState(false);
   const [detailOrderId, setDetailOrderId] = useState(null);
   const [messageApi, msgCtx] = message.useMessage();
@@ -750,15 +751,41 @@ export default function OrdersPage() {
     const list = Array.isArray(orderData)
       ? orderData
       : orderData?.results ?? [];
-    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return list.filter(
-      (o) =>
-        String(o.id).includes(q) ||
-        o.customer_name?.toLowerCase().includes(q) ||
-        o.status?.toLowerCase().includes(q)
-    );
-  }, [orderData, search]);
+    const filtered = !search.trim()
+      ? list
+      : list.filter(
+          (o) =>
+            String(o.id).includes(q) ||
+            o.customer_name?.toLowerCase().includes(q) ||
+            o.status?.toLowerCase().includes(q)
+        );
+
+    const getSortValue = (item) => {
+      const dateFields = ["created_at", "createdAt", "updated_at", "updatedAt", "created_date"];
+      for (const key of dateFields) {
+        const raw = item?.[key];
+        if (raw) {
+          const ts = Date.parse(raw);
+          if (!Number.isNaN(ts)) return ts;
+        }
+      }
+      const numericId = Number(item?.id);
+      if (Number.isFinite(numericId)) return numericId;
+      return String(getOrderNumber(item)).toLowerCase();
+    };
+
+    return [...filtered].sort((a, b) => {
+      const av = getSortValue(a);
+      const bv = getSortValue(b);
+      if (typeof av === "number" && typeof bv === "number") {
+        return sortOrder === "desc" ? bv - av : av - bv;
+      }
+      return sortOrder === "desc"
+        ? String(bv).localeCompare(String(av))
+        : String(av).localeCompare(String(bv));
+    });
+  }, [orderData, search, sortOrder]);
 
   /* ── Stats ── */
   const stats = useMemo(() => {
@@ -1046,39 +1073,58 @@ export default function OrdersPage() {
         />
       </div>
 
-      {/* ── Search ── */}
+      {/* ── Search + Sort ── */}
       <div
-        className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+        className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-4 py-3 rounded-2xl"
         style={{
           background: "#fff",
           border: "1px solid rgba(187,161,79,0.25)",
           boxShadow: "0 1px 6px rgba(39,39,39,0.06)",
-          maxWidth: 440,
         }}
       >
-        <FiSearch size={15} style={{ color: "#987554", flexShrink: 0 }} />
-        <input
-          placeholder="Search by ID, customer or status…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#c8b88a] w-full"
-          style={{ fontFamily: "'Poppins', sans-serif" }}
-        />
-        {search && (
-          <button
-            onClick={() => setSearch("")}
-            style={{
-              color: "#987554",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              lineHeight: 1,
-              fontSize: 18,
-            }}
-          >
-            ×
-          </button>
-        )}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <FiSearch size={15} style={{ color: "#987554", flexShrink: 0 }} />
+          <input
+            placeholder="Search by ID, customer or status…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#c8b88a] w-full min-w-0"
+            style={{ fontFamily: "'Poppins', sans-serif" }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              style={{
+                color: "#987554",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                lineHeight: 1,
+                fontSize: 18,
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          style={{
+            border: "1px solid rgba(187,161,79,0.2)",
+            borderRadius: 12,
+            padding: "10px 12px",
+            fontFamily: "'Poppins', sans-serif",
+            color: "#272727",
+            background: "#fff",
+            outline: "none",
+            minWidth: 140,
+          }}
+        >
+          <option value="desc">Newest first</option>
+          <option value="asc">Oldest first</option>
+        </select>
       </div>
 
       {/* ── Table ── */}

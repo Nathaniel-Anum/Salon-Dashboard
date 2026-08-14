@@ -17,6 +17,7 @@ import {
   FiList,
   FiTarget,
   FiLifeBuoy,
+  FiDollarSign,
 } from "react-icons/fi";
 import { FaClock } from "react-icons/fa";
 import { FaUserAlt } from "react-icons/fa";
@@ -30,6 +31,7 @@ import { Spin, Tooltip } from "antd";
 const menuItems = [
   { name: "Dashboard",    icon: <FiHome />,      path: "/" },
   { name: "Calendar",     icon: <FiCalendar />,  path: "/calendar" },
+  { name: "Transactions", icon: <FiDollarSign />, path: "/transactions" },
   { name: "Services",     icon: <FiScissors />,  path: "/services" },
   { name: "Waitlist",     icon: <FiList />,      path: "/waitlist" },
   { name: "Schedules",    icon: <FaClock size={14} />, path: "/schedules" },
@@ -271,7 +273,7 @@ const Sidebar = () => {
             )}
           </div>
 
-          {menuItems.slice(4, 7).map((item) => renderNavLink(item, isMobile, collapsed))}
+          {menuItems.slice(4, 8).map((item) => renderNavLink(item, isMobile, collapsed))}
 
           {/* ── Settings ── */}
           <div>

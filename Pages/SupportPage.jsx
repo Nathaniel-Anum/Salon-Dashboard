@@ -17,6 +17,7 @@ import {
   addSupportTicketNote,
   assignSupportTicket,
   closeSupportTicket,
+  downloadSupportTicketAttachment,
   getSupportAssignees,
   getSupportTicket,
   getSupportTicketAttachments,
@@ -197,6 +198,8 @@ export default function SupportPage() {
   const [resolveCode, setResolveCode] = useState("answered");
   const [resolvePublicMessage, setResolvePublicMessage] = useState("");
   const [resolveInternalReason, setResolveInternalReason] = useState("");
+  const [downloadingAttachmentId, setDownloadingAttachmentId] = useState("");
+  const [previewAttachment, setPreviewAttachment] = useState(null);
 
   const opKeyRef = useRef({});
   const getOpKey = (name) => {
@@ -522,12 +525,82 @@ export default function SupportPage() {
     });
   };
 
+  const getFilenameFromDisposition = (value) => {
+    if (!value) return "";
+    const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(value);
+    if (utf8Match?.[1]) {
+      try {
+        return decodeURIComponent(utf8Match[1]);
+      } catch {
+        return utf8Match[1];
+      }
+    }
+    const basicMatch = /filename="?([^";]+)"?/i.exec(value);
+    return basicMatch?.[1] || "";
+  };
+
+  const getAttachmentName = (fileItem, idx = 0) =>
+    fileItem?.name || fileItem?.filename || `Attachment ${idx + 1}`;
+
+  const closePreviewAttachment = () => {
+    setPreviewAttachment((current) => {
+      if (current?.blobUrl) {
+        URL.revokeObjectURL(current.blobUrl);
+      }
+      return null;
+    });
+  };
+
+  useEffect(() => () => {
+    if (previewAttachment?.blobUrl) {
+      URL.revokeObjectURL(previewAttachment.blobUrl);
+    }
+  }, [previewAttachment?.blobUrl]);
+
+  const handlePreviewAttachment = async (fileItem, idx) => {
+    if (!activeTicketId) {
+      message.warning("Open a ticket first");
+      return;
+    }
+
+    const attachmentId = fileItem?.id || fileItem?.public_id;
+    if (!attachmentId) {
+      message.error("Attachment ID not found");
+      return;
+    }
+
+    try {
+      setDownloadingAttachmentId(String(attachmentId));
+      const res = await downloadSupportTicketAttachment(activeTicketId, attachmentId);
+      const blob = res?.data;
+      if (!(blob instanceof Blob)) {
+        message.error("Unable to preview attachment");
+        return;
+      }
+
+      const headerName = getFilenameFromDisposition(res?.headers?.["content-disposition"]);
+      const name = headerName || getAttachmentName(fileItem, idx);
+      const mime = blob.type || fileItem?.detected_mime_type || fileItem?.mime_type || "application/octet-stream";
+      const blobUrl = URL.createObjectURL(blob);
+
+      setPreviewAttachment({
+        attachmentId,
+        name,
+        mime,
+        blobUrl,
+      });
+    } catch (err) {
+      message.error(err?.response?.data?.detail || "Failed to preview attachment");
+    } finally {
+      setDownloadingAttachmentId("");
+    }
+  };
+
   const assigneeOptions = assignees.map((item) => ({
     value: item.id,
     label: item.name || item.full_name || item.username || `Staff #${item.id}`,
   }));
 
-  const attachmentsAllowed = can(PERMISSION_KEYS.attachments);
   const canViewWorkspace = can(PERMISSION_KEYS.view);
 
   const ticketPriority = String(ticket?.priority || "normal").toLowerCase();
@@ -922,49 +995,42 @@ export default function SupportPage() {
                     ),
                   },
                   {
-                    key: "notes",
-                    label: "Internal Notes",
-                    children: notesLoading ? (
-                      <p className="text-sm" style={{ color: "#987554" }}>Loading notes...</p>
-                    ) : notesList.length ? (
-                      <div className="space-y-3">{notesList.map((item, idx) => renderConversationBlock(item, idx, "note"))}</div>
-                    ) : (
-                      <Empty description="No internal notes" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                    ),
-                  },
-                  {
                     key: "attachments",
                     label: "Attachments",
-                    children: !attachmentsAllowed ? (
-                      <Empty description="No permission to view attachments" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                    ) : attachmentsLoading ? (
+                    children: attachmentsLoading ? (
                       <p className="text-sm" style={{ color: "#987554" }}>Loading attachments...</p>
                     ) : attachmentsList.length ? (
                       <div className="space-y-2">
                         {attachmentsList.map((fileItem, idx) => {
-                          const href = fileItem.url || fileItem.file_url || fileItem.attachment_url;
-                          const name = fileItem.name || fileItem.filename || `Attachment ${idx + 1}`;
+                          const name = getAttachmentName(fileItem, idx);
+                          const attachmentId = fileItem.id || fileItem.public_id;
+                          const isDownloading = String(downloadingAttachmentId) === String(attachmentId);
                           return (
-                            <a
+                            <button
                               key={fileItem.id || `${name}-${idx}`}
-                              href={href || "#"}
-                              target={href ? "_blank" : undefined}
-                              rel={href ? "noreferrer" : undefined}
+                              type="button"
+                              onClick={() => handlePreviewAttachment(fileItem, idx)}
+                              disabled={!attachmentId || isDownloading}
                               className="block p-3 rounded-xl"
                               style={{
+                                width: "100%",
+                                textAlign: "left",
+                                cursor: !attachmentId || isDownloading ? "not-allowed" : "pointer",
                                 border: "1px solid rgba(187,161,79,0.24)",
                                 background: "rgba(187,161,79,0.08)",
                                 color: "#6f5a42",
                                 textDecoration: "none",
-                                pointerEvents: href ? "auto" : "none",
-                                opacity: href ? 1 : 0.65,
+                                opacity: !attachmentId ? 0.65 : 1,
                               }}
                             >
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2 min-w-0">
                                 <FiPaperclip size={14} />
-                                <span>{name}</span>
+                                  <span className="truncate">{isDownloading ? `Opening ${name}...` : name}</span>
+                                </div>
+                                <span style={{ fontSize: 11, color: "#987554", whiteSpace: "nowrap" }}>Preview</span>
                               </div>
-                            </a>
+                            </button>
                           );
                         })}
                       </div>
@@ -1097,6 +1163,78 @@ export default function SupportPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        title={previewAttachment?.name || "Attachment Preview"}
+        open={!!previewAttachment}
+        onCancel={closePreviewAttachment}
+        footer={null}
+        width={960}
+        centered
+        destroyOnClose
+      >
+        {previewAttachment ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div>
+                <p style={{ margin: 0, color: "#987554", fontSize: 12, fontFamily: "'Poppins', sans-serif" }}>
+                  {previewAttachment.mime || "application/octet-stream"}
+                </p>
+              </div>
+              <Button
+                className={BROWN_BTN_CLASS}
+                style={BROWN_BTN_STYLE}
+                onClick={() => {
+                  const link = document.createElement("a");
+                  link.href = previewAttachment.blobUrl;
+                  link.download = previewAttachment.name;
+                  document.body.appendChild(link);
+                  link.click();
+                  link.remove();
+                }}
+              >
+                Download
+              </Button>
+            </div>
+
+            <div
+              style={{
+                border: "1px solid rgba(187,161,79,0.18)",
+                borderRadius: 16,
+                background: "#111",
+                overflow: "hidden",
+                minHeight: 520,
+              }}
+            >
+              {previewAttachment.mime.startsWith("image/") ? (
+                <img
+                  src={previewAttachment.blobUrl}
+                  alt={previewAttachment.name}
+                  style={{ width: "100%", height: "auto", display: "block", background: "#111" }}
+                />
+              ) : previewAttachment.mime === "application/pdf" ? (
+                <iframe
+                  title={previewAttachment.name}
+                  src={previewAttachment.blobUrl}
+                  style={{ width: "100%", height: "72vh", border: "none", background: "#fff" }}
+                />
+              ) : previewAttachment.mime.startsWith("text/") || previewAttachment.mime.includes("json") ? (
+                <iframe
+                  title={previewAttachment.name}
+                  src={previewAttachment.blobUrl}
+                  style={{ width: "100%", height: "72vh", border: "none", background: "#fff" }}
+                />
+              ) : (
+                <iframe
+                  title={previewAttachment.name}
+                  src={previewAttachment.blobUrl}
+                  style={{ width: "100%", height: "72vh", border: "none", background: "#fff" }}
+                />
+              )}
+            </div>
+          </div>
+        ) : null}
       </Modal>
 
       <Modal

@@ -25,8 +25,9 @@ import {
   message,
   Popconfirm,
   Tooltip,
+  Table,
 } from "antd";
-import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiTag, FiGrid, FiUpload } from "react-icons/fi";
+import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiTag, FiGrid, FiList, FiUpload } from "react-icons/fi";
 import {
   getCategories,
   createCategory,
@@ -250,6 +251,8 @@ export default function CategoriesPage() {
   const [editTarget, setEditTarget] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState("desc");
+  const [viewMode, setViewMode] = useState("cards");
   const [messageApi, msgCtx] = message.useMessage();
 
   /* ── Data ── */
@@ -260,14 +263,40 @@ export default function CategoriesPage() {
 
   const categories = useMemo(() => {
     const list = Array.isArray(data) ? data : data?.results ?? [];
-    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return list.filter(
-      (c) =>
-        c.name?.toLowerCase().includes(q) ||
-        c.description?.toLowerCase().includes(q)
-    );
-  }, [data, search]);
+    const filtered = !search.trim()
+      ? list
+      : list.filter(
+          (c) =>
+            c.name?.toLowerCase().includes(q) ||
+            c.description?.toLowerCase().includes(q)
+        );
+
+    const getSortValue = (item) => {
+      const dateFields = ["created_at", "createdAt", "updated_at", "updatedAt", "created_date"];
+      for (const key of dateFields) {
+        const raw = item?.[key];
+        if (raw) {
+          const ts = Date.parse(raw);
+          if (!Number.isNaN(ts)) return ts;
+        }
+      }
+      const numericId = Number(item?.id);
+      if (Number.isFinite(numericId)) return numericId;
+      return String(item?.name || "").toLowerCase();
+    };
+
+    return [...filtered].sort((a, b) => {
+      const av = getSortValue(a);
+      const bv = getSortValue(b);
+      if (typeof av === "number" && typeof bv === "number") {
+        return sortOrder === "desc" ? bv - av : av - bv;
+      }
+      return sortOrder === "desc"
+        ? String(bv).localeCompare(String(av))
+        : String(av).localeCompare(String(bv));
+    });
+  }, [data, search, sortOrder]);
 
   /* ── Modal helpers ── */
   const openCreate = () => {
@@ -317,6 +346,126 @@ export default function CategoriesPage() {
     },
     onError: () => messageApi.error("Could not delete category."),
   });
+
+  const columns = [
+    {
+      title: "Category",
+      key: "category",
+      render: (_, record) => (
+        <div className="flex items-center gap-3">
+          {record.image ? (
+            <img
+              src={record.image}
+              alt={record.name}
+              className="w-10 h-10 rounded-xl object-cover shrink-0"
+              style={{ border: "1px solid rgba(187,161,79,0.2)" }}
+            />
+          ) : (
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(187,161,79,0.12), rgba(152,117,84,0.08))",
+                border: "1.5px dashed rgba(187,161,79,0.3)",
+              }}
+            >
+              <FiTag size={15} style={{ color: "#BBA14F", opacity: 0.65 }} />
+            </div>
+          )}
+          <div>
+            <p
+              className="text-sm font-semibold text-[#272727] leading-none mb-0.5"
+              style={{ fontFamily: "'Poppins', sans-serif" }}
+            >
+              {record.name}
+            </p>
+            <p
+              className="text-xs"
+              style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}
+            >
+              {record.icon || "No icon"}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: "Description",
+      key: "description",
+      render: (_, record) => (
+        <span
+          className="text-sm"
+          style={{ color: "#6f5a42", fontFamily: "'Poppins', sans-serif" }}
+        >
+          {record.description || "—"}
+        </span>
+      ),
+    },
+    {
+      title: "Status",
+      key: "status",
+      width: 130,
+      render: (_, record) => (
+        <span
+          className="text-xs px-3 py-1 rounded-full font-medium"
+          style={{
+            background: record.is_active
+              ? "rgba(34,160,80,0.1)"
+              : "rgba(200,60,60,0.1)",
+            color: record.is_active ? "#1a8a40" : "#b83232",
+          }}
+        >
+          {record.is_active ? "Active" : "Inactive"}
+        </span>
+      ),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      width: 110,
+      render: (_, record) => (
+        <div className="flex items-center gap-2">
+          <Tooltip title="Edit">
+            <button
+              onClick={() => openEdit(record)}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:scale-110"
+              style={{
+                background: "rgba(187,161,79,0.1)",
+                border: "1px solid rgba(187,161,79,0.25)",
+                color: "#BBA14F",
+                cursor: "pointer",
+              }}
+            >
+              <FiEdit2 size={13} />
+            </button>
+          </Tooltip>
+
+          <Popconfirm
+            title="Delete Category"
+            description="This action cannot be undone."
+            onConfirm={() => deleteMutation.mutate(record.id)}
+            okText="Delete"
+            cancelText="Cancel"
+            okButtonProps={{ danger: true }}
+          >
+            <Tooltip title="Delete">
+              <button
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:scale-110"
+                style={{
+                  background: "rgba(220,60,60,0.08)",
+                  border: "1px solid rgba(220,60,60,0.2)",
+                  color: "#d94040",
+                  cursor: "pointer",
+                }}
+              >
+                <FiTrash2 size={13} />
+              </button>
+            </Tooltip>
+          </Popconfirm>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div style={{ animation: "fadeInUp 0.45s ease both" }} className="space-y-7">
@@ -403,42 +552,97 @@ export default function CategoriesPage() {
         </div>
       </div>
 
-      {/* ── Search ── */}
+      {/* ── Search + Controls ── */}
       <div
-        className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+        className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-4 py-3 rounded-2xl"
         style={{
           background: "#fff",
           border: "1px solid rgba(187,161,79,0.25)",
           boxShadow: "0 1px 6px rgba(39,39,39,0.06)",
-          maxWidth: 440,
         }}
       >
-        <FiSearch size={15} style={{ color: "#987554", flexShrink: 0 }} />
-        <input
-          placeholder="Search categories…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#c8b88a] w-full"
-          style={{ fontFamily: "'Poppins', sans-serif" }}
-        />
-        {search && (
-          <button
-            onClick={() => setSearch("")}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <FiSearch size={15} style={{ color: "#987554", flexShrink: 0 }} />
+          <input
+            placeholder="Search categories…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#c8b88a] w-full min-w-0"
+            style={{ fontFamily: "'Poppins', sans-serif" }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              style={{
+                color: "#987554",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                lineHeight: 1,
+                fontSize: 18,
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 lg:shrink-0">
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
             style={{
-              color: "#987554",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              lineHeight: 1,
-              fontSize: 18,
+              border: "1px solid rgba(187,161,79,0.2)",
+              borderRadius: 12,
+              padding: "10px 12px",
+              fontFamily: "'Poppins', sans-serif",
+              color: "#272727",
+              background: "#fff",
+              outline: "none",
+              minWidth: 140,
             }}
           >
-            ×
-          </button>
-        )}
+            <option value="desc">Newest first</option>
+            <option value="asc">Oldest first</option>
+          </select>
+
+          <div
+            className="flex items-center rounded-full p-1 gap-1"
+            style={{
+              background: "#FDFAF5",
+              border: "1px solid rgba(187,161,79,0.18)",
+            }}
+          >
+            {[
+              { key: "cards", icon: <FiGrid size={14} />, label: "Cards" },
+              { key: "table", icon: <FiList size={14} />, label: "Table" },
+            ].map(({ key, icon, label }) => {
+              const active = viewMode === key;
+              return (
+                <Tooltip key={key} title={label} placement="bottom">
+                  <button
+                    onClick={() => setViewMode(key)}
+                    className="flex items-center justify-center w-9 h-9 rounded-full transition-all duration-200"
+                    style={{
+                      background: active
+                        ? "linear-gradient(135deg, #BBA14F, #987554)"
+                        : "transparent",
+                      color: active ? "#fff" : "#987554",
+                      border: "none",
+                      cursor: "pointer",
+                      boxShadow: active ? "0 2px 8px rgba(187,161,79,0.35)" : "none",
+                    }}
+                  >
+                    {icon}
+                  </button>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* ── Grid ── */}
+      {/* ── Content ── */}
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -475,17 +679,36 @@ export default function CategoriesPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {categories.map((cat) => (
-            <CategoryCard
-              key={cat.id}
-              cat={cat}
-              onEdit={openEdit}
-              onDelete={(id) => deleteMutation.mutate(id)}
-              deleting={deleteMutation.isPending}
+        viewMode === "cards" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {categories.map((cat) => (
+              <CategoryCard
+                key={cat.id}
+                cat={cat}
+                onEdit={openEdit}
+                onDelete={(id) => deleteMutation.mutate(id)}
+                deleting={deleteMutation.isPending}
+              />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{
+              background: "#fff",
+              border: "1px solid rgba(187,161,79,0.15)",
+              boxShadow: "0 2px 16px rgba(39,39,39,0.06)",
+            }}
+          >
+            <Table
+              rowKey="id"
+              dataSource={categories}
+              columns={columns}
+              pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: "12px 20px" } }}
+              style={{ fontFamily: "'Poppins', sans-serif" }}
             />
-          ))}
-        </div>
+          </div>
+        )
       )}
 
       {/* ── Add / Edit Modal ── */}

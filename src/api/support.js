@@ -61,6 +61,12 @@ export const getSupportTicketAttachments = (publicId) =>
     )
     .then((r) => r.data);
 
+export const downloadSupportTicketAttachment = (publicId, attachmentId) =>
+  _axios.get(
+    `/api/portal/v1/support/tickets/${normalizeTicketId(publicId)}/attachments/${attachmentId}/download/`,
+    { responseType: "blob" },
+  );
+
 export const replyToSupportTicket = (publicId, data) =>
   _axios.post(
     `/api/portal/v1/support/tickets/${normalizeTicketId(publicId)}/reply/`,

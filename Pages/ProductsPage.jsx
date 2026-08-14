@@ -29,12 +29,12 @@ import {
   Popconfirm,
   Tooltip,
   Table,
-  Tag,
 } from "antd";
 import {
   FiPlus,
   FiEdit2,
   FiTrash2,
+  FiX,
   FiSearch,
   FiPackage,
   FiTag,
@@ -50,6 +50,16 @@ import {
 } from "../src/api/commerce";
 
 const GOLD_BTN = "!bg-[#BBA14F] !border-none hover:!bg-[#a08340] !text-white";
+const PRODUCT_TYPE_OPTIONS = [
+  { label: "Straight", value: "straight" },
+  { label: "Wavy", value: "wavy" },
+  { label: "Curly", value: "curly" },
+  { label: "Loose Curly", value: "loose_curly" },
+  { label: "Deep Curly", value: "deep_curly" },
+  { label: "Deep Wave", value: "deep_wave" },
+  { label: "Natural Curly", value: "natural_curly" },
+  { label: "Other", value: "other" },
+];
 
 /* ─────────────────────────────────────────────
    HELPERS
@@ -64,10 +74,86 @@ function formatPrice(val) {
   }).format(n);
 }
 
+function getInventoryQty(product) {
+  return (
+    product?.inventory?.qty ??
+    product?.inventory?.quantity ??
+    product?.inventory?.quantity_available ??
+    product?.qty ??
+    0
+  );
+}
+
+function normalizeOptionRows(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row, index) => ({
+      id: Number(row?.id),
+      name: String(row?.name ?? "").trim(),
+      price: String(row?.price ?? "").trim(),
+      sort_order:
+        row?.sort_order !== undefined && row?.sort_order !== null && row?.sort_order !== ""
+          ? Number(row.sort_order)
+          : index + 1,
+    }))
+    .filter((row) => row.name && row.price)
+    .map((row) => {
+      const payloadRow = {
+        name: row.name,
+        price: row.price,
+        sort_order: row.sort_order,
+      };
+
+      if (Number.isFinite(row.id) && row.id > 0) {
+        payloadRow.id = row.id;
+      }
+
+      return payloadRow;
+    });
+}
+
+function buildProductPayload(values) {
+  const imageFile = values.image?.[0]?.originFileObj;
+  const inventory = { qty: Number(values.inventory_qty ?? 0) };
+  const options = normalizeOptionRows(values.options);
+  const basePayload = {
+    category: values.category,
+    name: values.name ?? "",
+    product_type: values.product_type ?? "",
+    description: values.description ?? "",
+    sku: values.sku ?? "",
+    price: values.price ?? "",
+    options,
+    is_active: values.is_active ?? true,
+    inventory,
+  };
+
+  if (!imageFile) {
+    return basePayload;
+  }
+
+  const fd = new FormData();
+  if (basePayload.category) fd.append("category", basePayload.category);
+  fd.append("name", basePayload.name);
+  fd.append("product_type", basePayload.product_type);
+  fd.append("description", basePayload.description);
+  fd.append("sku", basePayload.sku);
+  fd.append("price", basePayload.price);
+  fd.append("options", JSON.stringify(options));
+  fd.append("is_active", String(basePayload.is_active));
+  fd.append("inventory", JSON.stringify(inventory));
+  fd.append("image", imageFile);
+
+  return fd;
+}
+
 /* ─────────────────────────────────────────────
    FORM FIELDS  (module-level → avoids re-mount)
 ───────────────────────────────────────────── */
-function ProductFormFields({ categories, currentImage = null, isEdit = false }) {
+function ProductFormFields({
+  categories,
+  currentImage = null,
+  isEdit = false,
+}) {
   return (
     <>
       <Form.Item
@@ -77,7 +163,7 @@ function ProductFormFields({ categories, currentImage = null, isEdit = false }) 
       >
         <Select
           placeholder="Select a category"
-          className="!rounded-xl"
+          className="rounded-xl!"
           options={(Array.isArray(categories) ? categories : categories?.results ?? []).map(
             (c) => ({ label: c.name, value: c.id })
           )}
@@ -95,7 +181,10 @@ function ProductFormFields({ categories, currentImage = null, isEdit = false }) 
           className="flex-1"
           rules={[{ required: true, message: "Required" }]}
         >
-          <Input placeholder="e.g. Argan Oil Shampoo" className="!rounded-xl" />
+          <Input
+            placeholder="e.g. Argan Oil Shampoo"
+            className="rounded-xl!"
+          />
         </Form.Item>
         <Form.Item
           name="sku"
@@ -103,7 +192,29 @@ function ProductFormFields({ categories, currentImage = null, isEdit = false }) 
           className="flex-1"
           rules={[{ required: true, message: "Required" }]}
         >
-          <Input placeholder="e.g. SKU-001" className="!rounded-xl" />
+          <Input placeholder="e.g. SKU-001" className="rounded-xl!" />
+        </Form.Item>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-4">
+        <Form.Item name="product_type" label="Product Type" className="flex-1">
+          <Select
+            placeholder="Select product type"
+            className="rounded-xl!"
+            options={PRODUCT_TYPE_OPTIONS}
+          />
+        </Form.Item>
+        <Form.Item
+          name="inventory_qty"
+          label="Inventory Qty"
+          className="flex-1"
+          rules={[{ required: true, message: "Required" }]}
+        >
+          <InputNumber
+            min={0}
+            className="rounded-xl! w-full!"
+            placeholder="0"
+          />
         </Form.Item>
       </div>
 
@@ -111,7 +222,7 @@ function ProductFormFields({ categories, currentImage = null, isEdit = false }) 
         <Input.TextArea
           rows={3}
           placeholder="Product description…"
-          className="!rounded-xl"
+          className="rounded-xl!"
         />
       </Form.Item>
 
@@ -140,7 +251,7 @@ function ProductFormFields({ categories, currentImage = null, isEdit = false }) 
             >
               <Button
                 icon={<FiUpload size={13} />}
-                className="!rounded-xl !border-[rgba(187,161,79,0.4)] !text-[#987554] hover:!border-[#BBA14F] hover:!text-[#BBA14F]"
+                className="rounded-xl! border-[rgba(187,161,79,0.4)]! text-[#987554]! hover:border-[#BBA14F]! hover:text-[#BBA14F]!"
               >
                 {isEdit && currentImage ? "Upload New Image" : "Upload Image"}
               </Button>
@@ -153,13 +264,144 @@ function ProductFormFields({ categories, currentImage = null, isEdit = false }) 
           className="flex-1"
           rules={[{ required: true, message: "Required" }]}
         >
-          <Input placeholder="e.g. 49.99" className="!rounded-xl" />
+          <Input placeholder="e.g. 49.99" className="rounded-xl!" />
         </Form.Item>
       </div>
 
       <Form.Item name="is_active" label="Active" valuePropName="checked">
         <Switch />
       </Form.Item>
+
+      <div
+        className="rounded-2xl p-4 space-y-4"
+        style={{
+          background: "rgba(187,161,79,0.08)",
+          border: "1px solid rgba(187,161,79,0.24)",
+        }}
+      >
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p
+              className="text-sm font-semibold text-[#272727] mb-1"
+              style={{ fontFamily: "'Poppins', sans-serif" }}
+            >
+              Product Options
+            </p>
+            <p
+              className="text-xs leading-5"
+              style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}
+            >
+              Add option rows here and they will be submitted with the product.
+            </p>
+          </div>
+        </div>
+
+        <Form.List name="options">
+          {(fields, { add, remove }) => (
+            <>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  icon={<FiPlus />}
+                  className="rounded-full! h-9! w-9! p-0!"
+                  style={{
+                    fontFamily: "'Poppins', sans-serif",
+                    background: "#BBA14F",
+                    borderColor: "#BBA14F",
+                    color: "#fff",
+                  }}
+                  onClick={() => add({ sort_order: fields.length + 1 })}
+                >
+                </Button>
+              </div>
+
+              {fields.length === 0 && (
+                <div
+                  className="rounded-2xl px-4 py-5 text-sm"
+                  style={{
+                    color: "#987554",
+                    background: "rgba(253,250,245,0.95)",
+                    border: "1px dashed rgba(187,161,79,0.26)",
+                    fontFamily: "'Poppins', sans-serif",
+                  }}
+                >
+                  No product options added yet.
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {fields.map((field, index) => (
+                  <div
+                    key={field.key}
+                    className="rounded-2xl p-4"
+                    style={{
+                      background: "rgba(253,250,245,0.98)",
+                      border: "1px solid rgba(187,161,79,0.22)",
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <FiTag size={14} style={{ color: "#BBA14F" }} />
+                        <span
+                          className="text-sm font-medium text-[#272727]"
+                          style={{ fontFamily: "'Poppins', sans-serif" }}
+                        >
+                          Option {index + 1}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={() => remove(field.name)}
+                        icon={<FiX size={14} />}
+                        className="rounded-full! h-8! w-8! p-0!"
+                        style={{
+                          fontFamily: "'Poppins', sans-serif",
+                          background: "rgba(217,64,64,0.12)",
+                          borderColor: "rgba(217,64,64,0.24)",
+                          color: "#d94040",
+                        }}
+                      >
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <Form.Item
+                        {...field}
+                        name={[field.name, "name"]}
+                        label="Option Name"
+                        rules={[{ required: true, message: "Required" }]}
+                        className="sm:col-span-1 mb-0"
+                      >
+                        <Input placeholder="e.g. 500ml" className="rounded-xl!" />
+                      </Form.Item>
+
+                      <Form.Item
+                        {...field}
+                        name={[field.name, "price"]}
+                        label="Price"
+                        rules={[{ required: true, message: "Required" }]}
+                        className="sm:col-span-1 mb-0"
+                      >
+                        <Input placeholder="e.g. 10.00" className="rounded-xl!" />
+                      </Form.Item>
+
+                      <Form.Item
+                        {...field}
+                        name={[field.name, "sort_order"]}
+                        label="Sort Order"
+                        className="sm:col-span-1 mb-0"
+                      >
+                        <InputNumber min={1} className="rounded-xl! w-full!" placeholder="1" />
+                      </Form.Item>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+            </>
+          )}
+        </Form.List>
+      </div>
     </>
   );
 }
@@ -173,6 +415,7 @@ export default function ProductsPage() {
   const [editTarget, setEditTarget] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState("desc");
   const [previewImage, setPreviewImage] = useState(null);
   const [messageApi, msgCtx] = message.useMessage();
 
@@ -198,33 +441,82 @@ export default function ProductsPage() {
     const list = Array.isArray(productData)
       ? productData
       : productData?.results ?? [];
-    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return list.filter(
-      (p) =>
-        p.name?.toLowerCase().includes(q) ||
-        p.sku?.toLowerCase().includes(q) ||
-        categoryMap[p.category]?.toLowerCase().includes(q)
-    );
-  }, [productData, search, categoryMap]);
+    const filtered = !search.trim()
+      ? list
+      : list.filter(
+          (p) =>
+            p.name?.toLowerCase().includes(q) ||
+            p.sku?.toLowerCase().includes(q) ||
+            categoryMap[p.category]?.toLowerCase().includes(q)
+        );
+
+    const getSortValue = (item) => {
+      const dateFields = ["created_at", "createdAt", "updated_at", "updatedAt", "created_date"];
+      for (const key of dateFields) {
+        const raw = item?.[key];
+        if (raw) {
+          const ts = Date.parse(raw);
+          if (!Number.isNaN(ts)) return ts;
+        }
+      }
+      const numericId = Number(item?.id);
+      if (Number.isFinite(numericId)) return numericId;
+      return String(item?.name || item?.sku || "").toLowerCase();
+    };
+
+    return [...filtered].sort((a, b) => {
+      const av = getSortValue(a);
+      const bv = getSortValue(b);
+      if (typeof av === "number" && typeof bv === "number") {
+        return sortOrder === "desc" ? bv - av : av - bv;
+      }
+      return sortOrder === "desc"
+        ? String(bv).localeCompare(String(av))
+        : String(av).localeCompare(String(bv));
+    });
+  }, [productData, search, categoryMap, sortOrder]);
 
   /* ── Modal helpers ── */
   const openCreate = () => {
     setEditTarget(null);
     form.resetFields();
-    form.setFieldValue("is_active", true);
+    form.setFieldsValue({
+      is_active: true,
+      inventory_qty: 0,
+      options: [],
+    });
     setModalOpen(true);
   };
 
   const openEdit = (product) => {
     setEditTarget(product);
+    const productOptions = Array.isArray(product.options)
+      ? product.options
+      : Array.isArray(product.product_options)
+      ? product.product_options
+      : Array.isArray(product.option_details)
+      ? product.option_details
+      : [];
+
     form.setFieldsValue({
       category: product.category,
       name: product.name,
+      product_type: product.product_type,
       sku: product.sku,
       description: product.description,
       price: product.price,
+      inventory_qty: getInventoryQty(product),
       is_active: product.is_active,
+      options: productOptions.map((option, index) => ({
+        id: option?.id,
+        name: option?.name ?? "",
+        price: option?.price === undefined || option?.price === null ? "" : String(option.price),
+        sort_order:
+          option?.sort_order !== undefined && option?.sort_order !== null
+            ? Number(option.sort_order)
+            : index + 1,
+      })),
       image: undefined, // file field — don't pre-fill
     });
     setModalOpen(true);
@@ -238,14 +530,12 @@ export default function ProductsPage() {
 
   /* ── Mutations ── */
   const saveMutation = useMutation({
-    mutationFn: (values) =>
-      editTarget
-        ? updateProduct(editTarget.id, values)
-        : createProduct(values),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["commerce-products"] });
-      messageApi.success(editTarget ? "Product updated!" : "Product created!");
-      closeModal();
+    mutationFn: async ({ values, productId }) => {
+      const payload = buildProductPayload(values);
+      if (productId) {
+        return updateProduct(productId, payload);
+      }
+      return createProduct(payload);
     },
     onError: () => messageApi.error("Something went wrong. Please try again."),
   });
@@ -258,6 +548,25 @@ export default function ProductsPage() {
     },
     onError: () => messageApi.error("Could not delete product."),
   });
+
+  const handleSaveProduct = async (values) => {
+    try {
+      if (editTarget) {
+        await saveMutation.mutateAsync({ values, productId: editTarget.id });
+        qc.invalidateQueries({ queryKey: ["commerce-products"] });
+        messageApi.success("Product updated!");
+        closeModal();
+        return;
+      }
+
+      await saveMutation.mutateAsync({ values, productId: null });
+      qc.invalidateQueries({ queryKey: ["commerce-products"] });
+      messageApi.success("Product created!");
+      closeModal();
+    } catch {
+      // Errors are surfaced through mutation handlers.
+    }
+  };
 
   /* ── Table columns ── */
   const columns = [
@@ -474,7 +783,7 @@ export default function ProductsPage() {
             </div>
             <Button
               icon={<FiPlus />}
-              className={`${GOLD_BTN} !rounded-xl !h-10 !px-5 !font-medium !text-sm shrink-0`}
+              className={`${GOLD_BTN} rounded-xl! h-10! px-5! font-medium! text-sm! shrink-0`}
               onClick={openCreate}
               style={{ fontFamily: "'Poppins', sans-serif" }}
             >
@@ -484,39 +793,58 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* ── Search ── */}
+      {/* ── Search + Sort ── */}
       <div
-        className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+        className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-4 py-3 rounded-2xl"
         style={{
           background: "#fff",
           border: "1px solid rgba(187,161,79,0.25)",
           boxShadow: "0 1px 6px rgba(39,39,39,0.06)",
-          maxWidth: 440,
         }}
       >
-        <FiSearch size={15} style={{ color: "#987554", flexShrink: 0 }} />
-        <input
-          placeholder="Search by name, SKU or category…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#c8b88a] w-full"
-          style={{ fontFamily: "'Poppins', sans-serif" }}
-        />
-        {search && (
-          <button
-            onClick={() => setSearch("")}
-            style={{
-              color: "#987554",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              lineHeight: 1,
-              fontSize: 18,
-            }}
-          >
-            ×
-          </button>
-        )}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <FiSearch size={15} style={{ color: "#987554", flexShrink: 0 }} />
+          <input
+            placeholder="Search by name, SKU or category…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#c8b88a] w-full min-w-0"
+            style={{ fontFamily: "'Poppins', sans-serif" }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              style={{
+                color: "#987554",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                lineHeight: 1,
+                fontSize: 18,
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          style={{
+            border: "1px solid rgba(187,161,79,0.2)",
+            borderRadius: 12,
+            padding: "10px 12px",
+            fontFamily: "'Poppins', sans-serif",
+            color: "#272727",
+            background: "#fff",
+            outline: "none",
+            minWidth: 140,
+          }}
+        >
+          <option value="desc">Newest first</option>
+          <option value="asc">Oldest first</option>
+        </select>
       </div>
 
       {/* ── Table ── */}
@@ -551,7 +879,7 @@ export default function ProductsPage() {
                 {!search && (
                   <Button
                     icon={<FiPlus />}
-                    className={`${GOLD_BTN} !rounded-xl !h-9 !px-5 !text-sm`}
+                    className={`${GOLD_BTN} rounded-xl! h-9! px-5! text-sm!`}
                     onClick={openCreate}
                     style={{ fontFamily: "'Poppins', sans-serif" }}
                   >
@@ -571,7 +899,7 @@ export default function ProductsPage() {
         onCancel={closeModal}
         footer={null}
         centered
-        width={560}
+        width={700}
         closable={false}
         styles={{
           content: { padding: 0, borderRadius: 20, overflow: "hidden" },
@@ -642,18 +970,7 @@ export default function ProductsPage() {
           <Form
             form={form}
             layout="vertical"
-            onFinish={(values) => {
-              const fd = new FormData();
-              if (values.category) fd.append("category", values.category);
-              fd.append("name", values.name ?? "");
-              fd.append("sku", values.sku ?? "");
-              if (values.description) fd.append("description", values.description);
-              fd.append("price", values.price ?? "");
-              fd.append("is_active", values.is_active ?? true);
-              const imageFile = values.image?.[0]?.originFileObj;
-              if (imageFile) fd.append("image", imageFile);
-              saveMutation.mutate(fd);
-            }}
+            onFinish={handleSaveProduct}
           >
             <ProductFormFields
               categories={categoryData}
@@ -663,7 +980,7 @@ export default function ProductsPage() {
             <div className="flex justify-end gap-3 mt-2">
               <Button
                 onClick={closeModal}
-                className="!rounded-xl !h-9"
+                className="rounded-xl! h-9!"
                 style={{ fontFamily: "'Poppins', sans-serif" }}
               >
                 Cancel
@@ -671,7 +988,7 @@ export default function ProductsPage() {
               <Button
                 htmlType="submit"
                 loading={saveMutation.isPending}
-                className={`${GOLD_BTN} !rounded-xl !h-9 !px-6`}
+                className={`${GOLD_BTN} rounded-xl! h-9! px-6!`}
                 style={{ fontFamily: "'Poppins', sans-serif" }}
               >
                 {editTarget ? "Save Changes" : "Create Product"}

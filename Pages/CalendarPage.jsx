@@ -2782,8 +2782,10 @@ export default function CalendarPage() {
   const [waitlistDate, setWaitlistDate] = useState(null);     // DatePicker value for the waitlist modal
   const [waitlistStaffPerService, setWaitlistStaffPerService] = useState({}); // { [service_id]: staffId } — required per service
 
+  const headerScrollRef = useRef(null); // staff header horizontal scroller
   const gridRef = useRef(null);      // time gutter
   const bodyRef = useRef(null);      // main scroll body
+  const horizontalSyncLockRef = useRef(false);
   const queryClient = useQueryClient();
 
   /* ── date string ── */
@@ -3027,6 +3029,16 @@ export default function CalendarPage() {
   /* responsive column sizes */
   const colW     = isMobile ? 150 : isTablet ? 180 : COLUMN_W;
   const gutterW  = isMobile ? 52  : 72;
+
+  const syncHorizontalScroll = (fromEl, toEl) => {
+    if (!fromEl || !toEl) return;
+    if (horizontalSyncLockRef.current) return;
+    horizontalSyncLockRef.current = true;
+    toEl.scrollLeft = fromEl.scrollLeft;
+    requestAnimationFrame(() => {
+      horizontalSyncLockRef.current = false;
+    });
+  };
 
   /* ── Wizard helpers ── */
   const resetWizard = useCallback(() => {
@@ -3719,7 +3731,12 @@ export default function CalendarPage() {
           </div>
 
           {/* Staff columns header */}
-          <div className="flex-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          <div
+            ref={headerScrollRef}
+            className="flex-1 overflow-x-auto"
+            style={{ scrollbarWidth: "none" }}
+            onScroll={(e) => syncHorizontalScroll(e.currentTarget, bodyRef.current)}
+          >
             <div className="flex" style={{ minWidth: visibleStaff.length * colW }}>
               {visibleStaff.map((staff, i) => {
                 const [from, to] = avatarGradient(staff.full_name);
@@ -3852,6 +3869,7 @@ export default function CalendarPage() {
             onScroll={(e) => {
               if (gridRef.current)
                 gridRef.current.scrollTop = e.currentTarget.scrollTop;
+              syncHorizontalScroll(e.currentTarget, headerScrollRef.current);
             }}
             style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
@@ -3870,12 +3888,13 @@ export default function CalendarPage() {
                     className="absolute left-0 right-0"
                     style={{
                       top: s * SLOT_HEIGHT_PX,
-                      height: 1,
+                      height: isHour ? 2 : 1,
                       background: isHour
-                        ? "rgba(255,255,255,0.12)"
+                        ? "rgba(255,255,255,0.34)"
                         : isHalfHour
-                        ? "rgba(255,255,255,0.055)"
-                        : "rgba(255,255,255,0.022)",
+                        ? "rgba(255,255,255,0.18)"
+                        : "rgba(255,255,255,0.1)",
+                      boxShadow: isHour ? "0 0 1px rgba(255,255,255,0.22)" : "none",
                     }}
                   />
                 ))}

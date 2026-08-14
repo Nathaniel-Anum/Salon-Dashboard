@@ -21,6 +21,7 @@ import ProductsPage from "../Pages/ProductsPage";
 import OrdersPage from "../Pages/OrdersPage";
 import InventoryPage from "../Pages/InventoryPage";
 import AnalyticsPage from "../Pages/AnalyticsPage";
+import TransactionsPage from "../Pages/TransactionsPage";
 import SettingsPage from "../Pages/SettingsPage";
 import CampaignsPage from "../Pages/CampaignsPage";
 import SupportPage from "../Pages/SupportPage";
@@ -74,6 +75,7 @@ export default function App() {
             <Route path="/commerce/orders" element={<OrdersPage/>}/>
             <Route path="/commerce/inventory" element={<InventoryPage/>}/>
             <Route path="/analytics" element={<AnalyticsPage/>}/>
+            <Route path="/transactions" element={<TransactionsPage/>}/>
             <Route path="/waitlist" element={<WaitlistPage/>}/>
             <Route path="/schedules" element={<SchedulePage/>}/>
             <Route path="/settings" element={<SettingsPage/>}/>
