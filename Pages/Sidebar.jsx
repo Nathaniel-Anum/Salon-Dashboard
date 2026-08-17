@@ -58,7 +58,7 @@ const commerceItems = [
 ];
 
 const settingsItems = [
-  { name: "General", icon: <FiSettings size={14} />, path: "/settings" },
+  { name: "Deposit Rules", icon: <FiSettings size={14} />, path: "/settings" },
   { name: "Campaigns", icon: <FiTarget size={14} />, path: "/settings/campaigns" },
   { name: "Support", icon: <FiLifeBuoy size={14} />, path: "/settings/support" },
 ];
