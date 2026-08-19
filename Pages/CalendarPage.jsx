@@ -115,17 +115,30 @@ function makeIdempotencyKey() {
    STATUS CONFIG
 ───────────────────────────────────────────── */
 const STATUS_CFG = {
-  confirmed:    { label: "Confirmed",    border: "#D4A847", dot: "#BBA14F"  },
-  "in-progress":{ label: "In Progress", border: "#5282FF", dot: "#5282ff"  },
-  in_progress:  { label: "In Progress", border: "#5282FF", dot: "#5282ff"  },
-  pending:      { label: "Pending",      border: "#F0A830", dot: "#f5b43c"  },
-  completed:    { label: "Completed",    border: "#2EAA60", dot: "#22a050"  },
-  arrived:      { label: "Arrived",      border: "#22a050", dot: "#22a050"  },
-  "No-Show":       { label: "No Show",       border: "#e05050", dot: "#e05050"  },
-  no_show:          { label: "No Show",       border: "#e05050", dot: "#e05050"  },
-  pending_deposit:  { label: "Deposit Pending", border: "#D4A847", dot: "#f5b43c" },
-  expired:          { label: "Expired",        border: "#a87050", dot: "#a87050" },
+  confirmed:       { label: "Confirmed",       border: "#D4A847", dot: "#BBA14F"  },
+  "in-progress":   { label: "In Progress",    border: "#5282FF", dot: "#5282ff"  },
+  in_progress:     { label: "In Progress",    border: "#5282FF", dot: "#5282ff"  },
+  pending:         { label: "Pending",         border: "#F0A830", dot: "#f5b43c"  },
+  completed:       { label: "Completed",       border: "#2EAA60", dot: "#22a050"  },
+  arrived:         { label: "Arrived",         border: "#22a050", dot: "#22a050"  },
+  "No-Show":       { label: "No Show",         border: "#e05050", dot: "#e05050"  },
+  "no-show":       { label: "No Show",         border: "#e05050", dot: "#e05050"  },
+  no_show:         { label: "No Show",         border: "#e05050", dot: "#e05050"  },
+  pending_deposit: { label: "Deposit Pending", border: "#D4A847", dot: "#f5b43c" },
+  "pending-deposit":{ label: "Deposit Pending",border: "#D4A847", dot: "#f5b43c" },
+  cancelled:       { label: "Cancelled",       border: "#e05050", dot: "#e05050"  },
+  expired:         { label: "Expired",         border: "#a87050", dot: "#a87050" },
 };
+
+/** Robust STATUS_CFG lookup that handles both hyphen and underscore status formats */
+function getStatusCfg(status) {
+  return (
+    STATUS_CFG[status] ||
+    STATUS_CFG[status?.replace(/-/g, "_")] ||
+    STATUS_CFG[status?.replace(/_/g, "-")] ||
+    STATUS_CFG.pending
+  );
+}
 
 /* ─────────────────────────────────────────────
    BOOKING WIZARD — SHARED STYLES / HELPERS
@@ -1049,7 +1062,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
   );
 
   /* ── Status colour config ── */
-  const cfg = STATUS_CFG[booking.status] || STATUS_CFG.pending;
+  const cfg = getStatusCfg(booking.status);
 
   /* ── Column splitting (for overlapping bookings on same staff column) ── */
   const slotW    = 100 / colCount;
@@ -1402,7 +1415,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
 function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
   if (!booking) return null;
 
-  const cfg = STATUS_CFG[booking.status] || STATUS_CFG.pending;
+  const cfg = getStatusCfg(booking.status);
   const [from, to] = avatarGradient(staff?.full_name || "");
   const startMins = timeToMins(booking.startTime);
   const endMins = startMins + booking.durationMins;
@@ -1540,10 +1553,7 @@ function BookingStatusDrawer({ booking, staff, allServices = [], allStaff = [], 
 
   const queryClient = useQueryClient();
   const bookingId = booking?.id;
-  const cfg =
-    STATUS_CFG[localStatus] ||
-    STATUS_CFG[localStatus?.replace("-", "_")] ||
-    STATUS_CFG.pending;
+  const cfg = getStatusCfg(localStatus);
 
   const toMoneyNumber = (raw) => {
     const n = parseFloat(String(raw ?? "0").replace(/,/g, ""));
@@ -2658,7 +2668,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                     }}
                   >
                     {bookings.map((booking) => {
-                      const cfg = STATUS_CFG[booking.status] || STATUS_CFG.pending;
+                      const cfg = getStatusCfg(booking.status);
                       const durationLabel =
                         booking.durationMins >= 60
                           ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
