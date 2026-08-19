@@ -332,11 +332,10 @@ export default function BlockedDaysPage() {
       </div>
 
       {/* ── Two-column layout ── */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0,1fr) 340px",
-        gap: 24, flex: 1, minHeight: 0, alignItems: "start",
-      }}>
+      <div
+        className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]"
+        style={{ gap: 24, flex: 1, minHeight: 0, alignItems: "start" }}
+      >
 
         {/* ── LEFT: Calendar + form ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>

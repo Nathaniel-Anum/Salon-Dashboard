@@ -434,7 +434,7 @@ export default function CampaignsPage() {
           }}
         />
 
-        <div className="relative z-10 flex items-start sm:items-center justify-between gap-3">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}>
               Settings
@@ -447,36 +447,38 @@ export default function CampaignsPage() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => refetchCampaigns()}
-            className="flex items-center gap-2 px-3 py-2 rounded-full text-xs sm:text-sm"
-            style={{
-              background: "rgba(255,255,255,0.12)",
-              border: "1px solid rgba(255,255,255,0.22)",
-              color: "#fff",
-              fontFamily: "'Poppins', sans-serif",
-              cursor: "pointer",
-            }}
-          >
-            <FiRefreshCw size={13} /> Refresh
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => refetchCampaigns()}
+              className="flex items-center gap-2 px-3 py-2 rounded-full text-xs sm:text-sm"
+              style={{
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.22)",
+                color: "#fff",
+                fontFamily: "'Poppins', sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              <FiRefreshCw size={13} /> Refresh
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-full text-xs sm:text-sm"
-            style={{
-              background: "linear-gradient(135deg, #BBA14F, #987554)",
-              border: "none",
-              color: "#fff",
-              fontFamily: "'Poppins', sans-serif",
-              cursor: "pointer",
-              boxShadow: "0 4px 14px rgba(187,161,79,0.35)",
-            }}
-          >
-            <FiPlus size={13} /> Create Campaign
-          </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-full text-xs sm:text-sm"
+              style={{
+                background: "linear-gradient(135deg, #BBA14F, #987554)",
+                border: "none",
+                color: "#fff",
+                fontFamily: "'Poppins', sans-serif",
+                cursor: "pointer",
+                boxShadow: "0 4px 14px rgba(187,161,79,0.35)",
+              }}
+            >
+              <FiPlus size={13} /> Create Campaign
+            </button>
+          </div>
         </div>
       </div>
 
@@ -525,7 +527,7 @@ export default function CampaignsPage() {
             />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label style={{ display: "block", fontSize: 11, color: "#987554", fontWeight: 700, marginBottom: 4 }}>Effective At</label>
               <input
@@ -562,7 +564,7 @@ export default function CampaignsPage() {
             </select>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label style={{ display: "block", fontSize: 11, color: "#987554", fontWeight: 700, marginBottom: 4 }}>Booking %</label>
               <input
@@ -642,7 +644,7 @@ export default function CampaignsPage() {
           ) : campaigns.length === 0 ? (
             <p style={{ margin: 0, color: "#987554", fontFamily: "'Poppins', sans-serif", fontSize: 13 }}>No campaigns found.</p>
           ) : (
-            <div className="flex flex-col gap-2 max-h-[56vh] overflow-y-auto pr-1">
+            <div className="flex flex-col gap-2 max-h-[40vh] sm:max-h-[56vh] overflow-y-auto pr-1">
               {campaigns.map((campaign) => {
                 const id = campaign.public_id || campaign.id;
                 const isActive = String(id) === String(campaignPublicId);

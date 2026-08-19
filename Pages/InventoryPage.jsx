@@ -391,6 +391,8 @@ export default function InventoryPage() {
       dataIndex: "reorder_level",
       key: "reorder_level",
       width: 150,
+      onHeaderCell: () => ({ className: "hidden sm:table-cell" }),
+      onCell: () => ({ className: "hidden sm:table-cell" }),
       render: (val) => (
         <span className="text-sm" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
           {val}
@@ -612,6 +614,7 @@ export default function InventoryPage() {
           columns={columns}
           rowKey="id"
           loading={isLoading}
+          scroll={{ x: "max-content" }}
           pagination={{ pageSize: 12, hideOnSinglePage: true, showSizeChanger: false }}
           locale={{
             emptyText: (

@@ -287,6 +287,138 @@ function WaitlistRow({ entry, index, onView, onCancel, cancelling }) {
 }
 
 /* ─────────────────────────────────────────────
+   MOBILE CARD  (one per waitlist entry)
+───────────────────────────────────────────── */
+function WaitlistCard({ entry, onView, onCancel, cancelling }) {
+  const customerName =
+    entry.customer_name ||
+    entry.customer?.full_name ||
+    entry.guest?.full_name ||
+    "Guest";
+
+  const servicesSummary =
+    (entry.services || entry.items || [])
+      .map((s) => s.service_name || s.name || "")
+      .filter(Boolean)
+      .join(", ") || "—";
+
+  const requestedTime = entry.requested_start
+    ? dayjs(entry.requested_start).format("D MMM, h:mm A")
+    : entry.appointment_date
+      ? `${dayjs(entry.appointment_date).format("D MMM")} ${entry.start_time || ""}`
+      : "—";
+
+  const waitlistDate = entry.waitlist_date
+    ? dayjs(entry.waitlist_date).format("D MMM YYYY")
+    : "—";
+
+  const canCancel = entry.status === "pending" ||
+    (entry.status === "booked" && entry.payment_due_at && dayjs(entry.payment_due_at).isAfter(dayjs()));
+
+  return (
+    <div
+      onClick={() => onView(entry)}
+      style={{
+        padding: "14px 16px",
+        borderBottom: `1px solid rgba(187,161,79,0.1)`,
+        background: CREAM,
+        cursor: "pointer",
+      }}
+    >
+      {/* Ref + status */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: GOLD, fontFamily: "'Poppins', sans-serif", letterSpacing: "0.04em" }}>
+          {entry.reference_code || `#${entry.id}`}
+        </span>
+        <StatusBadge status={entry.status} />
+      </div>
+
+      {/* Customer */}
+      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+        <FiUser size={11} color={MID} style={{ flexShrink: 0 }} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+          {customerName}
+        </span>
+      </div>
+
+      {/* Services */}
+      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8 }}>
+        <FiScissors size={11} color={MID} style={{ flexShrink: 0 }} />
+        <span style={{
+          fontSize: 11, color: MID, fontFamily: "'Poppins', sans-serif",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {servicesSummary}
+        </span>
+      </div>
+
+      {/* Dates row */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif", marginBottom: 2 }}>
+            Requested
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+            {requestedTime}
+          </p>
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif", marginBottom: 2 }}>
+            Waitlist Date
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+            {waitlistDate}
+          </p>
+        </div>
+      </div>
+
+      {/* Payment deadline */}
+      {entry.status === "booked" && (
+        <div style={{ marginBottom: 8 }}>
+          <p style={{ margin: "0 0 4px", fontSize: 10, fontWeight: 600, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif" }}>
+            Payment Due
+          </p>
+          <PaymentDeadline dueAt={entry.payment_due_at} />
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 8 }} onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={() => onView(entry)}
+          style={{
+            flex: 1, padding: "7px 0", borderRadius: 8,
+            border: `1px solid ${BORDER}`, background: CREAM,
+            color: MID, fontSize: 12, fontWeight: 600,
+            fontFamily: "'Poppins', sans-serif", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+          }}
+        >
+          <FiChevronRight size={13} /> View
+        </button>
+        {canCancel && (
+          <button
+            onClick={() => onCancel(entry)}
+            disabled={cancelling === entry.id}
+            style={{
+              flex: 1, padding: "7px 0", borderRadius: 8,
+              border: "1px solid rgba(200,50,50,0.3)",
+              background: "rgba(200,50,50,0.06)", color: "#c43232",
+              fontSize: 12, fontWeight: 600, fontFamily: "'Poppins', sans-serif",
+              cursor: cancelling === entry.id ? "not-allowed" : "pointer",
+              opacity: cancelling === entry.id ? 0.5 : 1,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+            }}
+          >
+            <FiX size={13} /> Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    ENTRY DETAIL DRAWER
 ───────────────────────────────────────────── */
 function EntryDrawer({ entryId, onClose, onCancel }) {
@@ -938,7 +1070,7 @@ export default function WaitlistPage() {
         marginBottom: 16, flexWrap: "wrap", gap: 10,
       }}>
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        <div className="flex flex-wrap gap-1 justify-center sm:justify-start w-full sm:w-auto">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -970,7 +1102,7 @@ export default function WaitlistPage() {
         </div>
 
         {/* Search */}
-        <div style={{ position: "relative", minWidth: 220 }}>
+        <div className="w-full sm:w-auto" style={{ position: "relative", minWidth: 220 }}>
           <FiSearch size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: MID, pointerEvents: "none" }} />
           <input
             value={search}
@@ -987,36 +1119,16 @@ export default function WaitlistPage() {
         </div>
       </div>
 
-      {/* ── Table ── */}
-      <div style={{
+      {/* ── Mobile cards ── */}
+      <div className="sm:hidden" style={{
         background: CREAM, border: `1px solid ${BORDER}`,
         borderRadius: 16, overflow: "hidden",
         boxShadow: "0 2px 12px rgba(39,39,39,0.05)",
       }}>
-        {/* Table header */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "120px 1fr 1fr 110px 110px 100px 130px auto",
-          gap: 10,
-          padding: "10px 16px",
-          background: "linear-gradient(90deg, rgba(187,161,79,0.1), rgba(152,117,84,0.06))",
-          borderBottom: `1px solid rgba(187,161,79,0.2)`,
-        }}>
-          {["Reference", "Customer", "Services", "Requested", "Waitlist Date", "Status", "Payment Due", ""].map((h) => (
-            <span key={h} style={{
-              fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase",
-              letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif",
-            }}>
-              {h}
-            </span>
-          ))}
-        </div>
-
-        {/* Rows */}
         {isLoading ? (
-          [1, 2, 3, 4, 5].map((k) => (
+          [1, 2, 3].map((k) => (
             <div key={k} style={{ padding: "14px 16px", borderBottom: `1px solid rgba(187,161,79,0.1)` }}>
-              <Skeleton width="100%" height={14} />
+              <Skeleton width="100%" height={90} radius={8} />
             </div>
           ))
         ) : filtered.length === 0 ? (
@@ -1027,31 +1139,94 @@ export default function WaitlistPage() {
             </p>
           </div>
         ) : (
-          filtered.map((entry, idx) => (
-            <WaitlistRow
+          filtered.map((entry) => (
+            <WaitlistCard
               key={entry.id}
               entry={entry}
-              index={idx}
               onView={(e) => setViewEntryId(e.id)}
               onCancel={handleCancel}
               cancelling={cancelling}
             />
           ))
         )}
-
-        {/* Footer */}
         {!isLoading && filtered.length > 0 && (
-          <div style={{
-            padding: "10px 16px",
-            background: "rgba(187,161,79,0.04)",
-            borderTop: `1px solid rgba(187,161,79,0.12)`,
-          }}>
+          <div style={{ padding: "10px 16px", background: "rgba(187,161,79,0.04)", borderTop: `1px solid rgba(187,161,79,0.12)` }}>
             <p style={{ margin: 0, fontSize: 11, color: "rgba(152,117,84,0.65)", fontFamily: "'Poppins', sans-serif" }}>
-              {filtered.length} entr{filtered.length !== 1 ? "ies" : "y"}
-              {activeTab !== "all" ? ` — ${activeTab}` : ""}
+              {filtered.length} entr{filtered.length !== 1 ? "ies" : "y"}{activeTab !== "all" ? ` — ${activeTab}` : ""}
             </p>
           </div>
         )}
+      </div>
+
+      {/* ── Desktop table ── */}
+      <div className="hidden sm:block" style={{
+        background: CREAM, border: `1px solid ${BORDER}`,
+        borderRadius: 16, overflow: "hidden",
+        boxShadow: "0 2px 12px rgba(39,39,39,0.05)",
+      }}>
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 860 }}>
+            {/* Table header */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "120px 1fr 1fr 110px 110px 100px 130px auto",
+              gap: 10,
+              padding: "10px 16px",
+              background: "linear-gradient(90deg, rgba(187,161,79,0.1), rgba(152,117,84,0.06))",
+              borderBottom: `1px solid rgba(187,161,79,0.2)`,
+            }}>
+              {["Reference", "Customer", "Services", "Requested", "Waitlist Date", "Status", "Payment Due", ""].map((h) => (
+                <span key={h} style={{
+                  fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase",
+                  letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif",
+                }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+
+            {/* Rows */}
+            {isLoading ? (
+              [1, 2, 3, 4, 5].map((k) => (
+                <div key={k} style={{ padding: "14px 16px", borderBottom: `1px solid rgba(187,161,79,0.1)` }}>
+                  <Skeleton width="100%" height={14} />
+                </div>
+              ))
+            ) : filtered.length === 0 ? (
+              <div style={{ padding: "48px 20px", textAlign: "center", color: MID }}>
+                <FiList size={30} style={{ color: GOLD, opacity: 0.3, display: "block", margin: "0 auto 12px" }} />
+                <p style={{ margin: 0, fontSize: 13, fontFamily: "'Poppins', sans-serif" }}>
+                  {search ? "No entries match your search" : "No waitlist entries"}
+                </p>
+              </div>
+            ) : (
+              filtered.map((entry, idx) => (
+                <WaitlistRow
+                  key={entry.id}
+                  entry={entry}
+                  index={idx}
+                  onView={(e) => setViewEntryId(e.id)}
+                  onCancel={handleCancel}
+                  cancelling={cancelling}
+                />
+              ))
+            )}
+
+            {/* Footer */}
+            {!isLoading && filtered.length > 0 && (
+              <div style={{
+                padding: "10px 16px",
+                background: "rgba(187,161,79,0.04)",
+                borderTop: `1px solid rgba(187,161,79,0.12)`,
+              }}>
+                <p style={{ margin: 0, fontSize: 11, color: "rgba(152,117,84,0.65)", fontFamily: "'Poppins', sans-serif" }}>
+                  {filtered.length} entr{filtered.length !== 1 ? "ies" : "y"}
+                  {activeTab !== "all" ? ` — ${activeTab}` : ""}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ── Detail drawer ── */}

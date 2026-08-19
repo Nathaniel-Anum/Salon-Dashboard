@@ -859,6 +859,8 @@ export default function OrdersPage() {
       title: "Items",
       key: "items",
       width: 80,
+      onHeaderCell: () => ({ className: "hidden sm:table-cell" }),
+      onCell: () => ({ className: "hidden sm:table-cell" }),
       render: (_, record) => (
         <span
           className="text-sm font-semibold text-center"
@@ -1141,6 +1143,7 @@ export default function OrdersPage() {
           dataSource={orders}
           columns={columns}
           loading={isLoading}
+          scroll={{ x: "max-content" }}
           pagination={{
             pageSize: 10,
             showSizeChanger: false,

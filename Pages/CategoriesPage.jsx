@@ -392,6 +392,8 @@ export default function CategoriesPage() {
     {
       title: "Description",
       key: "description",
+      onHeaderCell: () => ({ className: "hidden sm:table-cell" }),
+      onCell: () => ({ className: "hidden sm:table-cell" }),
       render: (_, record) => (
         <span
           className="text-sm"
@@ -704,6 +706,7 @@ export default function CategoriesPage() {
               rowKey="id"
               dataSource={categories}
               columns={columns}
+              scroll={{ x: "max-content" }}
               pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: "12px 20px" } }}
               style={{ fontFamily: "'Poppins', sans-serif" }}
             />

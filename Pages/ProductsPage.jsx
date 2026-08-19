@@ -615,6 +615,8 @@ export default function ProductsPage() {
     {
       title: "Category",
       key: "category",
+      onHeaderCell: () => ({ className: "hidden sm:table-cell" }),
+      onCell: () => ({ className: "hidden sm:table-cell" }),
       render: (_, record) => (
         <span
           className="text-xs px-2.5 py-1 rounded-full font-medium"
@@ -861,6 +863,7 @@ export default function ProductsPage() {
           dataSource={products}
           columns={columns}
           loading={isLoading}
+          scroll={{ x: "max-content" }}
           pagination={{
             pageSize: 10,
             showSizeChanger: false,
