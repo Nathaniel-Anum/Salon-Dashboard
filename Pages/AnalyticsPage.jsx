@@ -18,6 +18,7 @@ import {
   getAnalyticsCommerce,
   getAnalyticsPayments,
 } from "../src/api/analytics";
+import _axios from "../src/api/_axios";
 
 /* ─── helpers ─── */
 const fmt = (val, prefix = "GH₵") => {
@@ -253,13 +254,29 @@ export default function AnalyticsPage() {
     [dateFrom, dateTo, sourceFilter]
   );
 
-  const [overviewQ, revenueQ, bookingsQ, commerceQ, paymentsQ] = useQueries({
+  const [overviewQ, revenueQ, bookingsQ, commerceQ, paymentsQ, staffQ, servicesQ] = useQueries({
     queries: [
       { queryKey: ["analytics-overview", filters], queryFn: () => getAnalyticsOverview(filters), retry: 1 },
       { queryKey: ["analytics-revenue",  filters], queryFn: () => getAnalyticsRevenue(filters),  retry: 1 },
       { queryKey: ["analytics-bookings", filters], queryFn: () => getAnalyticsBookings(filters), retry: 1 },
       { queryKey: ["analytics-commerce", filters], queryFn: () => getAnalyticsCommerce(filters), retry: 1 },
       { queryKey: ["analytics-payments", filters], queryFn: () => getAnalyticsPayments(filters), retry: 1 },
+      {
+        queryKey: ["staff"],
+        queryFn: () =>
+          _axios.get("/api/portal/v1/accounts/staff/").then((r) =>
+            Array.isArray(r.data) ? r.data : (r.data?.results ?? [])
+          ),
+        staleTime: 5 * 60_000,
+      },
+      {
+        queryKey: ["services"],
+        queryFn: () =>
+          _axios.get("/api/portal/v1/booking/services/").then((r) =>
+            Array.isArray(r.data) ? r.data : (r.data?.results ?? [])
+          ),
+        staleTime: 5 * 60_000,
+      },
     ],
   });
 
@@ -273,6 +290,28 @@ export default function AnalyticsPage() {
     if (!r?.revenue_by_day?.length) return [];
     return r.revenue_by_day.map((d) => ({ date: d.date.slice(5), revenue: parseFloat(d.revenue) || 0 }));
   }, [r]);
+
+  const staffNameMap = useMemo(
+    () =>
+      Object.fromEntries(
+        (staffQ.data || []).map((staff) => [
+          String(staff.id),
+          staff.full_name || staff.name || staff.email || `Staff #${staff.id}`,
+        ])
+      ),
+    [staffQ.data]
+  );
+
+  const serviceNameMap = useMemo(
+    () =>
+      Object.fromEntries(
+        (servicesQ.data || []).map((service) => [
+          String(service.id),
+          service.name || service.service_name || `Service #${service.id}`,
+        ])
+      ),
+    [servicesQ.data]
+  );
 
   const effectiveMeta = o?.meta || r?.meta;
 
@@ -522,7 +561,9 @@ export default function AnalyticsPage() {
                     <div className="divide-y" style={{ borderColor: "rgba(187,161,79,0.18)" }}>
                       {b.bookings_by_service.map((s) => (
                         <div key={s.service_id} className="flex justify-between py-2.5">
-                          <span className="text-sm" style={{ color: "#272727" }}>Service #{s.service_id}</span>
+                          <span className="text-sm" style={{ color: "#272727" }}>
+                            {s.service_name || serviceNameMap[String(s.service_id)] || `Service #${s.service_id}`}
+                          </span>
                           <span className="text-sm font-semibold" style={{ color: "#BBA14F" }}>{s.count}</span>
                         </div>
                       ))}
@@ -537,7 +578,9 @@ export default function AnalyticsPage() {
                     <div className="divide-y" style={{ borderColor: "rgba(187,161,79,0.18)" }}>
                       {b.bookings_by_staff.map((s) => (
                         <div key={s.staff_id} className="flex justify-between py-2.5">
-                          <span className="text-sm" style={{ color: "#272727" }}>Staff #{s.staff_id}</span>
+                          <span className="text-sm" style={{ color: "#272727" }}>
+                            {s.staff_name || staffNameMap[String(s.staff_id)] || `Staff #${s.staff_id}`}
+                          </span>
                           <span className="text-sm font-semibold" style={{ color: "#BBA14F" }}>{s.count}</span>
                         </div>
                       ))}

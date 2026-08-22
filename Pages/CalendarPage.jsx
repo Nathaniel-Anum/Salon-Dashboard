@@ -240,18 +240,12 @@ function WizardSteps({ current }) {
 /* ── Step 1: Client ── */
 function StepClient({ clientMode, setClientMode, selectedClient, setSelectedClient, walkIn, setWalkIn }) {
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 350);
-    return () => clearTimeout(t);
-  }, [search]);
 
   const { data: customersRaw, isFetching } = useQuery({
-    queryKey: ["customers-search", debouncedSearch],
+    queryKey: ["customers-list"],
     queryFn: () =>
       _axios
-        .get("/api/portal/v1/accounts/customers/", { params: debouncedSearch ? { search: debouncedSearch } : {} })
+        .get("/api/portal/v1/accounts/customers/")
         .then((r) => r.data),
     staleTime: 30_000,
     enabled: clientMode === "existing",
@@ -264,6 +258,17 @@ function StepClient({ clientMode, setClientMode, selectedClient, setSelectedClie
   const nameOf = (c) =>
     [c.first_name, c.last_name].filter(Boolean).join(" ") ||
     c.full_name || c.name || `Client #${c.id}`;
+
+  const filteredCustomers = useMemo(() => {
+    if (!search.trim()) return customers;
+    const q = search.trim().toLowerCase();
+    return customers.filter((customer) => {
+      const name = nameOf(customer).toLowerCase();
+      const phone = String(customer.phone || customer.phone_number || "").toLowerCase();
+      const email = String(customer.email || "").toLowerCase();
+      return name.includes(q) || phone.includes(q) || email.includes(q);
+    });
+  }, [customers, search]);
 
   const inputFocus = (e) => (e.target.style.borderColor = "#BBA14F");
   const inputBlur = (e) => (e.target.style.borderColor = "#e8e0d0");
@@ -319,12 +324,12 @@ function StepClient({ clientMode, setClientMode, selectedClient, setSelectedClie
               <div style={{ display: "flex", justifyContent: "center", padding: "28px 0" }}>
                 <Spin size="small" />
               </div>
-            ) : customers.length === 0 ? (
+            ) : filteredCustomers.length === 0 ? (
               <div style={{ textAlign: "center", padding: "28px 0", color: "#aaa", fontSize: 13, fontFamily: "'Poppins',sans-serif" }}>
                 {search ? `No clients found for "${search}"` : "No clients yet"}
               </div>
             ) : (
-              customers.map((c) => {
+              filteredCustomers.map((c) => {
                 const name = nameOf(c);
                 const [from, to] = avatarGradient(name);
                 const isSelected = selectedClient?.id === c.id;
@@ -1725,7 +1730,6 @@ function BookingStatusDrawer({ booking, staff, allServices = [], allStaff = [], 
   const statusOptions = [
     { value: "pending", label: "Pending" },
     { value: "arrived", label: "Arrived" },
-    { value: "in-progress", label: "In Progress" },
     { value: "completed", label: "Completed" },
     { value: "no_show", label: "No Show" },
   ];
