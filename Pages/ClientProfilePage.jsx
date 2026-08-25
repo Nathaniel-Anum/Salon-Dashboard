@@ -166,6 +166,128 @@ function StatusBadge({ status }) {
   );
 }
 
+function getWaitlistStatusCfg(status) {
+  return {
+    pending: { label: "Pending", color: "#8a7030", bg: "rgba(187,161,79,0.12)", border: "rgba(187,161,79,0.3)" },
+    booked: { label: "Booked", color: "#2d5a84", bg: "rgba(79,122,168,0.12)", border: "rgba(79,122,168,0.3)" },
+    cancelled: { label: "Cancelled", color: "#c43232", bg: "rgba(200,50,50,0.1)", border: "rgba(200,50,50,0.25)" },
+    expired: { label: "Expired", color: "#7a5020", bg: "rgba(150,100,50,0.08)", border: "rgba(150,100,50,0.2)" },
+  }[status] || { label: status, color: MID, bg: "transparent", border: BORDER };
+}
+
+function AppointmentCard({ booking }) {
+  const dateLabel = booking.date ? dayjs(booking.date).format("ddd, D MMM YYYY") : "—";
+  const timeLabel = booking.startTime ? dayjs(`2000-01-01 ${booking.startTime}`).format("h:mm A") : "—";
+  const services = booking.serviceNames.length ? booking.serviceNames.join(", ") : "—";
+
+  return (
+    <div
+      className="rounded-2xl p-4"
+      style={{
+        background: "linear-gradient(165deg, rgba(255,255,255,0.96), rgba(248,239,224,0.96))",
+        border: `1px solid ${BORDER}`,
+        boxShadow: "0 2px 12px rgba(39,39,39,0.05)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+            {dateLabel}
+          </p>
+          <p style={{ margin: "2px 0 0", fontSize: 11, color: MID, fontFamily: "'Poppins', sans-serif" }}>
+            {timeLabel}
+          </p>
+        </div>
+        <StatusBadge status={booking.status} />
+      </div>
+
+      <div className="space-y-2">
+        <div>
+          <p style={{ margin: "0 0 3px", fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif" }}>
+            Services
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+            {services}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p style={{ margin: "0 0 3px", fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif" }}>
+              Staff
+            </p>
+            <p style={{ margin: 0, fontSize: 12, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+              {booking.staff || "—"}
+            </p>
+          </div>
+          <div>
+            <p style={{ margin: "0 0 3px", fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif" }}>
+              Total
+            </p>
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+              {booking.total > 0 ? `GHS ${booking.total.toFixed(2)}` : "—"}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaitlistCard({ entry }) {
+  const refCode = entry.reference_code || `#${entry.id}`;
+  const services = (entry.services || entry.items || []).map((s) => s.service_name || s.name || "").filter(Boolean).join(", ") || "—";
+  const requested = entry.requested_start
+    ? dayjs(entry.requested_start).format("D MMM, h:mm A")
+    : entry.appointment_date ? dayjs(entry.appointment_date).format("D MMM YYYY") : "—";
+  const waitlistDate = entry.waitlist_date ? dayjs(entry.waitlist_date).format("D MMM YYYY") : "—";
+  const cfg = getWaitlistStatusCfg(entry.status);
+
+  return (
+    <div
+      className="rounded-2xl p-4"
+      style={{
+        background: "linear-gradient(165deg, rgba(255,255,255,0.96), rgba(248,239,224,0.96))",
+        border: `1px solid ${BORDER}`,
+        boxShadow: "0 2px 12px rgba(39,39,39,0.05)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: GOLD, fontFamily: "'Poppins', sans-serif" }}>
+            {refCode}
+          </p>
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: MID, fontFamily: "'Poppins', sans-serif" }}>
+            {waitlistDate}
+          </p>
+        </div>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "3px 7px", borderRadius: 20, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>
+          {cfg.label}
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        <div>
+          <p style={{ margin: "0 0 3px", fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif" }}>
+            Services
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+            {services}
+          </p>
+        </div>
+        <div>
+          <p style={{ margin: "0 0 3px", fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif" }}>
+            Requested
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+            {requested}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────────────────────────
    APPOINTMENT ROW
 ───────────────────────────────────────────── */
@@ -314,7 +436,7 @@ export default function ClientProfilePage() {
   const [historyTab, setHistoryTab] = useState("appointments"); // "appointments" | "waitlist"
 
   /* ── Fetch customer detail ── */
-  const { data: customer, isLoading: loadingCustomer } = useQuery({
+  const { data: profileData, isLoading: loadingCustomer } = useQuery({
     queryKey: ["customer", id],
     queryFn: () => fetchCustomerDetail(id),
     staleTime: 2 * 60_000,
@@ -335,7 +457,42 @@ export default function ClientProfilePage() {
   });
 
   /* ── Derived stats ── */
-  const stats = useMemo(() => computeProfileStats(bookingsRaw), [bookingsRaw]);
+  const computedStats = useMemo(() => computeProfileStats(bookingsRaw), [bookingsRaw]);
+
+  const customer = profileData?.customer || profileData || {};
+  const activity = profileData?.activity || {};
+  const spending = profileData?.spending || {};
+  const loyalty = profileData?.loyalty || {};
+  const profileFavouriteServices = useMemo(
+    () =>
+      (Array.isArray(profileData?.favorite_services) ? profileData.favorite_services : [])
+        .map((service, index) => ({
+          name:
+            service?.name ||
+            service?.service_name ||
+            service?.title ||
+            service?.label ||
+            `Service ${index + 1}`,
+          count:
+            Number(service?.count ?? service?.booking_count ?? service?.times_booked ?? service?.total ?? 0) || 0,
+        }))
+        .filter((service) => service.name),
+    [profileData]
+  );
+
+  const stats = useMemo(() => ({
+    totalVisits: Number(activity?.completed_appointments ?? computedStats.totalVisits ?? 0),
+    totalSpend: parseFloat(spending?.combined ?? computedStats.totalSpend ?? 0) || 0,
+    favouriteServices: profileFavouriteServices.length ? profileFavouriteServices : computedStats.favouriteServices,
+    loyaltyPoints: Number(loyalty?.current_milestone ?? computedStats.loyaltyPoints ?? 0),
+    lastVisit: computedStats.lastVisit,
+    upcoming: computedStats.upcoming,
+    completedServices: Number(activity?.completed_services ?? 0),
+    activeWaitlists: Number(activity?.active_waitlists ?? waitlistRaw.length ?? 0),
+    bookingsRemaining: Number(loyalty?.bookings_remaining ?? 0),
+    nextMilestone: Number(loyalty?.next_milestone ?? 0),
+    bookingDiscountPercentage: parseFloat(loyalty?.discount_tier?.booking_discount_percentage ?? 0) || 0,
+  }), [activity, computedStats, loyalty, profileFavouriteServices, spending, waitlistRaw.length]);
 
   /* ── Sorted history (newest first) ── */
   const history = useMemo(
@@ -361,7 +518,7 @@ export default function ClientProfilePage() {
   const isLoading = loadingCustomer || loadingBookings;
 
   /* ── Currency format helper ── */
-  const fmt = (n) => `GHS ${n.toFixed(2)}`;
+  const fmt = (n) => `GHS ${Number(n || 0).toFixed(2)}`;
 
   return (
     <div style={{ fontFamily: "'Poppins', sans-serif", animation: "fadeInUp 0.3s ease both" }}>
@@ -457,13 +614,13 @@ export default function ClientProfilePage() {
               icon={<FiCheckCircle size={17} />}
               label="Completed Visits"
               value={stats.totalVisits}
-              sub={`of ${bookingsRaw.length} total appts`}
+              sub={`${stats.completedServices} completed services`}
             />
             <StatCard
               icon={<FiTrendingUp size={17} />}
               label="Total Spend"
               value={stats.totalSpend > 0 ? fmt(stats.totalSpend) : "GHS 0.00"}
-              sub="on completed visits"
+              sub={`booking ${fmt(spending?.booking || 0)} • commerce ${fmt(spending?.commerce || 0)}`}
               accent="#1a8a40"
             />
             <StatCard
@@ -475,9 +632,9 @@ export default function ClientProfilePage() {
             />
             <StatCard
               icon={<FiCalendar size={17} />}
-              label="Upcoming"
-              value={stats.upcoming.length}
-              sub={stats.upcoming[0] ? dayjs(stats.upcoming[0].date).format("D MMM YYYY") : "None scheduled"}
+              label="Active Waitlists"
+              value={stats.activeWaitlists}
+              sub={stats.upcoming[0] ? `Next appointment ${dayjs(stats.upcoming[0].date).format("D MMM YYYY")}` : "No upcoming appointments"}
               accent="#4f7aa8"
             />
           </>
@@ -485,17 +642,15 @@ export default function ClientProfilePage() {
       </div>
 
       {/* ── Two column layout ── */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 260px",
-        gap: 20,
-        alignItems: "start",
-      }}>
+      <div
+        className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px]"
+        style={{ gap: 20, alignItems: "start" }}
+      >
 
         {/* ── LEFT: Appointment history / Waitlist ── */}
         <div>
           {/* Tab toggle */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
             {[
               { key: "appointments", label: "Appointments", icon: <FiClock size={12} />, count: history.length },
               { key: "waitlist",     label: "Waitlist",     icon: <FiList size={12} />,  count: waitlistHistory.length },
@@ -536,6 +691,32 @@ export default function ClientProfilePage() {
             borderRadius: 16, overflow: "hidden",
             boxShadow: "0 2px 12px rgba(39,39,39,0.05)",
           }}>
+            <div className="sm:hidden p-4">
+              {isLoading ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[1, 2, 3].map((k) => <Skeleton key={k} width="100%" height={110} radius={14} />)}
+                </div>
+              ) : history.length === 0 ? (
+                <div style={{ padding: "24px 8px", textAlign: "center", color: MID, fontSize: 13 }}>
+                  <FiCalendar size={28} style={{ color: GOLD, opacity: 0.35, display: "block", margin: "0 auto 10px" }} />
+                  No appointment history yet
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {history.map((b) => <AppointmentCard key={b.id} booking={b} />)}
+                </div>
+              )}
+
+              {!isLoading && history.length > 0 && (
+                <div style={{ paddingTop: 12 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "rgba(152,117,84,0.65)", fontFamily: "'Poppins', sans-serif" }}>
+                    {history.length} appointment{history.length !== 1 ? "s" : ""} total
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden sm:block">
             {/* Table header */}
             <div style={{
               display: "grid",
@@ -587,6 +768,7 @@ export default function ClientProfilePage() {
                 </p>
               </div>
             )}
+            </div>
           </div>
           ) : (
           /* ── Waitlist tab ── */
@@ -595,6 +777,32 @@ export default function ClientProfilePage() {
             borderRadius: 16, overflow: "hidden",
             boxShadow: "0 2px 12px rgba(39,39,39,0.05)",
           }}>
+            <div className="sm:hidden p-4">
+              {loadingWaitlist ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[1, 2, 3].map((k) => <Skeleton key={k} width="100%" height={110} radius={14} />)}
+                </div>
+              ) : waitlistHistory.length === 0 ? (
+                <div style={{ padding: "24px 8px", textAlign: "center", color: MID, fontSize: 13 }}>
+                  <FiList size={28} style={{ color: GOLD, opacity: 0.35, display: "block", margin: "0 auto 10px" }} />
+                  No waitlist entries for this client
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {waitlistHistory.map((w) => <WaitlistCard key={w.id} entry={w} />)}
+                </div>
+              )}
+
+              {!loadingWaitlist && waitlistHistory.length > 0 && (
+                <div style={{ paddingTop: 12 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "rgba(152,117,84,0.65)", fontFamily: "'Poppins', sans-serif" }}>
+                    {waitlistHistory.length} waitlist entr{waitlistHistory.length !== 1 ? "ies" : "y"} total
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden sm:block">
             {/* Table header */}
             <div style={{
               display: "grid",
@@ -634,7 +842,7 @@ export default function ClientProfilePage() {
                   ? dayjs(w.requested_start).format("D MMM, h:mm A")
                   : w.appointment_date ? dayjs(w.appointment_date).format("D MMM YYYY") : "—";
                 const wDate = w.waitlist_date ? dayjs(w.waitlist_date).format("D MMM YYYY") : "—";
-                const cfg   = { pending: { label: "Pending", color: "#8a7030", bg: "rgba(187,161,79,0.12)", border: "rgba(187,161,79,0.3)" }, booked: { label: "Booked", color: "#2d5a84", bg: "rgba(79,122,168,0.12)", border: "rgba(79,122,168,0.3)" }, cancelled: { label: "Cancelled", color: "#c43232", bg: "rgba(200,50,50,0.1)", border: "rgba(200,50,50,0.25)" }, expired: { label: "Expired", color: "#7a5020", bg: "rgba(150,100,50,0.08)", border: "rgba(150,100,50,0.2)" } }[w.status] || { label: w.status, color: MID, bg: "transparent", border: BORDER };
+                const cfg   = getWaitlistStatusCfg(w.status);
                 return (
                   <div key={w.id} style={{
                     display: "grid",
@@ -667,6 +875,7 @@ export default function ClientProfilePage() {
                 </p>
               </div>
             )}
+            </div>
           </div>
           )}
         </div>
@@ -694,7 +903,9 @@ export default function ClientProfilePage() {
               margin: "14px 0 0", fontSize: 10, color: "rgba(152,117,84,0.6)",
               textAlign: "center", fontFamily: "'Poppins', sans-serif", lineHeight: 1.6,
             }}>
-              1 point earned per GHS 10 spent on completed visits
+              {stats.nextMilestone > 0
+                ? `${stats.bookingsRemaining} booking${stats.bookingsRemaining !== 1 ? "s" : ""} to next milestone • ${stats.bookingDiscountPercentage.toFixed(2)}% tier`
+                : "Loyalty milestone data unavailable"}
             </p>
           </div>
 

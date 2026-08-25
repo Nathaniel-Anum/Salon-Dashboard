@@ -1,17 +1,19 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Empty,
   Form,
   Input,
   InputNumber,
   Modal,
   Select,
+  Spin,
   message,
 } from "antd";
 import dayjs from "dayjs";
-import { FiCreditCard, FiPlus } from "react-icons/fi";
-import { createSalonPayment, getTransactionAppointments } from "../src/api/transactions";
+import { FiCreditCard, FiPlus, FiSearch } from "react-icons/fi";
+import { createSalonPayment, getAppointmentTransactions, getTransactionAppointments } from "../src/api/transactions";
 
 const GOLD_BTN = "!bg-[#BBA14F] !border-none hover:!bg-[#a08340] !text-white";
 
@@ -21,6 +23,78 @@ const PAYMENT_METHOD_OPTIONS = [
   { label: "Card Terminal", value: "card_terminal" },
   { label: "Bank Transfer", value: "bank_transfer" },
 ];
+
+function normalizeList(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.results)) return raw.results;
+  if (Array.isArray(raw?.data)) return raw.data;
+  return [];
+}
+
+function formatMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "GHS 0.00";
+  return new Intl.NumberFormat("en-GH", {
+    style: "currency",
+    currency: "GHS",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function getTransactionCustomerName(item) {
+  return (
+    item?.customer_name ||
+    item?.guest_customer?.full_name ||
+    item?.customer_details?.full_name ||
+    [item?.customer_details?.first_name, item?.customer_details?.last_name].filter(Boolean).join(" ") ||
+    item?.customer?.full_name ||
+    item?.customer?.name ||
+    "Walk-in Client"
+  );
+}
+
+function getTransactionAppointmentRef(item) {
+  return item?.reference_code || item?.appointment_reference || item?.appointment?.reference_code || `APT-${item?.appointment_id || item?.id || "—"}`;
+}
+
+function getTransactionPaymentRef(item) {
+  return item?.payment_reference || item?.external_reference || item?.transaction_reference || item?.provider_reference || "—";
+}
+
+function getTransactionAmount(item) {
+  return (
+    item?.amount ??
+    item?.paid_amount ??
+    item?.payment_amount ??
+    item?.total_amount ??
+    item?.deposit_amount ??
+    0
+  );
+}
+
+function getTransactionType(item) {
+  return String(item?.transaction_type || item?.payment_method || item?.channel || item?.method || "—")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function getTransactionStatus(item) {
+  return String(item?.payment_status || item?.status || "recorded")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function getStatusStyle(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized.includes("success") || normalized.includes("paid") || normalized.includes("completed")) {
+    return { background: "rgba(34,160,80,0.12)", color: "#1a8a40" };
+  }
+  if (normalized.includes("fail") || normalized.includes("void")) {
+    return { background: "rgba(200,50,50,0.1)", color: "#c43232" };
+  }
+  return { background: "rgba(187,161,79,0.12)", color: "#8a6f2e" };
+}
 
 function getCustomerName(apt) {
   const c = apt?.customer_details ?? apt?.customer ?? apt?.client ?? null;
@@ -52,11 +126,116 @@ function getAppointmentLabel(apt) {
   return [name, dateLabel, status].filter(Boolean).join(" • ");
 }
 
+function TransactionCard({ item }) {
+  const status = getTransactionStatus(item);
+  const statusStyle = getStatusStyle(status);
+  const createdAt = item?.created_at || item?.paid_at || item?.transaction_date;
+
+  return (
+    <div
+      className="rounded-2xl p-4"
+      style={{
+        background: "linear-gradient(165deg, rgba(255,255,255,0.96), rgba(248,239,224,0.96))",
+        border: "1px solid rgba(187,161,79,0.2)",
+        boxShadow: "0 3px 14px rgba(39,39,39,0.06)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0 flex-1">
+          <p
+            className="text-[11px] font-semibold uppercase tracking-wider mb-1"
+            style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}
+          >
+            Appointment
+          </p>
+          <p
+            className="text-sm font-semibold truncate"
+            style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}
+          >
+            {getTransactionAppointmentRef(item)}
+          </p>
+        </div>
+
+        <span
+          className="text-[10px] px-2.5 py-1 rounded-full font-medium whitespace-nowrap shrink-0"
+          style={{
+            background: statusStyle.background,
+            color: statusStyle.color,
+            fontFamily: "'Poppins', sans-serif",
+          }}
+        >
+          {status}
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+            Customer
+          </p>
+          <p className="text-sm font-medium" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+            {getTransactionCustomerName(item)}
+          </p>
+          {item?.customer_email && (
+            <p className="text-[11px] truncate" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif", margin: "2px 0 0" }}>
+              {item.customer_email}
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+              Amount
+            </p>
+            <p className="text-sm font-semibold" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+              {formatMoney(getTransactionAmount(item))}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+              Type
+            </p>
+            <p className="text-sm" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+              {getTransactionType(item)}
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+            Payment Reference
+          </p>
+          <p className="text-sm wrap-break-word" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+            {getTransactionPaymentRef(item)}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
+            Created
+          </p>
+          <p className="text-sm" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+            {createdAt && dayjs(createdAt).isValid() ? dayjs(createdAt).format("DD MMM YYYY • h:mm A") : "—"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TransactionsPage() {
   const queryClient = useQueryClient();
   const [form] = Form.useForm();
   const [messageApi, messageContext] = message.useMessage();
   const [modalOpen, setModalOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const { data: appointmentsRaw, isLoading: aptsLoading } = useQuery({
     queryKey: ["transactions-appointments"],
@@ -64,10 +243,14 @@ export default function TransactionsPage() {
     staleTime: 60_000,
   });
 
+  const { data: transactionsRaw, isLoading: txLoading } = useQuery({
+    queryKey: ["appointment-transactions", debouncedSearch],
+    queryFn: () => getAppointmentTransactions(debouncedSearch ? { search: debouncedSearch } : {}),
+    staleTime: 30_000,
+  });
+
   const eligibleOptions = useMemo(() => {
-    const list = Array.isArray(appointmentsRaw)
-      ? appointmentsRaw
-      : appointmentsRaw?.results ?? [];
+    const list = normalizeList(appointmentsRaw);
     return list
       .filter((a) =>
         ["arrived", "completed"].includes(String(a?.status || "").toLowerCase()),
@@ -78,10 +261,13 @@ export default function TransactionsPage() {
       }));
   }, [appointmentsRaw]);
 
+  const transactions = useMemo(() => normalizeList(transactionsRaw), [transactionsRaw]);
+
   const paymentMutation = useMutation({
     mutationFn: ({ appointmentId, payload }) => createSalonPayment(appointmentId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["appointment-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
       messageApi.success("Payment recorded successfully.");
       setModalOpen(false);
@@ -126,7 +312,7 @@ export default function TransactionsPage() {
 
       {/* ── Page Header ── */}
       <div
-        className="relative overflow-hidden rounded-2xl px-7 py-7 sm:px-10 sm:py-8"
+        className="relative overflow-hidden rounded-2xl px-5 py-6 sm:px-10 sm:py-8"
         style={{
           background: "linear-gradient(120deg, #272727 0%, #3a2e1e 60%, #4a3a22 100%)",
           boxShadow: "0 8px 32px rgba(39,39,39,0.18)",
@@ -164,11 +350,174 @@ export default function TransactionsPage() {
           <Button
             icon={<FiPlus />}
             onClick={openModal}
-            className={`${GOLD_BTN} rounded-xl! h-10! px-6! font-medium! text-sm! shrink-0`}
+            className={`${GOLD_BTN} rounded-xl! h-10! px-6! font-medium! text-sm! shrink-0 w-full sm:w-auto`}
             style={{ fontFamily: "'Poppins', sans-serif" }}
           >
             Record Transaction
           </Button>
+        </div>
+      </div>
+
+      <div
+        className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-4 py-3 rounded-2xl"
+        style={{
+          background: "#fff",
+          border: "1px solid rgba(187,161,79,0.25)",
+          boxShadow: "0 1px 6px rgba(39,39,39,0.06)",
+        }}
+      >
+        <div>
+          <p className="text-sm font-semibold text-[#272727]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+            Appointment Transactions
+          </p>
+          <p className="text-xs mt-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif", marginBottom: 0 }}>
+            Search by guest or registered customer names, appointment reference, last five reference characters, appointment ID, payment reference, or receipt reference.
+          </p>
+        </div>
+
+        <div
+          className="flex items-center gap-2 px-4 py-2.5 rounded-full w-full lg:w-auto"
+          style={{
+            background: "#FDFAF5",
+            border: "1px solid rgba(187,161,79,0.25)",
+            boxShadow: "0 1px 6px rgba(39,39,39,0.05)",
+          }}
+        >
+          <FiSearch size={14} style={{ color: "#987554" }} />
+          <input
+            placeholder="Search transactions…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-transparent outline-none text-sm text-[#272727] placeholder-[#b5a47a] flex-1 min-w-0 lg:w-64"
+            style={{ fontFamily: "'Poppins', sans-serif" }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:hidden">
+        {txLoading ? (
+          <div className="rounded-2xl px-4 py-12" style={{ background: "#FDFAF5", border: "1px solid rgba(187,161,79,0.18)" }}>
+            <div className="flex items-center justify-center">
+              <Spin />
+            </div>
+          </div>
+        ) : transactions.length === 0 ? (
+          <div className="rounded-2xl px-4 py-10" style={{ background: "#FDFAF5", border: "1px solid rgba(187,161,79,0.18)" }}>
+            <Empty description={debouncedSearch ? `No transactions found for "${debouncedSearch}"` : "No transactions yet"} />
+          </div>
+        ) : (
+          transactions.map((item, idx) => (
+            <TransactionCard key={String(item?.id ?? `${item?.reference_code || "tx"}-${idx}`)} item={item} />
+          ))
+        )}
+      </div>
+
+      <div
+        className="hidden lg:block rounded-2xl overflow-hidden"
+        style={{
+          background: "#FDFAF5",
+          border: "1px solid rgba(187,161,79,0.18)",
+          boxShadow: "0 3px 16px rgba(39,39,39,0.06)",
+        }}
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 760 }}>
+            <thead>
+              <tr
+                style={{
+                  background: "linear-gradient(90deg, rgba(187,161,79,0.1), rgba(152,117,84,0.06))",
+                  borderBottom: "1px solid rgba(187,161,79,0.2)",
+                }}
+              >
+                {["Appointment", "Customer", "Amount", "Transaction Type", "Payment Ref", "Status", "Created"].map((col) => (
+                  <th
+                    key={col}
+                    className="px-4 py-3 text-left text-[11px] uppercase tracking-wider"
+                    style={{
+                      color: "#987554",
+                      fontFamily: "'Poppins', sans-serif",
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {txLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12">
+                    <div className="flex items-center justify-center">
+                      <Spin />
+                    </div>
+                  </td>
+                </tr>
+              ) : transactions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10">
+                    <Empty description={debouncedSearch ? `No transactions found for "${debouncedSearch}"` : "No transactions yet"} />
+                  </td>
+                </tr>
+              ) : (
+                transactions.map((item, idx) => {
+                  const status = getTransactionStatus(item);
+                  const statusStyle = getStatusStyle(status);
+                  const createdAt = item?.created_at || item?.paid_at || item?.transaction_date;
+                  return (
+                    <tr
+                      key={String(item?.id ?? `${item?.reference_code || "tx"}-${idx}`)}
+                      style={{
+                        borderBottom: "1px solid rgba(187,161,79,0.1)",
+                        background: idx % 2 === 0 ? "#FDFAF5" : "rgba(187,161,79,0.03)",
+                      }}
+                    >
+                      <td className="px-4 py-3 text-xs font-semibold" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>
+                        {getTransactionAppointmentRef(item)}
+                      </td>
+                      <td className="px-4 py-3" style={{ maxWidth: 180 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p className="text-sm font-medium text-[#272727] truncate" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+                            {getTransactionCustomerName(item)}
+                          </p>
+                          {item?.customer_email && (
+                            <p className="text-[11px] truncate" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif", margin: 0 }}>
+                              {item.customer_email}
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
+                        {formatMoney(getTransactionAmount(item))}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                        {getTransactionType(item)}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                        {getTransactionPaymentRef(item)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="text-[10px] px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                          style={{
+                            background: statusStyle.background,
+                            color: statusStyle.color,
+                            fontFamily: "'Poppins', sans-serif",
+                          }}
+                        >
+                          {status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                        {createdAt && dayjs(createdAt).isValid() ? dayjs(createdAt).format("DD MMM YYYY • h:mm A") : "—"}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

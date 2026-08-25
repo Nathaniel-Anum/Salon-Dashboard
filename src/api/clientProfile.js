@@ -3,19 +3,27 @@
  * ─────────────────
  * Fetches client-specific data for the profile page.
  *
- * Endpoints tried:
- *   GET /api/portal/v1/booking/bookings/?customer={id}   → appointment list
- *   GET /api/portal/v1/accounts/customers/{id}/          → single customer detail
- *
- * Falls back gracefully if the backend doesn't support customer filtering yet.
+ * Endpoints:
+ *   GET /api/portal/v1/accounts/customers/{id}/profile/       → full customer profile
+ *   GET /api/portal/v1/accounts/customers/{id}/appointments/  → appointment history
+ *   GET /api/portal/v1/accounts/customers/{id}/waitlists/     → waitlist history
  */
 
 import _axios from "./_axios";
 
+const normalizeList = (raw) => {
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.results)) return raw.results;
+  if (Array.isArray(raw?.data)) return raw.data;
+  return [];
+};
+
 /* ── Fetch a single customer's detail by user_id ── */
 export async function fetchCustomerDetail(userId) {
-  const res = await _axios.get(`/api/portal/v1/accounts/customers/${userId}/`);
-  return res.data;
+  const res = await _axios.get(
+    `/api/portal/v1/accounts/customers/${userId}/profile/`,
+  );
+  return res.data?.profile || res.data?.data || res.data;
 }
 
 /**
@@ -23,27 +31,10 @@ export async function fetchCustomerDetail(userId) {
  * Returns a normalised array of appointment objects.
  */
 export async function fetchClientBookings(customerId) {
-  try {
-    /* Try ?customer= filter first */
-    const res = await _axios.get("/api/portal/v1/booking/bookings/", {
-      params: { customer: customerId },
-    });
-    const raw = Array.isArray(res.data) ? res.data : (res.data?.results ?? []);
-    return raw.map(normaliseBooking);
-  } catch {
-    /* Fallback: try ?customer_id= */
-    try {
-      const res = await _axios.get("/api/portal/v1/booking/bookings/", {
-        params: { customer_id: customerId },
-      });
-      const raw = Array.isArray(res.data)
-        ? res.data
-        : (res.data?.results ?? []);
-      return raw.map(normaliseBooking);
-    } catch {
-      return [];
-    }
-  }
+  const res = await _axios.get(
+    `/api/portal/v1/accounts/customers/${customerId}/appointments/`,
+  );
+  return normalizeList(res.data).map(normaliseBooking);
 }
 
 /**
@@ -146,12 +137,8 @@ export function computeProfileStats(bookings) {
  * Returns a raw array of waitlist entry objects.
  */
 export async function fetchClientWaitlist(customerId) {
-  try {
-    const res = await _axios.get("/api/portal/v1/booking/waitlist/", {
-      params: { customer: customerId },
-    });
-    return Array.isArray(res.data) ? res.data : (res.data?.results ?? []);
-  } catch {
-    return [];
-  }
+  const res = await _axios.get(
+    `/api/portal/v1/accounts/customers/${customerId}/waitlists/`,
+  );
+  return normalizeList(res.data);
 }

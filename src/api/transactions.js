@@ -7,6 +7,13 @@ export const getTransactionAppointments = (params = {}) =>
     })
     .then((response) => response.data);
 
+export const getAppointmentTransactions = (params = {}) =>
+  _axios
+    .get("/api/portal/v1/booking/appointments/transactions/", {
+      params,
+    })
+    .then((response) => response.data);
+
 export const createSalonPayment = (appointmentId, payload) =>
   _axios.post(
     `/api/portal/v1/booking/appointments/${appointmentId}/salon-payments/`,
