@@ -1420,6 +1420,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
 function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
   if (!booking) return null;
 
+  const raw = booking.raw || {};
   const cfg = getStatusCfg(booking.status);
   const [from, to] = avatarGradient(staff?.full_name || "");
   const startMins = timeToMins(booking.startTime);
@@ -1428,6 +1429,20 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
   const durLabel = booking.durationMins >= 60
     ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
     : `${booking.durationMins}m`;
+  const formatMoney = (value) => {
+    const amount = parseFloat(value ?? 0);
+    if (Number.isNaN(amount)) return "GHS 0.00";
+    return new Intl.NumberFormat("en-GH", {
+      style: "currency",
+      currency: "GHS",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  };
+  const hasBillingSummary =
+    raw.subtotal_amount != null ||
+    raw.deposit_amount != null ||
+    raw.remaining_balance_amount != null;
 
   return (
     <div
@@ -1493,6 +1508,70 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
               }
             />
           </div>
+
+          {hasBillingSummary && (
+            <div
+              style={{
+                marginBottom: 18,
+                padding: "14px 14px 12px",
+                borderRadius: 14,
+                background: "linear-gradient(135deg, rgba(187,161,79,0.12), rgba(152,117,84,0.08))",
+                border: "1px solid rgba(187,161,79,0.22)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.45)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 10,
+                    background: "rgba(187,161,79,0.16)",
+                    color: "#8a6f2e",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiDollarSign size={14} />
+                </div>
+                <div>
+                  <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "#987554", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins', sans-serif" }}>
+                    Payment Summary
+                  </p>
+                  <p style={{ margin: 0, fontSize: 12, color: "#6f5a42", fontFamily: "'Poppins', sans-serif" }}>
+                    All amounts shown in GHS
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                {[
+                  { label: "Subtotal", value: raw.subtotal_amount },
+                  { label: "Deposit", value: raw.deposit_amount },
+                  { label: "Balance", value: raw.remaining_balance_amount },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    style={{
+                      padding: "10px 10px 9px",
+                      borderRadius: 12,
+                      background: "rgba(255,255,255,0.72)",
+                      border: "1px solid rgba(187,161,79,0.16)",
+                    }}
+                  >
+                    <p style={{ margin: "0 0 4px", fontSize: 10, fontWeight: 700, color: "#987554", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif" }}>
+                      {item.label}
+                    </p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins', sans-serif", lineHeight: 1.25 }}>
+                      {formatMoney(item.value)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
 
