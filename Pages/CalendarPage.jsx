@@ -111,6 +111,161 @@ function makeIdempotencyKey() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function matchesStaffId(person = {}, rawId) {
+  const needle = String(rawId);
+  return (
+    String(person.id) === needle ||
+    String(person.user) === needle ||
+    String(person.user_id) === needle ||
+    String(person.account_id) === needle
+  );
+}
+
+function getAssignedIdsForService(service = {}) {
+  const fromIds = service.assigned_staff_ids ?? service.staff_ids ?? [];
+  const fromObjects = Array.isArray(service.assigned_staff)
+    ? service.assigned_staff.map((item) => item?.id ?? item?.user_id ?? item?.account_id ?? item)
+    : [];
+  const singleAssignedStaff =
+    service.assigned_staff && !Array.isArray(service.assigned_staff)
+      ? [service.assigned_staff?.id ?? service.assigned_staff?.user_id ?? service.assigned_staff?.account_id ?? service.assigned_staff]
+      : [];
+  const rawStaff = Array.isArray(service.staff)
+    ? service.staff.map((item) => item?.id ?? item?.user_id ?? item?.account_id ?? item)
+    : [];
+  const singleStaff =
+    service.staff && !Array.isArray(service.staff)
+      ? [service.staff?.id ?? service.staff?.user_id ?? service.staff?.account_id ?? service.staff]
+      : [];
+  const scalarIds = [service.assigned_staff_id, service.staff_id];
+
+  return [...fromIds, ...fromObjects, ...singleAssignedStaff, ...rawStaff, ...singleStaff, ...scalarIds]
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map(String);
+}
+
+function normalizeServiceOptions(service = {}) {
+  const rawOptions =
+    service.service_options ??
+    service.options ??
+    service.service_option_details ??
+    [];
+
+  return rawOptions
+    .map((option) => ({
+      id: option?.id,
+      name: option?.name ?? "",
+      description: option?.description ?? "",
+      duration: Number(option?.duration ?? service.duration ?? 0) || null,
+      price: parseFloat(option?.price ?? option?.amount ?? service.price ?? service.amount ?? 0) || 0,
+      priceType:
+        option?.price_type ??
+        (parseFloat(option?.price ?? option?.amount ?? service.price ?? service.amount ?? 0) <= 0
+          ? "free"
+          : service.price_type ?? "fixed"),
+      isActive: option?.is_active !== false,
+    }))
+    .filter((option) => option.id != null && option.isActive);
+}
+
+function getSelectedServiceOption(service, selectedServiceOptions = {}) {
+  const optionId = selectedServiceOptions?.[service?.id];
+  if (!optionId) return null;
+  return normalizeServiceOptions(service).find((option) => String(option.id) === String(optionId)) ?? null;
+}
+
+function getServiceDisplayAmount(service, selectedServiceOptions = {}) {
+  const selectedOption = getSelectedServiceOption(service, selectedServiceOptions);
+  const rawAmount = selectedOption?.price ?? service?.price ?? service?.amount ?? 0;
+  const amount = parseFloat(rawAmount);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function getServiceDisplayPrice(service, selectedServiceOptions = {}) {
+  const selectedOption = getSelectedServiceOption(service, selectedServiceOptions);
+  const amount = getServiceDisplayAmount(service, selectedServiceOptions);
+  const priceType = selectedOption?.priceType ?? service?.price_type ?? (amount <= 0 ? "free" : "fixed");
+
+  if (priceType === "free" || amount <= 0) return "Free";
+
+  const formatted = `GH₵ ${amount.toFixed(2)}`;
+  return priceType === "from" ? `From ${formatted}` : formatted;
+}
+
+function buildScheduledStartIso(dateValue, timeValue) {
+  if (!dateValue || !timeValue) return null;
+  return `${dateValue.format("YYYY-MM-DD")}T${timeValue}:00Z`;
+}
+
+function normalizeStaffCandidate(candidate, fallbackStaff = []) {
+  const source = candidate?.staff ?? candidate?.staff_member ?? candidate?.staff_details ?? candidate;
+  if (source == null) return null;
+
+  if (typeof source !== "object") {
+    return fallbackStaff.find((person) => matchesStaffId(person, source)) ?? null;
+  }
+
+  const candidateIds = [source.id, source.staff_id, source.user, source.user_id, source.account_id]
+    .filter((value) => value !== null && value !== undefined && value !== "");
+
+  const matchedStaff = fallbackStaff.find((person) => candidateIds.some((value) => matchesStaffId(person, value)));
+  const fullName =
+    matchedStaff?.full_name ||
+    source.full_name ||
+    source.name ||
+    [source.first_name, source.last_name].filter(Boolean).join(" ") ||
+    null;
+
+  return {
+    ...source,
+    ...matchedStaff,
+    id: matchedStaff?.id ?? source.id ?? source.staff_id ?? source.user_id ?? source.account_id ?? null,
+    full_name: fullName,
+    role: matchedStaff?.role ?? source.role ?? source.position ?? "Team Member",
+  };
+}
+
+function normalizeAvailableStaffFromServiceDetail(raw, fallbackStaff = [], service = {}) {
+  const source = raw?.data ?? raw ?? {};
+  const pools = [
+    source.available_staff,
+    source.available_staff_members,
+    source.staff_available,
+    source.current_staff,
+    source.staff_members,
+    source.staff,
+    source.assigned_staff,
+    source.staff_details,
+    source.service?.available_staff,
+    source.service?.staff,
+    source.result?.available_staff,
+  ].filter(Array.isArray);
+
+  const normalized = pools
+    .flatMap((pool) => pool.map((candidate) => normalizeStaffCandidate(candidate, fallbackStaff)).filter(Boolean));
+
+  const deduped = [];
+  const seen = new Set();
+  normalized.forEach((person) => {
+    const key = String(person.id ?? person.user_id ?? person.account_id ?? person.full_name ?? "");
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    deduped.push(person);
+  });
+
+  if (deduped.length > 0) return deduped;
+
+  const assignedIds =
+    getAssignedIdsForService(source).length > 0
+      ? getAssignedIdsForService(source)
+      : source.service
+      ? getAssignedIdsForService(source.service)
+      : getAssignedIdsForService(service);
+
+  if (!assignedIds.length) return fallbackStaff;
+  return fallbackStaff.filter((person) => assignedIds.some((rawId) => matchesStaffId(person, rawId)));
+}
+
 /* ─────────────────────────────────────────────
    STATUS CONFIG
 ───────────────────────────────────────────── */
@@ -195,7 +350,7 @@ const WZ = {
 
 /* ── Step indicator ── */
 function WizardSteps({ current }) {
-  const steps = ["Client", "Services", "Staff", "Date & Time", "Confirm"];
+  const steps = ["Client", "Services", "Options", "Date & Time", "Staff", "Confirm"];
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0, padding: "16px 24px 14px" }}>
       {steps.map((label, i) => {
@@ -452,11 +607,15 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
 
   const isSelected = (id) => selectedServices.some((s) => s.id === id);
   const toggle = (svc) => {
-    setSelectedServices((prev) =>
-      isSelected(svc.id)
-        ? prev.filter((s) => s.id !== svc.id)
-        : [...prev, { ...svc, _price: priceOf(svc), _amount: parseFloat(svc.price || svc.amount || 0), _isFrom: svc.price_type === "from" }]
-    );
+    setSelectedServices((prev) => {
+      if (prev.some((service) => service.id === svc.id)) return [];
+      return [{
+        ...svc,
+        _price: priceOf(svc),
+        _amount: parseFloat(svc.price || svc.amount || 0),
+        _isFrom: svc.price_type === "from",
+      }];
+    });
   };
 
   const inputFocus = (e) => (e.target.style.borderColor = "#BBA14F");
@@ -498,6 +657,7 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {group.services.map((svc) => {
                 const sel = isSelected(svc.id);
+                const optionCount = normalizeServiceOptions(svc).length;
                 return (
                   <button
                     key={svc.id}
@@ -520,7 +680,10 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>{svc.name}</p>
-                      {svc.duration && <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>{svc.duration} min</p>}
+                      <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+                        {svc.duration ? `${svc.duration} min` : "Duration varies"}
+                        {optionCount > 0 ? ` · ${optionCount} option${optionCount !== 1 ? "s" : ""}` : " · No extra options"}
+                      </p>
                     </div>
                     <span style={{
                       fontSize: 12, fontWeight: 700,
@@ -562,54 +725,102 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
   );
 }
 
-/* ── Step 3: Staff ── */
-function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerService }) {
-  // staffPerService: { [serviceId]: staffId | "any" }
+/* ── Step 3: Service options ── */
+function StepServiceOptions({ selectedServices, selectedServiceOptions, setSelectedServiceOptions }) {
+  const setOption = (serviceId, optionId) => {
+    setSelectedServiceOptions((prev) => ({ ...prev, [serviceId]: optionId }));
+  };
+
+  return (
+    <div style={{ padding: "0 28px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
+      {selectedServices.map((svc) => {
+        const options = normalizeServiceOptions(svc);
+        const currentOptionId = selectedServiceOptions[svc.id];
+
+        return (
+          <div key={svc.id}>
+            <p style={{ ...WZ.sectionLabel, marginBottom: 8 }}>
+              <FiScissors size={10} style={{ marginRight: 5 }} />{svc.name}
+            </p>
+
+            {options.length === 0 ? (
+              <div style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "rgba(187,161,79,0.08)",
+                border: "1px solid rgba(187,161,79,0.18)",
+              }}>
+                <p style={{ margin: 0, fontSize: 12, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+                  This service has no extra options. You can continue to date and time.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {options.map((option) => {
+                  const selected = String(currentOptionId) === String(option.id);
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => setOption(svc.id, option.id)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 12,
+                        padding: "11px 14px", borderRadius: 12, cursor: "pointer",
+                        border: `1.5px solid ${selected ? "#BBA14F" : "#ede8de"}`,
+                        background: selected ? "linear-gradient(135deg,rgba(187,161,79,0.1),rgba(152,117,84,0.07))" : "#faf8f4",
+                        transition: "all 0.15s", textAlign: "left",
+                      }}
+                    >
+                      <div style={{
+                        width: 36, height: 36, borderRadius: 10,
+                        background: selected ? "linear-gradient(135deg,#BBA14F,#987554)" : "rgba(187,161,79,0.12)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
+                      }}>
+                        <FiTag size={14} color={selected ? "#fff" : "#BBA14F"} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>{option.name}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+                          {option.duration ? `${option.duration} min` : "Duration varies"}
+                          {option.description ? ` · ${option.description}` : ""}
+                        </p>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: selected ? "#BBA14F" : "#987554", fontFamily: "'Poppins',sans-serif", flexShrink: 0 }}>
+                        {getServiceDisplayPrice(svc, { [svc.id]: option.id })}
+                      </span>
+                      {selected && (
+                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#BBA14F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <FiCheck size={12} color="#fff" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Step 4: Staff ── */
+function StepStaff({
+  staffList,
+  selectedServices,
+  selectedServiceOptions,
+  staffPerService,
+  setStaffPerService,
+  serviceAvailabilityMap,
+  isLoadingAvailability,
+}) {
   const ANY = "any";
 
-  /**
-   * Returns the staff members assigned to a given service.
-   * Checks service.assigned_staff_ids → service.staff_ids → [] (no restriction).
-   * If no restriction list exists, returns the full staff list (any staff can do it).
-   * Matches against s.id, s.user, s.user_id, s.account_id to handle different API shapes.
-   */
-  const staffMatchesId = (s, rawId) => {
-    const needle = String(rawId);
-    return (
-      String(s.id)         === needle ||
-      String(s.user)       === needle ||
-      String(s.user_id)    === needle ||
-      String(s.account_id) === needle
-    );
-  };
-
-  const getAssignedIds = (svc) => {
-    const fromIds = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
-    const fromObjects = Array.isArray(svc.assigned_staff)
-      ? svc.assigned_staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
-      : [];
-    const singleAssignedStaff =
-      svc.assigned_staff && !Array.isArray(svc.assigned_staff)
-        ? [svc.assigned_staff?.id ?? svc.assigned_staff?.user_id ?? svc.assigned_staff?.account_id ?? svc.assigned_staff]
-        : [];
-    const rawStaff = Array.isArray(svc.staff)
-      ? svc.staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
-      : [];
-    const singleStaff =
-      svc.staff && !Array.isArray(svc.staff)
-        ? [svc.staff?.id ?? svc.staff?.user_id ?? svc.staff?.account_id ?? svc.staff]
-        : [];
-    const scalarIds = [svc.assigned_staff_id, svc.staff_id];
-
-    return [...fromIds, ...fromObjects, ...singleAssignedStaff, ...rawStaff, ...singleStaff, ...scalarIds]
-      .filter((x) => x !== null && x !== undefined && x !== "")
-      .map(String);
-  };
-
   const assignedStaffForService = (svc) => {
-    const ids = getAssignedIds(svc);
+    const ids = getAssignedIdsForService(svc);
     if (!ids.length) return staffList; // no restriction — all staff can do it
-    return staffList.filter((s) => ids.some((rawId) => staffMatchesId(s, rawId)));
+    return staffList.filter((staffMember) => ids.some((rawId) => matchesStaffId(staffMember, rawId)));
   };
 
   const setStaff = (svcId, staffId) => {
@@ -620,25 +831,57 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
 
   return (
     <div style={{ padding: "0 28px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
+      {isLoadingAvailability && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "12px 14px", borderRadius: 12,
+          background: "rgba(187,161,79,0.08)", border: "1px solid rgba(187,161,79,0.18)",
+        }}>
+          <Spin size="small" />
+          <p style={{ margin: 0, fontSize: 12, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+            Loading staff currently available for the selected date, time, and service option.
+          </p>
+        </div>
+      )}
+
       {selectedServices.map((svc) => {
         const cur = current(svc.id);
-        const eligibleStaff = assignedStaffForService(svc);
-        const hasRestriction = getAssignedIds(svc).length > 0;
+        const option = getSelectedServiceOption(svc, selectedServiceOptions);
+        const hasAvailabilityForService = Object.prototype.hasOwnProperty.call(serviceAvailabilityMap, String(svc.id));
+        const eligibleStaff = hasAvailabilityForService
+          ? serviceAvailabilityMap[String(svc.id)]?.staff ?? []
+          : assignedStaffForService(svc);
+        const hasRestriction = getAssignedIdsForService(svc).length > 0;
+        const allowAny = eligibleStaff.length > 1;
 
         return (
           <div key={svc.id}>
             <p style={{ ...WZ.sectionLabel, marginBottom: 4 }}>
               <FiScissors size={10} style={{ marginRight: 5 }} />{svc.name}
             </p>
-            {hasRestriction && (
+            {option && (
+              <p style={{
+                fontSize: 10, color: "#BBA14F", fontFamily: "'Poppins',sans-serif",
+                margin: "0 0 6px", fontWeight: 600,
+              }}>
+                Option: {option.name}
+              </p>
+            )}
+            {hasAvailabilityForService ? (
+              <p style={{
+                fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif",
+                margin: "0 0 10px",
+              }}>
+                {eligibleStaff.length} team member{eligibleStaff.length !== 1 ? "s" : ""} available for this day and time
+              </p>
+            ) : hasRestriction ? (
               <p style={{
                 fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif",
                 margin: "0 0 10px",
               }}>
                 {eligibleStaff.length} assigned team member{eligibleStaff.length !== 1 ? "s" : ""} for this service
               </p>
-            )}
-            {!hasRestriction && (
+            ) : (
               <p style={{
                 fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif",
                 margin: "0 0 10px",
@@ -647,8 +890,8 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {/* Any Team Member (only when service has no assigned-staff restriction) */}
-              {!hasRestriction && (
+              {/* Any Team Member */}
+              {allowAny && (
                 <button
                   onClick={() => setStaff(svc.id, ANY)}
                   style={{
@@ -667,7 +910,7 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
                     <FiUsers size={15} color={cur === ANY ? "#fff" : "#BBA14F"} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif" }}>Any Team Member</p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif" }}>Any Available Team Member</p>
                     <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
                       Auto-assign from {eligibleStaff.length} available member{eligibleStaff.length !== 1 ? "s" : ""}
                     </p>
@@ -728,7 +971,9 @@ function StepStaff({ staffList, selectedServices, staffPerService, setStaffPerSe
                 }}>
                   <FiAlertCircle size={13} color="#e05050" style={{ flexShrink: 0 }} />
                   <p style={{ margin: 0, fontSize: 12, color: "#e05050", fontFamily: "'Poppins',sans-serif" }}>
-                    No team members are assigned to this service yet.
+                    {hasAvailabilityForService
+                      ? "No team members are available for this service at the selected day and time."
+                      : "No team members are assigned to this service yet."}
                   </p>
                 </div>
               )}
@@ -925,11 +1170,11 @@ function StepDateTime({ selectedDate, setSelectedDate, selectedTime, setSelected
   );
 }
 
-/* ── Step 5: Confirm ── */
-function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, staffPerService, staffList, bookingDate, bookingTime }) {
+/* ── Step 6: Confirm ── */
+function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, selectedServiceOptions, staffPerService, staffList, bookingDate, bookingTime }) {
   const staffName = (svcId) => {
     const id = staffPerService[svcId];
-    if (!id || id === "any") return "Any Team Member";
+    if (!id || id === "any") return "Any Available Team Member";
     const s = staffList.find((x) => x.id === id);
     return s?.full_name || "Team Member";
   };
@@ -939,9 +1184,12 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sta
       selectedClient?.full_name || "Client"
     : walkIn.name;
 
-  const total = selectedServices.reduce((a, s) => a + s._amount, 0);
-  const allFree = selectedServices.every((s) => s._amount === 0);
-  const hasFromPrice = selectedServices.some((s) => s._isFrom);
+  const total = selectedServices.reduce((sum, service) => sum + getServiceDisplayAmount(service, selectedServiceOptions), 0);
+  const allFree = selectedServices.every((service) => getServiceDisplayAmount(service, selectedServiceOptions) === 0);
+  const hasFromPrice = selectedServices.some((service) => {
+    const selectedOption = getSelectedServiceOption(service, selectedServiceOptions);
+    return (selectedOption?.priceType ?? service.price_type) === "from";
+  });
 
   const timeDisplay = (() => {
     if (!bookingTime) return "—";
@@ -978,11 +1226,16 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sta
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>{svc.name}</p>
+              {getSelectedServiceOption(svc, selectedServiceOptions)?.name && (
+                <p style={{ margin: 0, fontSize: 11, color: "#BBA14F", fontFamily: "'Poppins',sans-serif", fontWeight: 600 }}>
+                  <FiTag size={10} style={{ marginRight: 4 }} />{getSelectedServiceOption(svc, selectedServiceOptions)?.name}
+                </p>
+              )}
               <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
                 <FiUsers size={10} style={{ marginRight: 4 }} />{staffName(svc.id)}
               </p>
             </div>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "#BBA14F", fontFamily: "'Poppins',sans-serif", flexShrink: 0 }}>{svc._price}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#BBA14F", fontFamily: "'Poppins',sans-serif", flexShrink: 0 }}>{getServiceDisplayPrice(svc, selectedServiceOptions)}</span>
           </div>
         ))}
       </div>
@@ -2866,6 +3119,7 @@ export default function CalendarPage() {
   const [selectedClient, setSelectedClient] = useState(null); // customer object
   const [walkIn, setWalkIn] = useState({ name: "", phone: "", email: "" });
   const [selectedServices, setSelectedServices] = useState([]); // [{ id, name, _price, _amount, ... }]
+  const [selectedServiceOptions, setSelectedServiceOptions] = useState({}); // { [serviceId]: serviceOptionId }
   const [staffPerService, setStaffPerService] = useState({});   // { [serviceId]: staffId | "any" }
   const [wizDate, setWizDate] = useState(() => dayjs());
   const [wizTime, setWizTime] = useState(null);
@@ -2962,6 +3216,74 @@ export default function CalendarPage() {
   const selectedDateIsBlocked = blockedDateSet.has(dateStr);
   const selectedDateBlockReason =
     blockedDaysData.find((p) => dateStr >= p.start_date && dateStr <= p.end_date)?.reason || "";
+
+  const scheduledStartIso = useMemo(
+    () => buildScheduledStartIso(wizDate, wizTime),
+    [wizDate, wizTime]
+  );
+
+  const serviceOptionsReady = useMemo(
+    () => selectedServices.every((service) => {
+      const options = normalizeServiceOptions(service);
+      return options.length === 0 || !!selectedServiceOptions[service.id];
+    }),
+    [selectedServices, selectedServiceOptions]
+  );
+
+  const shouldFetchServiceAvailability =
+    selectedServices.length > 0 &&
+    !!scheduledStartIso &&
+    serviceOptionsReady;
+
+  const { data: serviceAvailabilityMap = {}, isFetching: isFetchingServiceAvailability } = useQuery({
+    queryKey: [
+      "booking-service-availability",
+      scheduledStartIso,
+      selectedServices.map((service) => service.id).sort((a, b) => a - b),
+      selectedServices.map((service) => [service.id, selectedServiceOptions[service.id] ?? null]),
+    ],
+    enabled: shouldFetchServiceAvailability,
+    queryFn: async () => {
+      const entries = await Promise.all(
+        selectedServices.map(async (service) => {
+          const selectedOptionId = selectedServiceOptions[service.id];
+
+          try {
+            const response = await _axios.get(`/api/portal/v1/booking/services/${service.id}/`, {
+              params: {
+                scheduled_start: scheduledStartIso,
+                ...(selectedOptionId ? { service_option_id: selectedOptionId } : {}),
+              },
+            });
+
+            return [
+              String(service.id),
+              {
+                staff: normalizeAvailableStaffFromServiceDetail(response.data, visibleStaff, service),
+                source: "live",
+              },
+            ];
+          } catch {
+            const assignedIds = getAssignedIdsForService(service);
+            const fallbackStaff = assignedIds.length
+              ? visibleStaff.filter((person) => assignedIds.some((rawId) => matchesStaffId(person, rawId)))
+              : visibleStaff;
+
+            return [
+              String(service.id),
+              {
+                staff: fallbackStaff,
+                source: "fallback",
+              },
+            ];
+          }
+        })
+      );
+
+      return Object.fromEntries(entries);
+    },
+    staleTime: 60_000,
+  });
 
   /* ── Normalise API → internal booking shape ── */
   const dayBookings = useMemo(() => {
@@ -3140,6 +3462,7 @@ export default function CalendarPage() {
     setSelectedClient(null);
     setWalkIn({ name: "", phone: "", email: "" });
     setSelectedServices([]);
+    setSelectedServiceOptions({});
     setStaffPerService({});
     setWizDate(dayjs());
     setWizTime(null);
@@ -3153,6 +3476,54 @@ export default function CalendarPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetWizard, selectedDate]);
 
+  useEffect(() => {
+    const selectedIds = new Set(selectedServices.map((service) => String(service.id)));
+
+    setSelectedServiceOptions((prev) => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([serviceId]) => selectedIds.has(String(serviceId)))
+      );
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+
+    setStaffPerService((prev) => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([serviceId]) => selectedIds.has(String(serviceId)))
+      );
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, [selectedServices]);
+
+  useEffect(() => {
+    setStaffPerService((prev) => {
+      let changed = false;
+      const next = {};
+
+      Object.entries(prev).forEach(([serviceId, staffId]) => {
+        if (staffId === "any") {
+          next[serviceId] = staffId;
+          return;
+        }
+
+        const availability = serviceAvailabilityMap[String(serviceId)];
+        if (!availability) {
+          next[serviceId] = staffId;
+          return;
+        }
+
+        const stillAvailable = (availability.staff || []).some((person) => String(person.id) === String(staffId));
+        if (stillAvailable) {
+          next[serviceId] = staffId;
+          return;
+        }
+
+        changed = true;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [serviceAvailabilityMap]);
+
   /* ── Wizard validation per step ── */
   const wizStepValid = useMemo(() => {
     switch (wizStep) {
@@ -3161,18 +3532,37 @@ export default function CalendarPage() {
         return walkIn.name.trim() !== "" && walkIn.phone.trim() !== "";
       case 1: // Services
         return selectedServices.length > 0;
-      case 2: // Staff (always valid — "any" is default)
-        return true;
+      case 2: // Service options
+        return serviceOptionsReady;
       case 3: // Date & Time — also blocked if selected date is a blocked day
         if (!wizDate || !wizTime) return false;
         if (blockedDateSet.has(wizDate.format("YYYY-MM-DD"))) return false;
         return true;
-      case 4: // Confirm
+      case 4: // Staff
+        if (!shouldFetchServiceAvailability || isFetchingServiceAvailability) return false;
+        return selectedServices.every((service) => {
+          const availability = serviceAvailabilityMap[String(service.id)];
+          return Array.isArray(availability?.staff) && availability.staff.length > 0;
+        });
+      case 5: // Confirm
         return true;
       default:
         return false;
     }
-  }, [wizStep, clientMode, selectedClient, walkIn, selectedServices, wizDate, wizTime, blockedDateSet]);
+  }, [
+    wizStep,
+    clientMode,
+    selectedClient,
+    walkIn,
+    selectedServices,
+    serviceOptionsReady,
+    wizDate,
+    wizTime,
+    blockedDateSet,
+    shouldFetchServiceAvailability,
+    isFetchingServiceAvailability,
+    serviceAvailabilityMap,
+  ]);
 
   /* ── POST mutation — create appointment ── */
   const createAppointment = useMutation({
@@ -4278,7 +4668,7 @@ export default function CalendarPage() {
               </div>
               <div>
                 <p style={{ margin: 0, fontSize: 8, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(187,161,79,0.65)", fontFamily: "'Poppins',sans-serif" }}>
-                  {["Select Client", "Choose Services", "Team Member", "Date & Time", "Confirm Booking"][wizStep]}
+                  {["Select Client", "Choose Services", "Choose Options", "Date & Time", "Team Member", "Confirm Booking"][wizStep]}
                 </p>
                 <p style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#FDFAF5", fontFamily: "'Playfair Display',serif", lineHeight: 1.25 }}>
                   New Appointment
@@ -4312,7 +4702,7 @@ export default function CalendarPage() {
           overflowY: "auto",
           overflowX: "hidden",
           paddingTop: 20,
-          maxHeight: wizStep >= 2
+          maxHeight: wizStep >= 3
             ? "min(72vh, calc(100vh - 230px))"
             : "calc(100vh - 360px)",
         }}>
@@ -4335,11 +4725,10 @@ export default function CalendarPage() {
             />
           )}
           {wizStep === 2 && (
-            <StepStaff
-              staffList={visibleStaff}
+            <StepServiceOptions
               selectedServices={selectedServices}
-              staffPerService={staffPerService}
-              setStaffPerService={setStaffPerService}
+              selectedServiceOptions={selectedServiceOptions}
+              setSelectedServiceOptions={setSelectedServiceOptions}
             />
           )}
           {wizStep === 3 && (
@@ -4352,11 +4741,23 @@ export default function CalendarPage() {
             />
           )}
           {wizStep === 4 && (
+            <StepStaff
+              staffList={visibleStaff}
+              selectedServices={selectedServices}
+              selectedServiceOptions={selectedServiceOptions}
+              staffPerService={staffPerService}
+              setStaffPerService={setStaffPerService}
+              serviceAvailabilityMap={serviceAvailabilityMap}
+              isLoadingAvailability={isFetchingServiceAvailability}
+            />
+          )}
+          {wizStep === 5 && (
             <StepConfirm
               clientMode={clientMode}
               selectedClient={selectedClient}
               walkIn={walkIn}
               selectedServices={selectedServices}
+              selectedServiceOptions={selectedServiceOptions}
               staffPerService={staffPerService}
               staffList={visibleStaff}
               bookingDate={wizDate}
@@ -4394,11 +4795,11 @@ export default function CalendarPage() {
 
           {/* Step hint */}
           <span style={{ fontSize: 10, color: "rgba(152,117,84,0.55)", fontFamily: "'Poppins',sans-serif" }}>
-            Step {wizStep + 1} of 5
+            Step {wizStep + 1} of 6
           </span>
 
           {/* Next / Book */}
-          {wizStep < 4 ? (
+          {wizStep < 5 ? (
             <button
               onClick={() => setWizStep((s) => s + 1)}
               disabled={!wizStepValid}
@@ -4417,7 +4818,13 @@ export default function CalendarPage() {
               onMouseEnter={(e) => { if (wizStepValid) e.currentTarget.style.opacity = "0.88"; }}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
             >
-              {wizStep === 1 ? "Select Staff" : wizStep === 2 ? "Pick Date & Time" : "Continue"}
+              {wizStep === 1
+                ? "Choose Options"
+                : wizStep === 2
+                ? "Pick Date & Time"
+                : wizStep === 3
+                ? "Select Staff"
+                : "Continue"}
               <FiArrowRight size={14} />
             </button>
           ) : (
@@ -4465,33 +4872,13 @@ export default function CalendarPage() {
                   );
                 };
 
-                const getAssignedIds = (svc) => {
-                  const fromIds = svc.assigned_staff_ids ?? svc.staff_ids ?? [];
-                  const fromObjects = Array.isArray(svc.assigned_staff)
-                    ? svc.assigned_staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
-                    : [];
-                  const singleAssignedStaff =
-                    svc.assigned_staff && !Array.isArray(svc.assigned_staff)
-                      ? [svc.assigned_staff?.id ?? svc.assigned_staff?.user_id ?? svc.assigned_staff?.account_id ?? svc.assigned_staff]
-                      : [];
-                  const rawStaff = Array.isArray(svc.staff)
-                    ? svc.staff.map((x) => x?.id ?? x?.user_id ?? x?.account_id ?? x)
-                    : [];
-                  const singleStaff =
-                    svc.staff && !Array.isArray(svc.staff)
-                      ? [svc.staff?.id ?? svc.staff?.user_id ?? svc.staff?.account_id ?? svc.staff]
-                      : [];
-                  const scalarIds = [svc.assigned_staff_id, svc.staff_id];
-
-                  return [...fromIds, ...fromObjects, ...singleAssignedStaff, ...rawStaff, ...singleStaff, ...scalarIds]
-                    .filter((x) => x !== null && x !== undefined && x !== "")
-                    .map(String);
-                };
-
                 const resolveStaffForService = (svc) => {
                   const picked = staffPerService[svc.id];
-                  const assignedIds = getAssignedIds(svc);
-                  const pool = assignedIds.length
+                  const availability = serviceAvailabilityMap[String(svc.id)];
+                  const assignedIds = getAssignedIdsForService(svc);
+                  const pool = Array.isArray(availability?.staff)
+                    ? availability.staff
+                    : assignedIds.length
                     ? visibleStaff.filter((s) => assignedIds.some((rawId) => staffMatchesId(s, rawId)))
                     : visibleStaff;
 
@@ -4499,9 +4886,7 @@ export default function CalendarPage() {
                   if (picked && picked !== "any") {
                     const pickedStaff = visibleStaff.find((s) => String(s.id) === String(picked));
                     if (!pickedStaff) return null;
-                    const pickedAllowed = assignedIds.length
-                      ? assignedIds.some((rawId) => staffMatchesId(pickedStaff, rawId))
-                      : true;
+                    const pickedAllowed = pool.some((staffMember) => String(staffMember.id) === String(picked));
                     if (pickedAllowed) return Number(picked);
                   }
 
@@ -4520,22 +4905,32 @@ export default function CalendarPage() {
                 // Services array — each item is { service_id, staff_id (resolved) }
                 const services = selectedServices.map((s) => {
                   const staffId = resolveStaffForService(s);
+                  const selectedOptionId = selectedServiceOptions[s.id];
                   return staffId
-                    ? { service_id: s.id, staff_id: staffId }
-                    : { service_id: s.id };
+                    ? {
+                        service_id: s.id,
+                        ...(selectedOptionId ? { service_option_id: Number(selectedOptionId) } : {}),
+                        staff_id: staffId,
+                      }
+                    : {
+                        service_id: s.id,
+                        ...(selectedOptionId ? { service_option_id: Number(selectedOptionId) } : {}),
+                      };
                 });
 
                 // Guard: for restricted services, a resolved assigned staff must exist.
                 const hasUnresolvedRestrictedService = selectedServices.some((svc) => {
-                  const assignedIds = getAssignedIds(svc);
-                  if (!assignedIds.length) return false;
+                  const availability = serviceAvailabilityMap[String(svc.id)];
+                  if (Array.isArray(availability?.staff) && availability.staff.length === 0) return true;
+                  const assignedIds = getAssignedIdsForService(svc);
+                  if (!assignedIds.length && !Array.isArray(availability?.staff)) return false;
                   const chosen = services.find((x) => String(x.service_id) === String(svc.id));
                   return !chosen?.staff_id;
                 });
 
                 if (hasUnresolvedRestrictedService) {
-                  message.error("One or more selected services has no valid assigned staff. Please assign staff to that service first.");
-                  setWizStep(2);
+                  message.error("One or more selected services has no available staff for the selected day and time.");
+                  setWizStep(4);
                   return;
                 }
 
@@ -4703,6 +5098,7 @@ export default function CalendarPage() {
                 // Rebuild services with confirmed staff_id from waitlistStaffPerService
                 const correctedServices = (base.services || []).map((s) => ({
                   service_id: s.service_id,
+                  ...(s.service_option_id ? { service_option_id: s.service_option_id } : {}),
                   staff_id:   waitlistStaffPerService[s.service_id],
                 }));
                 createWaitlist.mutate({
