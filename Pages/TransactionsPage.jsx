@@ -54,8 +54,15 @@ function getTransactionCustomerName(item) {
   );
 }
 
-function getTransactionAppointmentRef(item) {
-  return item?.reference_code || item?.appointment_reference || item?.appointment?.reference_code || `APT-${item?.appointment_id || item?.id || "—"}`;
+function getTransactionAppointmentPaymentStatus(item) {
+  return String(
+    item?.appointment_payment_status ||
+    item?.appointment?.appointment_payment_status ||
+    item?.payment_status ||
+    "—"
+  )
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
 function getTransactionPaymentRef(item) {
@@ -140,32 +147,19 @@ function TransactionCard({ item }) {
         boxShadow: "0 3px 14px rgba(39,39,39,0.06)",
       }}
     >
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0 flex-1">
-          <p
-            className="text-[11px] font-semibold uppercase tracking-wider mb-1"
-            style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}
-          >
-            Appointment
-          </p>
-          <p
-            className="text-sm font-semibold truncate"
-            style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}
-          >
-            {getTransactionAppointmentRef(item)}
-          </p>
-        </div>
-
-        <span
-          className="text-[10px] px-2.5 py-1 rounded-full font-medium whitespace-nowrap shrink-0"
-          style={{
-            background: statusStyle.background,
-            color: statusStyle.color,
-            fontFamily: "'Poppins', sans-serif",
-          }}
+      <div className="mb-3">
+        <p
+          className="text-[11px] font-semibold uppercase tracking-wider mb-1"
+          style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}
         >
-          {status}
-        </span>
+          Payment Status
+        </p>
+        <p
+          className="text-sm font-semibold truncate"
+          style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}
+        >
+          {getTransactionAppointmentPaymentStatus(item)}
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -429,7 +423,7 @@ export default function TransactionsPage() {
                   borderBottom: "1px solid rgba(187,161,79,0.2)",
                 }}
               >
-                {["Appointment", "Customer", "Amount", "Transaction Type", "Payment Ref", "Status", "Created"].map((col) => (
+                {["Payment Status", "Customer", "Amount", "Transaction Type", "Payment Ref", "Created"].map((col) => (
                   <th
                     key={col}
                     className="px-4 py-3 text-left text-[11px] uppercase tracking-wider"
@@ -448,7 +442,7 @@ export default function TransactionsPage() {
             <tbody>
               {txLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12">
+                  <td colSpan={6} className="px-4 py-12">
                     <div className="flex items-center justify-center">
                       <Spin />
                     </div>
@@ -456,7 +450,7 @@ export default function TransactionsPage() {
                 </tr>
               ) : transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10">
+                  <td colSpan={6} className="px-4 py-10">
                     <Empty description={debouncedSearch ? `No transactions found for "${debouncedSearch}"` : "No transactions yet"} />
                   </td>
                 </tr>
@@ -474,7 +468,7 @@ export default function TransactionsPage() {
                       }}
                     >
                       <td className="px-4 py-3 text-xs font-semibold" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>
-                        {getTransactionAppointmentRef(item)}
+                        {getTransactionAppointmentPaymentStatus(item)}
                       </td>
                       <td className="px-4 py-3" style={{ maxWidth: 180 }}>
                         <div style={{ minWidth: 0 }}>
@@ -496,18 +490,6 @@ export default function TransactionsPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
                         {getTransactionPaymentRef(item)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className="text-[10px] px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
-                          style={{
-                            background: statusStyle.background,
-                            color: statusStyle.color,
-                            fontFamily: "'Poppins', sans-serif",
-                          }}
-                        >
-                          {status}
-                        </span>
                       </td>
                       <td className="px-4 py-3 text-xs text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
                         {createdAt && dayjs(createdAt).isValid() ? dayjs(createdAt).format("DD MMM YYYY • h:mm A") : "—"}

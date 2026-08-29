@@ -1380,11 +1380,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
         background: isPast
           ? "#1c1c1c"
           : "linear-gradient(170deg, #1e1e1e 0%, #141414 60%, #0d0d0d 100%)",
-        boxShadow: isPast
-          ? "none"
-          : hovered
-            ? "0 8px 32px rgba(0,0,0,0.9), inset 0 1px 0 rgba(187,161,79,0.4)"
-            : "0 4px 18px rgba(0,0,0,0.7), inset 0 1px 0 rgba(187,161,79,0.25)",
+        boxShadow: "none",
         border: isPast
           ? "1px solid rgba(255,255,255,0.07)"
           : hovered
@@ -1515,7 +1511,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
             borderRadius: 10,
             background: "linear-gradient(160deg, #1a1308 0%, #100d05 60%, #0b0800 100%)",
             border: "1.5px solid rgba(187,161,79,0.65)",
-            boxShadow: "0 12px 40px rgba(0,0,0,0.95), inset 0 1px 0 rgba(187,161,79,0.3)",
+            boxShadow: "none",
             padding: "10px 12px 12px",
             pointerEvents: "none",             // overlay is read-only; clicks fall to card below
             display: "flex",
@@ -2625,18 +2621,18 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
 
       {/* ── Mobile: Search bar + horizontal staff chips ── */}
       {isMobile ? (
-        <div style={{ flexShrink: 0, borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#0d0d0d" }}>
+        <div style={{ flexShrink: 0, borderBottom: "1px solid rgba(187,161,79,0.15)", background: "#faf8f4" }}>
           {/* Search */}
           <div style={{ padding: "12px 14px 10px" }}>
             <div
               style={{
                 display: "flex", alignItems: "center", gap: 8,
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.09)",
+                background: "rgba(187,161,79,0.08)",
+                border: "1px solid rgba(187,161,79,0.2)",
                 borderRadius: 10, padding: "8px 12px",
               }}
               onFocusCapture={(e) => (e.currentTarget.style.borderColor = "rgba(187,161,79,0.5)")}
-              onBlurCapture={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.09)")}
+              onBlurCapture={(e) => (e.currentTarget.style.borderColor = "rgba(187,161,79,0.2)")}
             >
               <FiUser size={12} style={{ color: "rgba(187,161,79,0.6)", flexShrink: 0 }} />
               <input
@@ -2644,10 +2640,10 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                 placeholder="Search staff, client or service..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 12, color: "#FFFFFF", fontFamily: "'Poppins', sans-serif", caretColor: "#BBA14F" }}
+                style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 12, color: "#272727", fontFamily: "'Poppins', sans-serif", caretColor: "#BBA14F" }}
               />
               {search && (
-                <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.3)", padding: 0, fontSize: 13 }}>✕</button>
+                <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#987554", padding: 0, fontSize: 13 }}>✕</button>
               )}
             </div>
           </div>
@@ -2659,8 +2655,8 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
               style={{
                 flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
                 padding: "6px 14px", borderRadius: 100, border: "none", cursor: "pointer",
-                background: activeStaff === null ? "linear-gradient(135deg, #BBA14F, #987554)" : "rgba(255,255,255,0.06)",
-                color: activeStaff === null ? "#FFFFFF" : "rgba(255,255,255,0.55)",
+                background: activeStaff === null ? "linear-gradient(135deg, #BBA14F, #987554)" : "rgba(187,161,79,0.12)",
+                color: activeStaff === null ? "#FFFFFF" : "#987554",
                 fontSize: 11, fontWeight: 600, fontFamily: "'Poppins', sans-serif",
                 boxShadow: activeStaff === null ? "0 2px 10px rgba(187,161,79,0.4)" : "none",
                 whiteSpace: "nowrap",
@@ -2679,8 +2675,8 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                   style={{
                     flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
                     padding: "6px 12px 6px 8px", borderRadius: 100, border: "none", cursor: "pointer",
-                    background: isActive ? "linear-gradient(135deg, #BBA14F, #987554)" : "rgba(255,255,255,0.06)",
-                    color: isActive ? "#FFFFFF" : "rgba(255,255,255,0.55)",
+                    background: isActive ? "linear-gradient(135deg, #BBA14F, #987554)" : "rgba(187,161,79,0.12)",
+                    color: isActive ? "#FFFFFF" : "#987554",
                     fontSize: 11, fontWeight: isActive ? 700 : 500, fontFamily: "'Poppins', sans-serif",
                     boxShadow: isActive ? "0 2px 10px rgba(187,161,79,0.4)" : "none",
                     whiteSpace: "nowrap",
@@ -2710,8 +2706,8 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
         style={{
           width: 220,
           flexShrink: 0,
-          borderRight: "1px solid rgba(255,255,255,0.07)",
-          background: "#0d0d0d",
+          borderRight: "1px solid rgba(187,161,79,0.15)",
+          background: "#faf8f4",
           display: "flex",
           flexDirection: "column",
           overflowY: "auto",
@@ -2723,7 +2719,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
         <div
           style={{
             padding: "16px 14px 12px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid rgba(187,161,79,0.15)",
             flexShrink: 0,
           }}
         >
@@ -2732,14 +2728,14 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
               display: "flex",
               alignItems: "center",
               gap: 8,
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.09)",
+              background: "rgba(187,161,79,0.08)",
+              border: "1px solid rgba(187,161,79,0.2)",
               borderRadius: 10,
               padding: "8px 12px",
               transition: "border-color 0.2s",
             }}
             onFocusCapture={(e) => (e.currentTarget.style.borderColor = "rgba(187,161,79,0.5)")}
-            onBlurCapture={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.09)")}
+            onBlurCapture={(e) => (e.currentTarget.style.borderColor = "rgba(187,161,79,0.2)")}
           >
             <FiUser size={12} style={{ color: "rgba(187,161,79,0.6)", flexShrink: 0 }} />
             <input
@@ -2753,7 +2749,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                 border: "none",
                 outline: "none",
                 fontSize: 11,
-                color: "#FFFFFF",
+                color: "#272727",
                 fontFamily: "'Poppins', sans-serif",
                 caretColor: "#BBA14F",
               }}
@@ -2765,7 +2761,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                   background: "none",
                   border: "none",
                   cursor: "pointer",
-                  color: "rgba(255,255,255,0.3)",
+                  color: "#987554",
                   padding: 0,
                   fontSize: 13,
                   lineHeight: 1,
@@ -2816,7 +2812,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
               <FiGrid size={13} />
             </div>
             <div style={{ minWidth: 0, textAlign: "left" }}>
-              <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: activeStaff === null ? "#FFFFFF" : "rgba(255,255,255,0.55)", fontFamily: "'Poppins', sans-serif" }}>
+              <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: activeStaff === null ? "#272727" : "#987554", fontFamily: "'Poppins', sans-serif" }}>
                 All Staff
               </p>
               <p style={{ margin: 0, fontSize: 9, color: "rgba(187,161,79,0.65)", fontFamily: "'Poppins', sans-serif" }}>
@@ -2827,7 +2823,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
         </div>
 
         {/* Divider label */}
-        <p style={{ margin: "4px 14px 6px", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.2)", fontFamily: "'Poppins', sans-serif" }}>
+        <p style={{ margin: "4px 14px 6px", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
           Staff
         </p>
 
@@ -2839,7 +2835,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
             const isActive = activeStaff === s.id;
             const nameMatch = q ? s.full_name.toLowerCase().includes(q) : true;
             const hasBookings = count > 0;
-            if (!hasBookings && !nameMatch) return null;
+            if (!nameMatch) return null;
             return (
               <button
                 key={s.id}
@@ -2886,7 +2882,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                 <div style={{ minWidth: 0, textAlign: "left", flex: 1 }}>
                   <p style={{
                     margin: 0, fontSize: 11, fontWeight: isActive ? 700 : 500,
-                    color: isActive ? "#FFFFFF" : "rgba(255,255,255,0.6)",
+                    color: isActive ? "#272727" : "#987554",
                     fontFamily: "'Poppins', sans-serif",
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                   }}>
@@ -2900,9 +2896,9 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                   <span
                     style={{
                       fontSize: 9, fontWeight: 700,
-                      color: isActive ? "#BBA14F" : "rgba(255,255,255,0.3)",
-                      background: isActive ? "rgba(187,161,79,0.15)" : "rgba(255,255,255,0.06)",
-                      border: `1px solid ${isActive ? "rgba(187,161,79,0.3)" : "rgba(255,255,255,0.08)"}`,
+                      color: isActive ? "#BBA14F" : "#987554",
+                      background: isActive ? "rgba(187,161,79,0.15)" : "rgba(187,161,79,0.08)",
+                      border: `1px solid ${isActive ? "rgba(187,161,79,0.3)" : "rgba(187,161,79,0.2)"}`,
                       borderRadius: 100, padding: "2px 7px",
                       fontFamily: "'Poppins', sans-serif",
                       flexShrink: 0, transition: "all 0.15s",
@@ -2938,7 +2934,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
               alignItems: "center",
               justifyContent: "center",
               gap: 12,
-              color: "rgba(255,255,255,0.18)",
+              color: "#987554",
             }}
           >
             <FiCalendar size={44} style={{ opacity: 0.25 }} />
@@ -2976,14 +2972,14 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                         fontWeight: 700,
                         color: "#fff",
                         fontFamily: "'Poppins', sans-serif",
-                        boxShadow: `0 0 0 3px rgba(0,0,0,0.8), 0 0 0 5px ${from}44`,
+                        boxShadow: `0 2px 8px rgba(187,161,79,0.3)`,
                         flexShrink: 0,
                       }}
                     >
                       {initials(s.full_name)}
                     </div>
                     <div>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#FFFFFF", fontFamily: "'Poppins', sans-serif", lineHeight: 1.2 }}>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins', sans-serif", lineHeight: 1.2 }}>
                         {s.full_name}
                       </p>
                       <p style={{ margin: 0, fontSize: 10, color: "rgba(187,161,79,0.7)", fontFamily: "'Poppins', sans-serif" }}>
@@ -3014,22 +3010,22 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                           key={booking.id}
                           onClick={() => onCardClick(booking)}
                           style={{
-                            background: "linear-gradient(145deg, #1a1a1a 0%, #111111 100%)",
+                            background: "linear-gradient(145deg, #ffffff 0%, #faf8f4 100%)",
                             border: "1px solid rgba(187,161,79,0.22)",
                             borderRadius: 16,
                             overflow: "hidden",
                             cursor: "pointer",
                             transition: "transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease",
-                            boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+                            boxShadow: "0 4px 20px rgba(39,39,39,0.1)",
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.transform = "translateY(-3px)";
-                            e.currentTarget.style.boxShadow = "0 10px 32px rgba(0,0,0,0.65)";
+                            e.currentTarget.style.boxShadow = "0 10px 32px rgba(39,39,39,0.15)";
                             e.currentTarget.style.borderColor = "rgba(187,161,79,0.55)";
                           }}
                           onMouseLeave={(e) => {
                             e.currentTarget.style.transform = "translateY(0)";
-                            e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)";
+                            e.currentTarget.style.boxShadow = "0 4px 20px rgba(39,39,39,0.1)";
                             e.currentTarget.style.borderColor = "rgba(187,161,79,0.22)";
                           }}
                         >
@@ -3044,27 +3040,27 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                               }}>
                                 {cfg.label}
                               </span>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.5)", fontFamily: "'Poppins', sans-serif", display: "flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: "#987554", fontFamily: "'Poppins', sans-serif", display: "flex", alignItems: "center", gap: 5 }}>
                                 <FiClock size={10} style={{ color: "rgba(187,161,79,0.6)" }} />
                                 {formatDisplayTime(booking.startTime)}
                               </span>
                             </div>
-                            <p style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 700, color: "#FFFFFF", fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}>
+                            <p style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 700, color: "#272727", fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}>
                               {booking.client}
                             </p>
                             <p style={{ margin: "0 0 16px", fontSize: 12, color: "rgba(187,161,79,0.75)", fontFamily: "'Poppins', sans-serif", display: "flex", alignItems: "center", gap: 6 }}>
                               <FiScissors size={10} />{booking.service}
                             </p>
-                            <div style={{ height: 1, background: "rgba(255,255,255,0.06)", marginBottom: 14 }} />
+                            <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: "'Poppins', sans-serif", display: "flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ fontSize: 11, color: "#987554", fontFamily: "'Poppins', sans-serif", display: "flex", alignItems: "center", gap: 5 }}>
                                 <FiClock size={10} />{durationLabel}
                               </span>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 100, padding: "3px 10px 3px 5px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(187,161,79,0.08)", border: "1px solid rgba(187,161,79,0.2)", borderRadius: 100, padding: "3px 10px 3px 5px" }}>
                                 <div style={{ width: 18, height: 18, borderRadius: "50%", background: `linear-gradient(135deg, ${from}, ${to})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7, fontWeight: 800, color: "#fff", fontFamily: "'Poppins', sans-serif" }}>
                                   {initials(s.full_name)}
                                 </div>
-                                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", fontFamily: "'Poppins', sans-serif", fontWeight: 500 }}>
+                                <span style={{ fontSize: 10, color: "#987554", fontFamily: "'Poppins', sans-serif", fontWeight: 500 }}>
                                   {s.full_name.split(" ")[0]}
                                 </span>
                               </div>
@@ -3835,7 +3831,7 @@ export default function CalendarPage() {
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          background: "#0d0d0d",
+          background: "#f8f6f2",
           overflow: "hidden",
           /* no border-radius when filling the whole frame */
         }}
@@ -3848,8 +3844,8 @@ export default function CalendarPage() {
             alignItems: isMobile ? "stretch" : "center",
             justifyContent: "space-between",
             padding: isMobile ? "12px 16px" : "16px 28px",
-            borderBottom: "1px solid rgba(255,255,255,0.07)",
-            background: "#111111",
+            borderBottom: "1px solid rgba(187,161,79,0.15)",
+            background: "#ffffff",
             gap: isMobile ? 10 : 16,
             flexShrink: 0,
           }}
@@ -3878,7 +3874,7 @@ export default function CalendarPage() {
                   margin: 0,
                   fontSize: isMobile ? 14 : 15,
                   fontWeight: 700,
-                  color: "#FFFFFF",
+                  color: "#272727",
                   fontFamily: "'Playfair Display', serif",
                   lineHeight: 1.2,
                 }}
@@ -3906,8 +3902,8 @@ export default function CalendarPage() {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "rgba(187,161,79,0.08)",
+                    border: "1px solid rgba(187,161,79,0.2)",
                     borderRadius: 100,
                     padding: 3,
                     gap: 2,
@@ -3935,7 +3931,7 @@ export default function CalendarPage() {
                           background: active
                             ? "linear-gradient(135deg, #BBA14F, #987554)"
                             : "transparent",
-                          color: active ? "#FFFFFF" : "rgba(255,255,255,0.45)",
+                          color: active ? "#FFFFFF" : "#987554",
                           boxShadow: active ? "0 2px 12px rgba(187,161,79,0.4)" : "none",
                         }}
                       >
@@ -3963,8 +3959,8 @@ export default function CalendarPage() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "rgba(187,161,79,0.08)",
+                  border: "1px solid rgba(187,161,79,0.2)",
                   borderRadius: 100,
                   padding: 4,
                   gap: 2,
@@ -3994,7 +3990,7 @@ export default function CalendarPage() {
                         background: active
                           ? "linear-gradient(135deg, #BBA14F, #987554)"
                           : "transparent",
-                        color: active ? "#FFFFFF" : "rgba(255,255,255,0.45)",
+                        color: active ? "#FFFFFF" : "#987554",
                         boxShadow: active ? "0 2px 12px rgba(187,161,79,0.4)" : "none",
                       }}
                     >
@@ -4012,8 +4008,8 @@ export default function CalendarPage() {
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(187,161,79,0.08)",
+                border: "1px solid rgba(187,161,79,0.2)",
                 borderRadius: 100,
                 padding: "4px 6px",
                 flex: isMobile ? 1 : "unset",
@@ -4028,7 +4024,7 @@ export default function CalendarPage() {
                   borderRadius: "50%",
                   border: "none",
                   background: "transparent",
-                  color: "rgba(255,255,255,0.6)",
+                  color: "#987554",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
@@ -4037,7 +4033,7 @@ export default function CalendarPage() {
                   flexShrink: 0,
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(187,161,79,0.15)"; e.currentTarget.style.color = "#BBA14F"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#987554"; }}
               >
                 <FiChevronLeft size={15} />
               </button>
@@ -4046,7 +4042,7 @@ export default function CalendarPage() {
                 style={{
                   fontSize: isMobile ? 11 : 12,
                   fontWeight: 600,
-                  color: "#FFFFFF",
+                  color: "#272727",
                   fontFamily: "'Poppins', sans-serif",
                   minWidth: isMobile ? 0 : 150,
                   flex: isMobile ? 1 : "unset",
@@ -4071,7 +4067,7 @@ export default function CalendarPage() {
                   borderRadius: "50%",
                   border: "none",
                   background: "transparent",
-                  color: "rgba(255,255,255,0.6)",
+                  color: "#987554",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
@@ -4080,7 +4076,7 @@ export default function CalendarPage() {
                   flexShrink: 0,
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(187,161,79,0.15)"; e.currentTarget.style.color = "#BBA14F"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#987554"; }}
               >
                 <FiChevronRight size={15} />
               </button>
@@ -4194,8 +4190,8 @@ export default function CalendarPage() {
           style={{
             display: "flex",
             flexShrink: 0,
-            borderBottom: "1px solid rgba(255,255,255,0.07)",
-            background: "#161616",
+            borderBottom: "1px solid rgba(187,161,79,0.15)",
+            background: "#faf8f4",
           }}
         >
           {/* Time gutter header */}
@@ -4203,7 +4199,7 @@ export default function CalendarPage() {
             style={{
               width: gutterW,
               flexShrink: 0,
-              borderRight: "1px solid rgba(255,255,255,0.07)",
+              borderRight: "1px solid rgba(187,161,79,0.15)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -4265,7 +4261,7 @@ export default function CalendarPage() {
                           margin: 0,
                           fontSize: 12,
                           fontWeight: 600,
-                          color: "#FFFFFF",
+                          color: "#272727",
                           fontFamily: "'Poppins', sans-serif",
                           whiteSpace: "nowrap",
                           overflow: "hidden",
@@ -4300,8 +4296,8 @@ export default function CalendarPage() {
             style={{
               width: gutterW,
               flexShrink: 0,
-              borderRight: "1px solid rgba(255,255,255,0.07)",
-              background: "#111111",
+              borderRight: "1px solid rgba(187,161,79,0.15)",
+              background: "#faf8f4",
               overflowY: "auto",
               overflowX: "hidden",
               scrollbarWidth: "none",
@@ -4329,7 +4325,7 @@ export default function CalendarPage() {
                       style={{
                         fontSize: isHour ? 11 : 9,
                         fontFamily: "'Poppins', sans-serif",
-                        color: isHour ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)",
+                        color: isHour ? "#272727" : "#987554",
                         fontWeight: isHour ? 600 : 400,
                         lineHeight: 1,
                       }}
@@ -4373,11 +4369,11 @@ export default function CalendarPage() {
                       top: s * SLOT_HEIGHT_PX,
                       height: isHour ? 2 : 1,
                       background: isHour
-                        ? "rgba(255,255,255,0.34)"
+                        ? "rgba(187,161,79,0.35)"
                         : isHalfHour
-                        ? "rgba(255,255,255,0.18)"
-                        : "rgba(255,255,255,0.1)",
-                      boxShadow: isHour ? "0 0 1px rgba(255,255,255,0.22)" : "none",
+                        ? "rgba(187,161,79,0.18)"
+                        : "rgba(187,161,79,0.1)",
+                      boxShadow: isHour ? "0 0 1px rgba(187,161,79,0.25)" : "none",
                     }}
                   />
                 ))}
@@ -4470,11 +4466,11 @@ export default function CalendarPage() {
                       height: TOTAL_SLOTS * SLOT_HEIGHT_PX,
                       borderRight:
                         i < visibleStaff.length - 1
-                          ? "1px solid rgba(255,255,255,0.06)"
+                          ? "1px solid rgba(187,161,79,0.12)"
                           : "none",
                       background: isDropTarget
-                        ? "rgba(187,161,79,0.07)"
-                        : "#0d0d0d",
+                        ? "rgba(187,161,79,0.12)"
+                        : "#ffffff",
                       transition: "background 0.15s",
                       zIndex: 5,
                     }}
@@ -4528,66 +4524,6 @@ export default function CalendarPage() {
 
         </>)} {/* end calendar view */}
 
-        {/* ── Bottom legend bar ── */}
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "6px 16px",
-            padding: isMobile ? "9px 16px" : "11px 28px",
-            borderTop: "1px solid rgba(255,255,255,0.07)",
-            background: "#111111",
-            flexShrink: 0,
-          }}
-        >
-          {Object.entries(STATUS_CFG).map(([key, cfg]) => (
-            <div key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: cfg.dot,
-                  display: "inline-block",
-                  boxShadow: `0 0 4px ${cfg.dot}88`,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 10,
-                  color: "rgba(255,255,255,0.45)",
-                  fontFamily: "'Poppins', sans-serif",
-                }}
-              >
-                {cfg.label}
-              </span>
-            </div>
-          ))}
-          {isToday && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span
-                style={{
-                  width: 18,
-                  height: 2,
-                  borderRadius: 2,
-                  background: "linear-gradient(90deg, #BBA14F, #e4ca80)",
-                  display: "inline-block",
-                  boxShadow: "0 0 4px rgba(187,161,79,0.6)",
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 10,
-                  color: "rgba(255,255,255,0.45)",
-                  fontFamily: "'Poppins', sans-serif",
-                }}
-              >
-                Current time
-              </span>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Booking detail modal */}
