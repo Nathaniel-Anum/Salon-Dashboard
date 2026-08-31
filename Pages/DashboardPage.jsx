@@ -51,6 +51,12 @@ const DashboardPage = () => {
     staleTime: 5 * 60_000,
   });
 
+  const { data: servicesData } = useQuery({
+    queryKey: ["services"],
+    queryFn: () => _axios.get("/api/portal/v1/booking/services/").then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
+
   const staffCount     = staffData?.length     ?? "—";   // eslint-disable-line
   const customersCount = customersData?.length  ?? "—";   // eslint-disable-line
 
@@ -499,6 +505,7 @@ const DashboardPage = () => {
               {bookingsData.bookings_by_service.map((s, i) => {
                 const max = bookingsData.bookings_by_service[0]?.count || 1;
                 const w = Math.min((s.count / max) * 100, 100);
+                const serviceName = servicesData?.find((svc) => svc.id === s.service_id)?.name || `Service #${s.service_id}`;
                 return (
                   <div key={s.service_id}>
                     <div className="flex items-center justify-between mb-1.5">
@@ -518,8 +525,9 @@ const DashboardPage = () => {
                         <span
                           className="text-sm text-[#272727] truncate"
                           style={{ fontFamily: "'Poppins', sans-serif" }}
+                          title={serviceName}
                         >
-                          Service #{s.service_id}
+                          {serviceName}
                         </span>
                       </div>
                       <span
