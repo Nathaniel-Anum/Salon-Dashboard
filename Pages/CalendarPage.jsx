@@ -2197,11 +2197,8 @@ function BookingStatusDrawer({ booking, staff, allServices = [], allStaff = [], 
                         <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700, color: "#2e3b63", fontFamily: "'Poppins', sans-serif" }}>
                           {selectedAddonService.name}
                         </p>
-                        <p style={{ margin: "0 0 4px", fontSize: 11, color: "#4e6bc4", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
+                        <p style={{ margin: 0, fontSize: 11, color: "#4e6bc4", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
                           Base Price: GH₵ {selectedAddonService.price.toFixed(2)}
-                        </p>
-                        <p style={{ margin: 0, fontSize: 10, color: "#6f80b8", fontFamily: "'Poppins', sans-serif" }}>
-                          Assigned staff: {eligibleAddonStaff.length ? eligibleAddonStaff.map((s) => s.full_name || `Staff #${s.id}`).join(", ") : "None"}
                         </p>
                       </div>
                     )}
@@ -3666,8 +3663,11 @@ export default function CalendarPage() {
       queryClient.invalidateQueries(["appointments", dateStr]);
       refetchApts();
     },
-    onError: () => {
-      message.error("Failed to update status");
+    onError: (error) => {
+      const errorMsg = error?.response?.data?.detail || 
+                       error?.response?.data?.outstanding_balance || 
+                       "Failed to update status";
+      message.error(errorMsg);
     },
   });
 
