@@ -35,6 +35,7 @@ import {
   FiCheckCircle,
   FiSlash,
   FiCreditCard,
+  FiActivity,
 } from "react-icons/fi";
 import _axios from "../src/api/_axios";
 import { fetchBlockedDays } from "../src/api/blockedDays";
@@ -1747,6 +1748,22 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
               label="Time"
               value={`${formatDisplayTime(booking.startTime)} → ${formatDisplayTime(endTimeStr)}  (${durLabel})`}
             />
+            {(raw.booking_source || booking.booking_source) && (
+              <DetailRow
+                icon={<FiActivity size={13} />}
+                label="Source"
+                value={
+                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(82,130,255,0.12)", color: "#5282ff", border: "1px solid rgba(82,130,255,0.25)" }}>
+                    {(() => {
+                      const source = raw.booking_source || booking.booking_source;
+                      return source.toLowerCase() === 'online' 
+                        ? 'Mobile App' 
+                        : source.charAt(0).toUpperCase() + source.slice(1);
+                    })()}
+                  </span>
+                }
+              />
+            )}
             <DetailRow
               icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: cfg.dot, display: "inline-block" }} />}
               label="Status"
