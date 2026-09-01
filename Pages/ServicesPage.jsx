@@ -183,6 +183,34 @@ function MiniAvatar({ name, size = 34, selected = false }) {
   );
 }
 
+function getStaffReferenceId(reference) {
+  if (reference && typeof reference === "object") {
+    return reference.id ?? reference.staff_id ?? reference.user_id ?? reference.account_id;
+  }
+  return reference;
+}
+
+function getAssignedStaffIds(service = {}) {
+  const candidates = [
+    service.assigned_staff_ids,
+    service.staff_ids,
+    service.assigned_staff,
+  ];
+  const assignedStaff = candidates.find(
+    (candidate) => Array.isArray(candidate) && candidate.length > 0
+  );
+
+  if (!assignedStaff) return [];
+
+  return assignedStaff
+    .map(getStaffReferenceId)
+    .filter((id) => id !== null && id !== undefined && id !== "")
+    .filter(
+      (id, index, ids) =>
+        ids.findIndex((candidate) => String(candidate) === String(id)) === index
+    );
+}
+
 /* ─────────────────────────────────────────────
    STAFF PICKER MODAL
    Opens from the service form; shows a searchable
@@ -204,8 +232,8 @@ function StaffPickerModal({ open, onClose, staffList = [], value = [], onChange 
   const isAll = value.length === 0;
 
   const toggle = (id) => {
-    if (value.includes(id)) {
-      onChange(value.filter((v) => v !== id));
+    if (value.some((selectedId) => String(selectedId) === String(id))) {
+      onChange(value.filter((selectedId) => String(selectedId) !== String(id)));
     } else {
       onChange([...value, id]);
     }
@@ -408,7 +436,9 @@ function StaffPickerModal({ open, onClose, staffList = [], value = [], onChange 
             }}
           >
             {filtered.map((member) => {
-              const sel = value.includes(member.id);
+              const sel = value.some(
+                (selectedId) => String(selectedId) === String(member.id)
+              );
               const name = member.full_name || member.email || "?";
               return (
                 <button
@@ -503,7 +533,10 @@ function StaffPickerField({ value = [], onChange, staffList = [], staffLoading =
 
   /* names of selected members */
   const selectedMembers = useMemo(
-    () => staffList.filter((m) => value.includes(m.id)),
+    () =>
+      staffList.filter((member) =>
+        value.some((selectedId) => String(selectedId) === String(member.id))
+      ),
     [staffList, value]
   );
 
@@ -1335,10 +1368,20 @@ function ServiceFormFields({
  * Shows name, description, duration, price, active status, and action buttons.
  */
 function ServiceCard({ service, onEdit, onDelete, deleting, staffData = [] }) {
-  /* Resolve assigned staff IDs → names */
-  const assignedIds = service.assigned_staff_ids ?? service.staff_ids ?? [];
+  /* Resolve assigned staff IDs/objects → names */
+  const assignedIds = getAssignedStaffIds(service);
+  const assignedStaffFromService = Array.isArray(service.assigned_staff)
+    ? service.assigned_staff
+    : [];
   const assignedStaff = assignedIds
-    .map((id) => staffData.find((s) => s.id === id || String(s.id) === String(id)))
+    .map(
+      (id) =>
+        staffData.find((staff) => String(staff.id) === String(id)) ||
+        assignedStaffFromService.find(
+          (staff) => String(getStaffReferenceId(staff)) === String(id)
+        ) ||
+        { id }
+    )
     .filter(Boolean);
 
   const serviceOptions =
@@ -1947,7 +1990,7 @@ export default function ServicesPage() {
       is_active:   service.is_active,
       category:    service.category ?? undefined,
       // Pre-populate assigned staff from the API response field
-      staff_ids:   service.assigned_staff_ids ?? service.staff_ids ?? [],
+      staff_ids:   getAssignedStaffIds(service),
       service_options: serviceOptions.map((opt) => ({
         id: opt?.id,
         name: opt?.name ?? "",

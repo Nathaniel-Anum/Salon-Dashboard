@@ -158,14 +158,6 @@ export default function Staff() {
       .map(String);
   };
 
-  const serviceRefMatchesStaff = (staff, rawRef) => {
-    const needle = String(rawRef);
-    return [staff?.id, staff?.user, staff?.user_id, staff?.account_id]
-      .filter((x) => x !== null && x !== undefined && x !== "")
-      .map(String)
-      .includes(needle);
-  };
-
   const servicesByCategory = useMemo(() => {
     const grouped = new Map();
     servicesData.forEach((svc) => {
