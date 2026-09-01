@@ -269,50 +269,15 @@ export default function Staff() {
 
   // --- ASSIGN SERVICES TO STAFF ---
   const assignServices = useMutation({
-    mutationFn: async ({ staff, service_ids }) => {
-      const selectedSet = new Set(service_ids.map((id) => String(id)));
-      const updates = [];
-
-      servicesData.forEach((svc) => {
-        const isCurrentlyAssigned = getServiceAssignedStaffRefs(svc).some((ref) =>
-          serviceRefMatchesStaff(staff, ref)
-        );
-        const shouldBeAssigned = selectedSet.has(String(svc.id));
-
-        if (isCurrentlyAssigned === shouldBeAssigned) return;
-
-        const baseIds = (svc.assigned_staff_ids ?? svc.staff_ids ?? [])
-          .filter((x) => x !== null && x !== undefined && x !== "")
-          .map(String);
-
-        const withoutTargetStaff = baseIds.filter((ref) => !serviceRefMatchesStaff(staff, ref));
-        const nextIds = shouldBeAssigned
-          ? Array.from(new Set([...withoutTargetStaff, String(staff.id)]))
-          : withoutTargetStaff;
-
-        const payloadStaffIds = nextIds.map((id) => {
-          const n = Number(id);
-          return Number.isFinite(n) && String(n) === id ? n : id;
-        });
-
-        updates.push(
-          _axios.patch(`/api/portal/v1/booking/services/${svc.id}/`, {
-            staff_ids: payloadStaffIds,
-          })
-        );
-      });
-
-      await Promise.all(updates);
-      return updates.length;
-    },
-    onSuccess: async (updatedCount) => {
+    mutationFn: ({ staff, service_ids }) =>
+      _axios.patch("/api/portal/v1/booking/services/assign-staff/", {
+        staff_id: staff.id,
+        service_ids,
+      }),
+    onSuccess: async () => {
       await queryClient.invalidateQueries(["services"]);
       closeAssignDrawer();
-      message.success(
-        updatedCount > 0
-          ? "Services assignment updated successfully"
-          : "No changes to save"
-      );
+      message.success("Services assignment updated successfully");
     },
     onError: (err) => {
       message.error(err.response?.data?.message || "Failed to update services assignment");
