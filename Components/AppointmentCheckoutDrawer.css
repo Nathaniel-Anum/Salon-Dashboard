@@ -1,0 +1,922 @@
+:root {
+  --checkout-ink: #211f1b;
+  --checkout-porcelain: #fffcf7;
+  --checkout-sand: #f3ebdd;
+  --checkout-brass: #b79a47;
+  --checkout-brass-dark: #8f7330;
+  --checkout-green: #287a52;
+  --checkout-red: #a33f3f;
+  --checkout-muted: #776e62;
+}
+
+.checkout-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(20, 17, 13, 0.58);
+  backdrop-filter: blur(5px);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.checkout-drawer {
+  width: min(940px, 100vw);
+  height: 100%;
+  overflow: auto;
+  background: var(--checkout-porcelain);
+  box-shadow: -24px 0 70px rgba(20, 17, 13, 0.28);
+  animation: checkout-slide-in 220ms ease-out both;
+  color: var(--checkout-ink);
+}
+
+.checkout-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  min-height: 154px;
+  padding: 24px 30px 18px;
+  background:
+    radial-gradient(circle at 82% -40%, rgba(183, 154, 71, 0.34), transparent 42%),
+    linear-gradient(135deg, #1c1a17 0%, #2b2720 100%);
+  color: white;
+}
+
+.checkout-header-copy {
+  padding-right: 52px;
+}
+
+.checkout-kicker,
+.checkout-section-heading span,
+.checkout-form-title span,
+.checkout-balance-heading > span,
+.checkout-callout span,
+.checkout-mini-modal > div > span {
+  display: block;
+  color: var(--checkout-brass);
+  font: 700 10px/1.2 "Poppins", sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.checkout-header h2 {
+  margin: 5px 0 4px;
+  color: #fffdf8;
+  font: 700 clamp(22px, 3vw, 30px)/1.12 "Playfair Display", serif;
+}
+
+.checkout-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255, 255, 255, 0.58);
+  font: 500 11px/1.4 "Poppins", sans-serif;
+}
+
+.checkout-status,
+.checkout-payment-state {
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.checkout-status {
+  margin-left: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.checkout-status.status-arrived,
+.checkout-status.status-completed {
+  color: #bfe8cf;
+  border-color: rgba(94, 184, 130, 0.42);
+  background: rgba(40, 122, 82, 0.24);
+}
+
+.checkout-icon-button {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(33, 31, 27, 0.12);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--checkout-muted);
+  cursor: pointer;
+}
+
+.checkout-icon-button.on-dark {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.13);
+}
+
+.checkout-progress {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 0;
+  margin: 20px 0 0;
+  list-style: none;
+}
+
+.checkout-progress li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.checkout-progress li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 29px;
+  right: 8px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.checkout-progress li > span {
+  position: relative;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: #2b2720;
+  font: 700 10px/1 "Poppins", sans-serif;
+}
+
+.checkout-progress li small {
+  font: 600 10px/1 "Poppins", sans-serif;
+}
+
+.checkout-progress li.is-done,
+.checkout-progress li.is-current {
+  color: #fff;
+}
+
+.checkout-progress li.is-done > span {
+  background: var(--checkout-brass);
+  border-color: var(--checkout-brass);
+}
+
+.checkout-progress li.is-done:not(:last-child)::after {
+  background: var(--checkout-brass);
+}
+
+.checkout-progress li.is-current > span {
+  box-shadow: 0 0 0 4px rgba(183, 154, 71, 0.16);
+  border-color: var(--checkout-brass);
+}
+
+.checkout-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(310px, 0.85fr);
+  min-height: calc(100vh - 154px);
+}
+
+.checkout-main {
+  padding: 26px 28px 50px;
+  min-width: 0;
+}
+
+.checkout-balance-rail {
+  padding: 26px 24px 50px;
+  background: #f4eddf;
+  border-left: 1px solid rgba(143, 115, 48, 0.15);
+}
+
+.checkout-loading {
+  min-height: 420px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--checkout-muted);
+  font: 500 12px/1.5 "Poppins", sans-serif;
+}
+
+.checkout-callout {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+  padding: 16px;
+  border: 1px solid rgba(183, 154, 71, 0.3);
+  border-radius: 16px;
+  background: linear-gradient(120deg, #fff8e8, #fffdf8);
+}
+
+.checkout-callout-icon,
+.checkout-line-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(183, 154, 71, 0.13);
+  color: var(--checkout-brass-dark);
+}
+
+.checkout-callout h3,
+.checkout-section-heading h3,
+.checkout-form-title h4,
+.checkout-mini-modal h3 {
+  margin: 3px 0 0;
+  color: var(--checkout-ink);
+  font: 700 18px/1.25 "Playfair Display", serif;
+}
+
+.checkout-callout p,
+.checkout-mini-modal p {
+  margin: 4px 0 0;
+  color: var(--checkout-muted);
+  font: 400 11px/1.5 "Poppins", sans-serif;
+}
+
+.checkout-section {
+  border-top: 1px solid rgba(33, 31, 27, 0.1);
+  padding-top: 20px;
+}
+
+.checkout-section-heading,
+.checkout-form-title,
+.checkout-balance-heading,
+.checkout-receipts-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.checkout-section-heading {
+  margin-bottom: 14px;
+}
+
+.checkout-text-button,
+.checkout-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  color: var(--checkout-brass-dark);
+  font: 700 11px/1 "Poppins", sans-serif;
+  cursor: pointer;
+}
+
+.checkout-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkout-service-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid rgba(33, 31, 27, 0.09);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.checkout-service-line.addon {
+  border-color: rgba(183, 154, 71, 0.26);
+  background: #fffbf1;
+}
+
+.checkout-service-line .checkout-line-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.checkout-line-copy {
+  min-width: 0;
+}
+
+.checkout-line-copy b,
+.checkout-service-line > strong {
+  display: block;
+  color: var(--checkout-ink);
+  font: 700 12px/1.35 "Poppins", sans-serif;
+}
+
+.checkout-line-copy span {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--checkout-muted);
+  font: 400 10px/1.3 "Poppins", sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkout-void-button {
+  border: 0;
+  background: transparent;
+  color: var(--checkout-red);
+  font: 700 10px/1 "Poppins", sans-serif;
+  cursor: pointer;
+}
+
+.checkout-empty {
+  padding: 18px;
+  border: 1px dashed rgba(33, 31, 27, 0.16);
+  border-radius: 14px;
+  color: var(--checkout-muted);
+  text-align: center;
+  font: 400 11px/1.5 "Poppins", sans-serif;
+}
+
+.checkout-form-panel,
+.checkout-payment-form {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid rgba(183, 154, 71, 0.28);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(33, 31, 27, 0.06);
+}
+
+.checkout-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+  margin-top: 14px;
+}
+
+.checkout-form-grid .span-2 {
+  grid-column: span 2;
+}
+
+.checkout-form-grid label,
+.checkout-payment-form > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #61594f;
+  font: 700 10px/1.2 "Poppins", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.checkout-form-grid label em {
+  color: var(--checkout-red);
+  font-style: normal;
+}
+
+.checkout-form-grid input,
+.checkout-form-grid select,
+.checkout-payment-form input,
+.checkout-payment-form select,
+.checkout-mini-modal textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid #d9d0c2;
+  border-radius: 10px;
+  outline: none;
+  background: #fffdf9;
+  color: var(--checkout-ink);
+  font: 500 12px/1.4 "Poppins", sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkout-form-grid input:focus,
+.checkout-form-grid select:focus,
+.checkout-payment-form input:focus,
+.checkout-payment-form select:focus,
+.checkout-mini-modal textarea:focus {
+  border-color: var(--checkout-brass);
+  box-shadow: 0 0 0 3px rgba(183, 154, 71, 0.14);
+}
+
+.checkout-price-preview {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  margin: 12px 0;
+  padding: 11px 12px;
+  border-radius: 11px;
+  background: var(--checkout-sand);
+  color: var(--checkout-muted);
+  font: 500 10px/1.4 "Poppins", sans-serif;
+}
+
+.checkout-price-preview b {
+  color: var(--checkout-ink);
+  font-size: 12px;
+}
+
+.checkout-price-preview small {
+  grid-column: 1 / -1;
+}
+
+.checkout-primary {
+  width: 100%;
+  min-height: 43px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 11px;
+  background: linear-gradient(135deg, var(--checkout-brass), var(--checkout-brass-dark));
+  color: white;
+  box-shadow: 0 7px 18px rgba(143, 115, 48, 0.22);
+  font: 700 12px/1 "Poppins", sans-serif;
+  cursor: pointer;
+}
+
+.checkout-primary.compact {
+  width: auto;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.checkout-primary:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.checkout-retry {
+  width: 100%;
+  justify-content: center;
+  margin: 8px 0;
+  padding: 9px;
+  border: 1px solid rgba(163, 63, 63, 0.22);
+  border-radius: 9px;
+  background: rgba(163, 63, 63, 0.06);
+  color: var(--checkout-red);
+}
+
+.checkout-history,
+.checkout-secondary-actions {
+  margin-top: 12px;
+  border: 1px solid rgba(33, 31, 27, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.checkout-history summary,
+.checkout-secondary-actions summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 13px;
+  color: var(--checkout-muted);
+  list-style: none;
+  font: 700 10px/1.2 "Poppins", sans-serif;
+  cursor: pointer;
+}
+
+.checkout-history summary::-webkit-details-marker,
+.checkout-secondary-actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.checkout-history[open] summary svg,
+.checkout-secondary-actions[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.checkout-history > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 13px;
+  border-top: 1px solid rgba(33, 31, 27, 0.08);
+  color: #8e867d;
+  font: 500 10px/1.3 "Poppins", sans-serif;
+}
+
+.checkout-secondary-actions {
+  margin-top: 24px;
+}
+
+.checkout-secondary-body {
+  padding: 0 13px 13px;
+  border-top: 1px solid rgba(33, 31, 27, 0.08);
+}
+
+.checkout-secondary-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.checkout-secondary-buttons button,
+.checkout-mini-actions button {
+  min-height: 37px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(33, 31, 27, 0.14);
+  border-radius: 9px;
+  background: white;
+  color: var(--checkout-muted);
+  font: 700 10px/1.2 "Poppins", sans-serif;
+  cursor: pointer;
+}
+
+.checkout-secondary-buttons .danger,
+.checkout-mini-actions .danger {
+  color: var(--checkout-red);
+  border-color: rgba(163, 63, 63, 0.25);
+  background: rgba(163, 63, 63, 0.05);
+}
+
+.checkout-balance-heading {
+  margin-bottom: 13px;
+}
+
+.checkout-payment-state {
+  color: #7d5f19;
+  background: rgba(183, 154, 71, 0.15);
+}
+
+.checkout-payment-state.state-paid {
+  color: var(--checkout-green);
+  background: rgba(40, 122, 82, 0.12);
+}
+
+.checkout-payment-state.state-free {
+  color: #27644a;
+  background: #dcebdd;
+  box-shadow: inset 0 0 0 1px rgba(40, 122, 82, 0.12);
+}
+
+.checkout-amount-due {
+  padding: 17px;
+  border-radius: 16px;
+  background: var(--checkout-ink);
+  color: white;
+  box-shadow: 0 12px 30px rgba(33, 31, 27, 0.17);
+}
+
+.checkout-amount-due span,
+.checkout-amount-due small {
+  display: block;
+  color: rgba(255, 255, 255, 0.52);
+  font: 500 10px/1.4 "Poppins", sans-serif;
+}
+
+.checkout-amount-due strong {
+  display: block;
+  margin: 5px 0 3px;
+  color: #fffdf7;
+  font: 700 30px/1.05 "Playfair Display", serif;
+}
+
+.checkout-amount-due.is-free {
+  background:
+    radial-gradient(circle at 92% 10%, rgba(118, 180, 139, 0.22), transparent 36%),
+    linear-gradient(145deg, #1d3027, #243d31);
+}
+
+.checkout-free-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid rgba(40, 122, 82, 0.2);
+  border-radius: 12px;
+  background: rgba(235, 246, 237, 0.88);
+  color: var(--checkout-green);
+}
+
+.checkout-free-state > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  font-size: 18px;
+}
+
+.checkout-free-state b,
+.checkout-free-state p {
+  display: block;
+  margin: 0;
+  font: 700 10px/1.4 "Poppins", sans-serif;
+}
+
+.checkout-free-state p {
+  margin-top: 2px;
+  color: #4f705e;
+  font-weight: 400;
+}
+
+.checkout-money-list {
+  margin: 14px 0;
+  padding: 4px 0;
+  border-top: 1px solid rgba(33, 31, 27, 0.1);
+  border-bottom: 1px solid rgba(33, 31, 27, 0.1);
+}
+
+.checkout-money-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 7px 2px;
+  color: var(--checkout-muted);
+  font: 500 10px/1.25 "Poppins", sans-serif;
+}
+
+.checkout-money-row b {
+  color: var(--checkout-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkout-money-row.is-strong {
+  margin-top: 4px;
+  padding-top: 11px;
+  border-top: 1px dashed rgba(33, 31, 27, 0.15);
+  font-size: 11px;
+}
+
+.checkout-money-row.is-muted b {
+  color: var(--checkout-green);
+}
+
+.checkout-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 14px;
+  padding: 11px;
+  border-radius: 11px;
+  color: #815f12;
+  background: #fff6da;
+  border: 1px solid #ead497;
+}
+
+.checkout-alert.error {
+  color: var(--checkout-red);
+  background: #fff3f1;
+  border-color: #e8beb8;
+}
+
+.checkout-alert > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.checkout-alert b,
+.checkout-alert p {
+  display: block;
+  margin: 0;
+  font: 700 10px/1.4 "Poppins", sans-serif;
+}
+
+.checkout-alert p {
+  font-weight: 400;
+}
+
+.checkout-alert button {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  color: currentColor;
+  font: 700 9px/1 "Poppins", sans-serif;
+  cursor: pointer;
+}
+
+.checkout-collect,
+.checkout-complete {
+  margin-top: 4px;
+}
+
+.checkout-payment-form {
+  margin-top: 0;
+  padding: 14px;
+}
+
+.checkout-payment-form > label {
+  margin-top: 11px;
+}
+
+.checkout-confirm {
+  flex-direction: row !important;
+  align-items: flex-start;
+  padding: 10px;
+  border-radius: 10px;
+  background: #fff5dc;
+}
+
+.checkout-confirm input {
+  width: 15px;
+  min-height: 15px;
+  margin-top: 2px;
+}
+
+.checkout-confirm span,
+.checkout-confirm small {
+  display: block;
+}
+
+.checkout-confirm small {
+  margin-top: 3px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkout-payment-note,
+.checkout-split-note,
+.checkout-disabled-note {
+  color: var(--checkout-muted);
+  font: 400 9px/1.5 "Poppins", sans-serif;
+}
+
+.checkout-payment-note {
+  margin: 11px 0;
+}
+
+.checkout-split-note {
+  display: block;
+  margin-top: 9px;
+  text-align: center;
+}
+
+.checkout-disabled-note {
+  display: flex;
+  gap: 5px;
+  margin: 10px 2px 0;
+}
+
+.checkout-complete-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px;
+  border-radius: 12px;
+  color: var(--checkout-green);
+  background: rgba(40, 122, 82, 0.09);
+  border: 1px solid rgba(40, 122, 82, 0.2);
+}
+
+.checkout-complete-card > svg {
+  font-size: 21px;
+}
+
+.checkout-complete-card b,
+.checkout-complete-card span {
+  display: block;
+  font: 700 10px/1.35 "Poppins", sans-serif;
+}
+
+.checkout-complete-card span {
+  color: #547363;
+  font-weight: 400;
+}
+
+.checkout-receipts {
+  margin-top: 17px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(33, 31, 27, 0.1);
+}
+
+.checkout-receipts-title {
+  justify-content: flex-start;
+  margin-bottom: 8px;
+  color: var(--checkout-ink);
+  font: 700 10px/1.2 "Poppins", sans-serif;
+}
+
+.checkout-receipts a,
+.checkout-receipts > div:not(.checkout-receipts-title) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  padding: 9px 10px;
+  border: 1px solid rgba(33, 31, 27, 0.09);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--checkout-brass-dark);
+  font: 700 9px/1.3 "Poppins", sans-serif;
+}
+
+.checkout-receipts p {
+  color: var(--checkout-muted);
+  font: 400 9px/1.5 "Poppins", sans-serif;
+}
+
+.checkout-mini-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(20, 17, 13, 0.56);
+  backdrop-filter: blur(3px);
+}
+
+.checkout-mini-modal > div {
+  width: min(410px, 100%);
+  padding: 22px;
+  border-radius: 18px;
+  background: var(--checkout-porcelain);
+  box-shadow: 0 22px 60px rgba(20, 17, 13, 0.28);
+}
+
+.checkout-mini-modal textarea {
+  min-height: 92px;
+  margin-top: 14px;
+  resize: vertical;
+}
+
+.checkout-mini-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+@keyframes checkout-slide-in {
+  from { opacity: 0; transform: translateX(34px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 760px) {
+  .checkout-header {
+    padding: 20px 18px 16px;
+  }
+
+  .checkout-icon-button.on-dark {
+    top: 19px;
+    right: 17px;
+  }
+
+  .checkout-layout {
+    display: block;
+  }
+
+  .checkout-main,
+  .checkout-balance-rail {
+    padding: 22px 16px 34px;
+  }
+
+  .checkout-balance-rail {
+    border-top: 1px solid rgba(143, 115, 48, 0.15);
+    border-left: 0;
+  }
+
+  .checkout-progress li small {
+    display: none;
+  }
+
+  .checkout-progress li:not(:last-child)::after {
+    right: 10px;
+  }
+
+  .checkout-callout {
+    grid-template-columns: auto 1fr;
+  }
+
+  .checkout-callout .checkout-primary {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .checkout-service-line {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .checkout-service-line .checkout-void-button {
+    grid-column: 2 / -1;
+    justify-self: end;
+  }
+
+  .checkout-secondary-buttons {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkout-drawer {
+    animation: none;
+  }
+}

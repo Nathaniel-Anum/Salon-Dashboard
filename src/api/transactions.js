@@ -18,4 +18,4 @@ export const createSalonPayment = (appointmentId, payload) =>
   _axios.post(
     `/api/portal/v1/booking/appointments/${appointmentId}/salon-payments/`,
     payload,
-  );
+  ).then((response) => response.data);

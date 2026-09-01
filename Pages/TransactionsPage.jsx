@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   Button,
+  Checkbox,
   Empty,
   Form,
   Input,
@@ -14,6 +16,7 @@ import {
 import dayjs from "dayjs";
 import { FiCreditCard, FiPlus, FiSearch } from "react-icons/fi";
 import { createSalonPayment, getAppointmentTransactions, getTransactionAppointments } from "../src/api/transactions";
+import { getAppointmentFinancialSummary } from "../src/api/appointmentCheckout";
 
 const GOLD_BTN = "!bg-[#BBA14F] !border-none hover:!bg-[#a08340] !text-white";
 
@@ -22,7 +25,15 @@ const PAYMENT_METHOD_OPTIONS = [
   { label: "Mobile Money", value: "mobile_money" },
   { label: "Card Terminal", value: "card_terminal" },
   { label: "Bank Transfer", value: "bank_transfer" },
+  { label: "Other", value: "other" },
 ];
+
+const REFERENCE_METHODS = new Set(["mobile_money", "card_terminal", "bank_transfer"]);
+
+function makeIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 function normalizeList(raw) {
   if (Array.isArray(raw)) return raw;
@@ -40,6 +51,14 @@ function formatMoney(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+function isNoPaymentRequired(summary) {
+  return Boolean(
+    summary &&
+    Number(summary.total_amount_due || 0) === 0 &&
+    Number(summary.total_amount_paid || 0) === 0,
+  );
 }
 
 function getTransactionCustomerName(item) {
@@ -156,7 +175,7 @@ function TransactionCard({ item }) {
         </p>
         <p
           className="text-sm font-semibold truncate"
-          style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}
+          style={{ ...statusStyle, display: "inline-flex", borderRadius: 999, padding: "4px 9px", fontFamily: "'Poppins', sans-serif", margin: 0 }}
         >
           {getTransactionAppointmentPaymentStatus(item)}
         </p>
@@ -225,6 +244,11 @@ export default function TransactionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [pendingOperation, setPendingOperation] = useState(null);
+  const [validatingPayment, setValidatingPayment] = useState(false);
+  const selectedAppointmentId = Form.useWatch("appointment_id", form);
+  const selectedPaymentMethod = Form.useWatch("payment_method", form);
+  const enteredAmount = Form.useWatch("amount", form);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -243,11 +267,18 @@ export default function TransactionsPage() {
     staleTime: 30_000,
   });
 
+  const summaryQ = useQuery({
+    queryKey: ["transaction-entry-summary", selectedAppointmentId],
+    queryFn: () => getAppointmentFinancialSummary(selectedAppointmentId),
+    enabled: modalOpen && Boolean(selectedAppointmentId),
+    staleTime: 0,
+  });
+
   const eligibleOptions = useMemo(() => {
     const list = normalizeList(appointmentsRaw);
     return list
       .filter((a) =>
-        ["arrived", "completed"].includes(String(a?.status || "").toLowerCase()),
+        String(a?.status || "").toLowerCase() === "arrived",
       )
       .map((a) => ({
         value: a.id,
@@ -259,13 +290,26 @@ export default function TransactionsPage() {
 
   const paymentMutation = useMutation({
     mutationFn: ({ appointmentId, payload }) => createSalonPayment(appointmentId, payload),
-    onSuccess: () => {
+    onSuccess: (payment) => {
+      setPendingOperation(null);
       queryClient.invalidateQueries({ queryKey: ["transactions-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["appointment-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      messageApi.success("Payment recorded successfully.");
-      setModalOpen(false);
-      form.resetFields();
+      queryClient.invalidateQueries({ queryKey: ["transaction-entry-summary", selectedAppointmentId] });
+      const balance = Number(payment?.appointment_remaining_balance_amount ?? 0);
+      messageApi.success(`${formatMoney(payment?.amount)} recorded.`);
+      if (balance > 0) {
+        form.setFieldsValue({
+          amount: balance,
+          payment_method: "cash",
+          external_reference: undefined,
+          manager_confirmed: false,
+        });
+        summaryQ.refetch();
+      } else {
+        setModalOpen(false);
+        form.resetFields();
+      }
     },
     onError: (err) => {
       const d = err?.response?.data;
@@ -281,24 +325,68 @@ export default function TransactionsPage() {
 
   const openModal = () => {
     form.resetFields();
+    setPendingOperation(null);
     setModalOpen(true);
   };
 
   const closeModal = () => {
     setModalOpen(false);
+    setPendingOperation(null);
     form.resetFields();
   };
 
-  const handleSubmit = (values) => {
-    const payload = {
-      amount: Number(values.amount).toFixed(2),
-      payment_method: values.payment_method,
-    };
-    if (values.external_reference?.trim()) {
-      payload.external_reference = values.external_reference.trim();
+  const handleSubmit = async (values) => {
+    setValidatingPayment(true);
+    try {
+      const fresh = await getAppointmentFinancialSummary(values.appointment_id);
+      queryClient.setQueryData(["transaction-entry-summary", values.appointment_id], fresh);
+      const freshRemaining = Number(fresh.remaining_amount_due || 0);
+      if (freshRemaining <= 0) {
+        form.setFieldsValue({ amount: 0, manager_confirmed: false });
+        messageApi.info(
+          isNoPaymentRequired(fresh)
+            ? "No payment is required for this appointment."
+            : "This appointment balance is already settled.",
+        );
+        return;
+      }
+      if (Number(values.amount) > freshRemaining && !values.manager_confirmed) {
+        form.setFieldsValue({ amount: freshRemaining, manager_confirmed: false });
+        messageApi.warning(`The current balance is ${formatMoney(freshRemaining)}. Review the amount before recording payment.`);
+        return;
+      }
+      const payload = {
+        amount: Number(values.amount).toFixed(2),
+        payment_method: values.payment_method,
+        idempotency_key: makeIdempotencyKey(),
+      };
+      if (values.external_reference?.trim()) {
+        payload.external_reference = values.external_reference.trim();
+      }
+      const operation = { appointmentId: values.appointment_id, payload };
+      setPendingOperation(operation);
+      paymentMutation.mutate(operation);
+    } catch (error) {
+      const detail = error?.response?.data?.detail || "Could not verify the current balance. No payment was recorded.";
+      messageApi.error(String(detail));
+    } finally {
+      setValidatingPayment(false);
     }
-    paymentMutation.mutate({ appointmentId: values.appointment_id, payload });
   };
+
+  useEffect(() => {
+    if (!summaryQ.data || !selectedAppointmentId) return;
+    form.setFieldsValue({
+      amount: Number(summaryQ.data.remaining_amount_due || 0),
+      payment_method: form.getFieldValue("payment_method") || "cash",
+      manager_confirmed: false,
+    });
+  }, [form, selectedAppointmentId, summaryQ.data]);
+
+  const remainingAmount = Number(summaryQ.data?.remaining_amount_due || 0);
+  const overpaymentAmount = Math.max(0, Number(enteredAmount || 0) - remainingAmount);
+  const noPaymentRequired = isNoPaymentRequired(summaryQ.data);
+  const balanceSettled = Boolean(summaryQ.data) && remainingAmount <= 0;
 
   return (
     <div style={{ animation: "fadeInUp 0.45s ease both" }} className="space-y-7">
@@ -467,8 +555,10 @@ export default function TransactionsPage() {
                         background: idx % 2 === 0 ? "#FDFAF5" : "rgba(187,161,79,0.03)",
                       }}
                     >
-                      <td className="px-4 py-3 text-xs font-semibold" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>
-                        {getTransactionAppointmentPaymentStatus(item)}
+                      <td className="px-4 py-3 text-xs font-semibold" style={{ fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>
+                        <span style={{ ...statusStyle, display: "inline-flex", borderRadius: 999, padding: "4px 9px" }}>
+                          {getTransactionAppointmentPaymentStatus(item)}
+                        </span>
                       </td>
                       <td className="px-4 py-3" style={{ maxWidth: 180 }}>
                         <div style={{ minWidth: 0 }}>
@@ -573,7 +663,7 @@ export default function TransactionsPage() {
 
         {/* Body */}
         <div className="px-6 py-5" style={{ background: "#FDFAF5" }}>
-          <Form form={form} layout="vertical" onFinish={handleSubmit}>
+          <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ payment_method: "cash", manager_confirmed: false }}>
 
             <Form.Item
               name="appointment_id"
@@ -591,6 +681,65 @@ export default function TransactionsPage() {
               />
             </Form.Item>
 
+            {selectedAppointmentId && (
+              <div
+                className="rounded-2xl px-4 py-3 mb-5"
+                style={{
+                  background: noPaymentRequired ? "#eef7ef" : "#f3ebdd",
+                  border: noPaymentRequired ? "1px solid rgba(40,122,82,0.22)" : "1px solid rgba(187,161,79,0.24)",
+                }}
+              >
+                {summaryQ.isFetching ? (
+                  <div className="flex items-center justify-center gap-2 py-4 text-xs text-[#987554]"><Spin size="small" /> Loading current balance…</div>
+                ) : summaryQ.isError ? (
+                  <Alert type="error" showIcon message="Could not load the current balance" action={<Button size="small" onClick={() => summaryQ.refetch()}>Retry</Button>} />
+                ) : (
+                  <>
+                    <div className="flex items-end justify-between gap-4 pb-3 mb-3" style={{ borderBottom: "1px solid rgba(152,117,84,0.18)" }}>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-[#987554] m-0">
+                          {noPaymentRequired ? "No payment required" : balanceSettled ? "Balance settled" : "Amount to collect"}
+                        </p>
+                        <p className="text-2xl font-bold text-[#272727] m-0" style={{ fontFamily: "'Playfair Display', serif" }}>{formatMoney(summaryQ.data?.remaining_amount_due)}</p>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase rounded-full px-2 py-1" style={{ color: "#7a6530", background: "rgba(187,161,79,0.16)" }}>
+                        {noPaymentRequired ? "Complimentary" : String(summaryQ.data?.settlement_status || "unpaid").replaceAll("_", " ")}
+                      </span>
+                    </div>
+                    {[
+                      ["Original services", summaryQ.data?.original_net_total],
+                      ["Add-ons", summaryQ.data?.active_addon_total],
+                      ["Paid online", summaryQ.data?.online_amount_paid],
+                      ["Paid on-site", summaryQ.data?.salon_payments_received],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex justify-between py-1 text-xs">
+                        <span className="text-[#987554]">{label}</span>
+                        <b className="text-[#272727]">{formatMoney(value)}</b>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+
+            {balanceSettled ? (
+              <div className="mb-1">
+                <Alert
+                  type="success"
+                  showIcon
+                  message={noPaymentRequired ? "No payment required" : "Balance already settled"}
+                  description={
+                    noPaymentRequired
+                      ? "This appointment is intentionally free. No cash or electronic transaction should be recorded. Finalize it from the appointment checkout."
+                      : "Nothing remains to collect for this appointment."
+                  }
+                />
+                <div className="flex justify-end mt-4">
+                  <Button onClick={closeModal}>Close</Button>
+                </div>
+              </div>
+            ) : summaryQ.data ? (
+              <>
             <Form.Item
               name="payment_method"
               label="Payment Method"
@@ -626,10 +775,59 @@ export default function TransactionsPage() {
 
             <Form.Item
               name="external_reference"
-              label="Reference number"
+              label="Provider or terminal reference"
+              rules={[
+                {
+                  validator: (_, value) =>
+                    !REFERENCE_METHODS.has(selectedPaymentMethod) || value?.trim()
+                      ? Promise.resolve()
+                      : Promise.reject(new Error("Reference is required for this payment method")),
+                },
+              ]}
             >
-              <Input placeholder="Enter reference number" className="rounded-xl!" />
+              <Input
+                placeholder={REFERENCE_METHODS.has(selectedPaymentMethod) ? "Required after provider success" : "Optional"}
+                className="rounded-xl!"
+              />
             </Form.Item>
+
+            {overpaymentAmount > 0 && (
+              <>
+                <Alert
+                  type="warning"
+                  showIcon
+                  className="mb-3"
+                  message={`This is ${formatMoney(overpaymentAmount)} above the current balance.`}
+                />
+                <Form.Item
+                  name="manager_confirmed"
+                  valuePropName="checked"
+                  rules={[{
+                    validator: (_, checked) =>
+                      checked
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("Manager confirmation is required")),
+                  }]}
+                >
+                  <Checkbox>Manager confirmed this intentional overpayment</Checkbox>
+                </Form.Item>
+              </>
+            )}
+
+            <p className="text-[11px] leading-relaxed text-[#987554] -mt-1 mb-4">
+              For split tender, record each payment method separately. Electronic payments should only be recorded after provider success.
+            </p>
+
+            {paymentMutation.isError && pendingOperation && (
+              <Alert
+                type="error"
+                showIcon
+                className="mb-4"
+                message="Payment outcome may be unknown"
+                description="Retry the preserved operation to avoid recording a duplicate payment."
+                action={<Button size="small" onClick={() => paymentMutation.mutate(pendingOperation)}>Retry same payment</Button>}
+              />
+            )}
 
             <div className="flex justify-end gap-3 mt-2">
               <Button
@@ -641,13 +839,18 @@ export default function TransactionsPage() {
               </Button>
               <Button
                 htmlType="submit"
-                loading={paymentMutation.isPending}
+                loading={paymentMutation.isPending || validatingPayment}
+                disabled={validatingPayment}
                 className={`${GOLD_BTN} rounded-xl! h-9! px-6!`}
                 style={{ fontFamily: "'Poppins', sans-serif" }}
               >
-                Save Payment
+                {validatingPayment ? "Verifying Balance" : "Record Payment"}
               </Button>
             </div>
+              </>
+            ) : selectedAppointmentId ? null : (
+              <p className="text-xs text-[#987554] text-center py-2">Select an arrived appointment to load its authoritative balance.</p>
+            )}
           </Form>
         </div>
       </Modal>

@@ -40,6 +40,7 @@ import {
 import _axios from "../src/api/_axios";
 import { fetchBlockedDays } from "../src/api/blockedDays";
 import { createWaitlistEntry } from "../src/api/waitlist";
+import AppointmentCheckoutDrawer from "../Components/AppointmentCheckoutDrawer";
 
 /* ─────────────────────────────────────────────
    CONSTANTS & HELPERS
@@ -2597,6 +2598,8 @@ function DetailRow({ icon, label, value }) {
   );
 }
 
+export { BookingStatusDrawer as LegacyBookingStatusDrawer };
+
 /* ─────────────────────────────────────────────
    APPOINTMENTS CARD VIEW
 ───────────────────────────────────────────── */
@@ -4558,7 +4561,7 @@ export default function CalendarPage() {
       )}
 
       {statusDrawerBooking && (
-        <BookingStatusDrawer
+        <AppointmentCheckoutDrawer
           key={statusDrawerBooking.id}
           booking={statusDrawerBooking}
           staff={visibleStaff.find((s) => s.id === statusDrawerBooking.staffId)}
@@ -4566,7 +4569,6 @@ export default function CalendarPage() {
           allStaff={visibleStaff}
           onClose={() => setStatusDrawerBooking(null)}
           onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
-          statusLoading={updateStatus.isPending}
           onReschedule={(id, date, time, staffId, reason) => rescheduleFromModal.mutate({ id, date, time, staffId, reason })}
           rescheduleLoading={rescheduleFromModal.isPending}
           onCancel={(id) => cancelAppointment.mutate(id)}
