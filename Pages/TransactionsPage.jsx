@@ -99,8 +99,8 @@ function getTransactionAmount(item) {
   );
 }
 
-function getTransactionType(item) {
-  return String(item?.transaction_type || item?.payment_method || item?.channel || item?.method || "—")
+function getTransactionPaymentMethod(item) {
+  return String(item?.payment_method || item?.channel || item?.method || item?.transaction_type || "—")
     .replaceAll("_", " ")
     .replace(/\b\w/g, (m) => m.toUpperCase());
 }
@@ -207,10 +207,10 @@ function TransactionCard({ item }) {
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#987554", fontFamily: "'Poppins', sans-serif" }}>
-              Type
+              Payment Method
             </p>
             <p className="text-sm" style={{ color: "#272727", fontFamily: "'Poppins', sans-serif", margin: 0 }}>
-              {getTransactionType(item)}
+              {getTransactionPaymentMethod(item)}
             </p>
           </div>
         </div>
@@ -297,7 +297,6 @@ export default function TransactionsPage() {
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
       queryClient.invalidateQueries({ queryKey: ["transaction-entry-summary", selectedAppointmentId] });
       const balance = Number(payment?.appointment_remaining_balance_amount ?? 0);
-      messageApi.success(`${formatMoney(payment?.amount)} recorded.`);
       if (balance > 0) {
         form.setFieldsValue({
           amount: balance,
@@ -511,7 +510,7 @@ export default function TransactionsPage() {
                   borderBottom: "1px solid rgba(187,161,79,0.2)",
                 }}
               >
-                {["Payment Status", "Customer", "Amount", "Transaction Type", "Payment Ref", "Created"].map((col) => (
+                {["Payment Status", "Customer", "Amount", "Payment Method", "Payment Ref", "Created"].map((col) => (
                   <th
                     key={col}
                     className="px-4 py-3 text-left text-[11px] uppercase tracking-wider"
@@ -576,7 +575,7 @@ export default function TransactionsPage() {
                         {formatMoney(getTransactionAmount(item))}
                       </td>
                       <td className="px-4 py-3 text-xs text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                        {getTransactionType(item)}
+                        {getTransactionPaymentMethod(item)}
                       </td>
                       <td className="px-4 py-3 text-xs text-[#987554] whitespace-nowrap" style={{ fontFamily: "'Poppins', sans-serif" }}>
                         {getTransactionPaymentRef(item)}

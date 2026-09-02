@@ -62,30 +62,17 @@ export async function fetchBlockedDays() {
  * @returns {{ id, start_date, end_date, reason }}
  */
 export async function blockPeriod(start_date, end_date, reason = "") {
-  try {
-    const res  = await _axios.post(ENDPOINT, { start_date, end_date, reason });
-    const item = {
-      id:         res.data.id,
-      start_date: res.data.start_date,
-      end_date:   res.data.end_date,
-      reason:     res.data.reason || reason,
-    };
-    const list = lsRead();
-    list.push(item);
-    lsWrite(list);
-    return item;
-  } catch {
-    const item = {
-      id:         `local_${start_date}_${end_date}_${Date.now()}`,
-      start_date,
-      end_date,
-      reason,
-    };
-    const list = lsRead();
-    list.push(item);
-    lsWrite(list);
-    return item;
-  }
+  const res  = await _axios.post(ENDPOINT, { start_date, end_date, reason });
+  const item = {
+    id:         res.data.id,
+    start_date: res.data.start_date,
+    end_date:   res.data.end_date,
+    reason:     res.data.reason || reason,
+  };
+  const list = lsRead();
+  list.push(item);
+  lsWrite(list);
+  return item;
 }
 
 /**
@@ -97,21 +84,15 @@ export async function blockPeriod(start_date, end_date, reason = "") {
  * @returns {{ id, start_date, end_date, reason }}
  */
 export async function updatePeriod(id, start_date, end_date, reason = "") {
-  try {
-    const res  = await _axios.patch(`${ENDPOINT}${id}/`, { start_date, end_date, reason });
-    const item = {
-      id:         res.data.id ?? id,
-      start_date: res.data.start_date,
-      end_date:   res.data.end_date,
-      reason:     res.data.reason || reason,
-    };
-    lsWrite(lsRead().map((p) => (p.id === id ? item : p)));
-    return item;
-  } catch {
-    const item = { id, start_date, end_date, reason };
-    lsWrite(lsRead().map((p) => (p.id === id ? item : p)));
-    return item;
-  }
+  const res  = await _axios.patch(`${ENDPOINT}${id}/`, { start_date, end_date, reason });
+  const item = {
+    id:         res.data.id ?? id,
+    start_date: res.data.start_date,
+    end_date:   res.data.end_date,
+    reason:     res.data.reason || reason,
+  };
+  lsWrite(lsRead().map((p) => (p.id === id ? item : p)));
+  return item;
 }
 
 /**
@@ -119,14 +100,10 @@ export async function updatePeriod(id, start_date, end_date, reason = "") {
  * @param {string|number} id
  */
 export async function unblockPeriod(id) {
-  lsWrite(lsRead().filter((p) => p.id !== id));
   if (id && !String(id).startsWith("local_")) {
-    try {
-      await _axios.delete(`${ENDPOINT}${id}/`);
-    } catch {
-      // Silently ignore if backend isn't available
-    }
+    await _axios.delete(`${ENDPOINT}${id}/`);
   }
+  lsWrite(lsRead().filter((p) => p.id !== id));
 }
 
 /**

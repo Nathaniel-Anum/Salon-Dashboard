@@ -19,6 +19,7 @@ import {
   getAnalyticsPayments,
 } from "../src/api/analytics";
 import _axios from "../src/api/_axios";
+import PortalSelect from "../Components/PortalSelect";
 
 /* ─── helpers ─── */
 const fmt = (val, prefix = "GH₵") => {
@@ -439,7 +440,7 @@ export default function AnalyticsPage() {
           >
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium" style={{ color: "#987554" }}>Source</label>
-              <select
+              <PortalSelect
                 value={sourceFilter}
                 onChange={(e) => setSourceFilter(e.target.value)}
                 className="text-xs px-3 py-2 rounded-xl outline-none"
@@ -456,7 +457,7 @@ export default function AnalyticsPage() {
                 <option value="public">Public</option>
                 <option value="webhook">Webhook</option>
                 <option value="system">System</option>
-              </select>
+              </PortalSelect>
             </div>
           </div>
         </div>

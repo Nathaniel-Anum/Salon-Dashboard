@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { Spin, message } from "antd";
@@ -30,7 +30,14 @@ import {
   updateCheckoutStatus,
   voidAppointmentAddon,
 } from "../src/api/appointmentCheckout";
+import {
+  firstApiErrorMessage,
+  getApiError,
+  isIntegrationError,
+  normalizePortalIssues,
+} from "../src/api/apiErrors";
 import "./AppointmentCheckoutDrawer.css";
+import PortalSelect from "./PortalSelect";
 
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
@@ -46,12 +53,16 @@ const REFERENCE_METHODS = new Set([
   "bank_transfer",
 ]);
 
-const emptyAddonForm = () => ({
+const MAX_ADDONS = 20;
+
+const emptyAddonLine = () => ({
+  clientId: makeKey(),
   serviceId: "",
   optionId: "",
-  quantity: 1,
   staffId: "",
   performedAt: dayjs().format("YYYY-MM-DDTHH:mm"),
+  idempotencyKey: makeKey(),
+  sentFingerprint: null,
 });
 
 function makeKey() {
@@ -61,6 +72,7 @@ function makeKey() {
 
 function normalizeList(raw) {
   if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.addons)) return raw.addons;
   if (Array.isArray(raw?.results)) return raw.results;
   if (Array.isArray(raw?.data)) return raw.data;
   return [];
@@ -100,12 +112,42 @@ function readable(value) {
 }
 
 function firstError(error, fallback) {
-  const data = error?.response?.data;
-  if (!data) return error?.message || fallback;
-  if (typeof data === "string") return data;
-  if (data.detail) return data.detail;
-  const first = Object.values(data).flat?.()?.[0] ?? Object.values(data)[0];
-  return typeof first === "string" ? first : fallback;
+  return firstApiErrorMessage(error, fallback);
+}
+
+function requiresServiceOption(service = {}) {
+  return [service.price_type, service.pricing_type, service.price_mode]
+    .some((value) => String(value || "").toLowerCase() === "from") ||
+    service.is_from_price === true;
+}
+
+function lineFingerprint(line) {
+  return JSON.stringify({
+    serviceId: line.serviceId,
+    optionId: line.optionId,
+    staffId: line.staffId,
+    performedAt: line.performedAt,
+  });
+}
+
+function clientIssue(addonIndex, field, message) {
+  return {
+    scope: "addon",
+    addonIndex,
+    field,
+    message,
+    code: "client_validation",
+    action: "correct",
+  };
+}
+
+function retryAfterMilliseconds(error) {
+  const raw = error?.response?.headers?.["retry-after"];
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const retryAt = Date.parse(raw);
+  return Number.isFinite(retryAt) ? Math.max(0, retryAt - Date.now()) : 0;
 }
 
 function serviceOptions(service = {}) {
@@ -213,9 +255,15 @@ export default function AppointmentCheckoutDrawer({
 }) {
   const bookingId = booking?.id;
   const queryClient = useQueryClient();
+  const addonPanelRef = useRef(null);
+  const addonSummaryRef = useRef(null);
   const [statusOverride, setStatusOverride] = useState(null);
   const [showAddonForm, setShowAddonForm] = useState(false);
-  const [addonForm, setAddonForm] = useState(emptyAddonForm);
+  const [addonLines, setAddonLines] = useState(() => [emptyAddonLine()]);
+  const [addonIssues, setAddonIssues] = useState([]);
+  const [addonErrorMeta, setAddonErrorMeta] = useState(null);
+  const [addonRetryAt, setAddonRetryAt] = useState(0);
+  const [addonOutcomeAmbiguous, setAddonOutcomeAmbiguous] = useState(false);
   const [pendingAddon, setPendingAddon] = useState(null);
   const [voidTarget, setVoidTarget] = useState(null);
   const [voidReason, setVoidReason] = useState("");
@@ -290,23 +338,53 @@ export default function AppointmentCheckoutDrawer({
     () => allServices.filter((service) => service?.is_active !== false),
     [allServices],
   );
-  const selectedService = useMemo(
-    () => catalog.find((service) => String(service.id) === String(addonForm.serviceId)),
-    [catalog, addonForm.serviceId],
-  );
-  const options = useMemo(() => serviceOptions(selectedService), [selectedService]);
-  const selectedOption = options.find((option) => String(option.id) === String(addonForm.optionId));
-  const eligibleStaff = useMemo(() => {
-    const ids = assignedStaffIds(selectedService);
-    if (!ids.length) return allStaff;
-    return allStaff.filter((person) => ids.some((id) => staffMatches(person, id)));
-  }, [selectedService, allStaff]);
-  const previewPrice =
-    selectedOption?.price ?? selectedOption?.amount ?? selectedService?.price ??
-    selectedService?.amount ?? 0;
-  const requiresOption = selectedService?.price_type === "from";
+  const eligibleStaffFor = (service) => {
+    const ids = assignedStaffIds(service);
+    const activeStaff = allStaff.filter((person) =>
+      person?.is_active !== false &&
+      person?.active !== false &&
+      !["inactive", "disabled"].includes(String(person?.status || "").toLowerCase()),
+    );
+    if (!ids.length) return activeStaff;
+    return activeStaff.filter((person) => ids.some((id) => staffMatches(person, id)));
+  };
   const canAdd = localStatus === "arrived" && !finalized;
   const isLoading = appointmentQ.isLoading || summaryQ.isLoading || addonsQ.isLoading;
+
+  const addonFieldIssue = (index, field) => addonIssues.find(
+    (issue) => issue.field === field && (
+      (issue.scope === "addon" && issue.addonIndex === index) || issue.scope === "batch"
+    ),
+  );
+  const addonRowIssues = (index) => addonIssues.filter(
+    (issue) => (issue.scope === "addon" && issue.addonIndex === index) ||
+      (issue.scope === "batch" && Boolean(issue.field)),
+  );
+  const appointmentAddonIssue = addonIssues.find((issue) => issue.scope === "appointment");
+  const addonSubmissionBlocked = Boolean(appointmentAddonIssue) || addonIssues.some(
+    (issue) => issue.action === "sign_in" || issue.action === "contact_manager",
+  ) || [405, 415].includes(addonErrorMeta?.status);
+
+  useEffect(() => {
+    if (!addonIssues.length || !showAddonForm) return;
+    const first = addonIssues[0];
+    const targetIndex = first.scope === "addon" ? first.addonIndex : first.field ? 0 : undefined;
+    const control = targetIndex !== undefined
+      ? addonPanelRef.current?.querySelector(
+          `[data-addon-index="${targetIndex}"] [data-addon-field="${first.field}"] .portal-select input, ` +
+          `[data-addon-index="${targetIndex}"] [data-addon-field="${first.field}"] select, ` +
+          `[data-addon-index="${targetIndex}"] [data-addon-field="${first.field}"] input`,
+        )
+      : null;
+    requestAnimationFrame(() => (control ?? addonSummaryRef.current)?.focus());
+  }, [addonIssues, showAddonForm]);
+
+  useEffect(() => {
+    if (!addonRetryAt) return undefined;
+    const wait = Math.max(0, addonRetryAt - Date.now());
+    const timer = setTimeout(() => setAddonRetryAt(0), wait);
+    return () => clearTimeout(timer);
+  }, [addonRetryAt]);
 
   const refreshCheckout = async () => {
     await Promise.all([
@@ -318,11 +396,20 @@ export default function AppointmentCheckoutDrawer({
     ]);
   };
 
+  const reconcileAddonOutcome = async () => {
+    await refreshCheckout();
+    setAddonOutcomeAmbiguous(false);
+    setPendingAddon(null);
+    setAddonIssues([]);
+    setAddonErrorMeta(null);
+    setAddonRetryAt(0);
+    message.info("Appointment services and balance refreshed. Review the preserved draft before saving again.");
+  };
+
   const checkInMutation = useMutation({
     mutationFn: () => updateCheckoutStatus(bookingId, "arrived"),
     onSuccess: async () => {
       setStatusOverride("arrived");
-      message.success("Customer checked in. Services can now be added.");
       await refreshCheckout();
     },
     onError: (error) => message.error(firstError(error, "Could not check in this customer.")),
@@ -330,15 +417,63 @@ export default function AppointmentCheckoutDrawer({
 
   const addonMutation = useMutation({
     mutationFn: (operation) => createAppointmentAddon(bookingId, operation.payload),
-    onSuccess: async (addon) => {
+    onSuccess: async (result) => {
+      const savedAddons = normalizeList(result?.addons);
+      const savedSummary = result?.financial_summary;
+      if (savedAddons.length || Array.isArray(result?.addons)) {
+        queryClient.setQueryData(["appointment-addons", bookingId], savedAddons);
+      }
+      if (savedSummary) {
+        queryClient.setQueryData(["appointment-financial-summary", bookingId], savedSummary);
+      }
       setPendingAddon(null);
-      setAddonForm(emptyAddonForm());
+      setAddonLines([emptyAddonLine()]);
+      setAddonIssues([]);
+      setAddonErrorMeta(null);
+      setAddonRetryAt(0);
+      setAddonOutcomeAmbiguous(false);
       setShowAddonForm(false);
-      message.success(`${serviceLineName(addon)} added at ${money(addon.gross_total, addon.currency)}.`);
-      await refreshCheckout();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["appointments"] }),
+        queryClient.invalidateQueries({ queryKey: ["appointment-transactions"] }),
+      ]);
     },
-    onError: (error) => message.error(firstError(error, "Could not add the service. Retry the same operation.")),
+    onError: async (error, operation) => {
+      const meta = getApiError(error);
+      const issues = normalizePortalIssues(error, {
+        addonCount: operation?.payload?.addons?.length ?? addonLines.length,
+      });
+      const ambiguous = meta.isNetworkError || (meta.status !== null && meta.status >= 500);
+      setAddonIssues(issues);
+      setAddonErrorMeta(meta);
+      setAddonRetryAt(meta.status === 429 ? Date.now() + retryAfterMilliseconds(error) : 0);
+      setAddonOutcomeAmbiguous(ambiguous);
+
+      if (isIntegrationError(error)) {
+        console.error("Add-on integration error", {
+          status: meta.status,
+          code: meta.code,
+          endpoint: `/api/portal/v1/booking/appointments/${bookingId}/addons/`,
+          requestId: meta.requestId,
+        });
+      }
+
+      if (meta.status === 404) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["services"] }),
+          queryClient.invalidateQueries({ queryKey: ["staff"] }),
+          refreshCheckout(),
+        ]);
+      }
+
+      if (issues.some((issue) => issue.field === "idempotency_key")) {
+        await refreshCheckout();
+      }
+
+      message.error(issues[0]?.message || "The selected services could not be saved.");
+    },
   });
+  const addonFormLocked = addonMutation.isPending || addonOutcomeAmbiguous;
 
   const voidMutation = useMutation({
     mutationFn: (operation) =>
@@ -347,7 +482,6 @@ export default function AppointmentCheckoutDrawer({
       setPendingVoid(null);
       setVoidTarget(null);
       setVoidReason("");
-      message.success("Add-on voided. The balance has been refreshed.");
       await refreshCheckout();
     },
     onError: (error) => message.error(firstError(error, "Could not void the add-on.")),
@@ -358,7 +492,6 @@ export default function AppointmentCheckoutDrawer({
     onSuccess: async (payment) => {
       setPendingPayment(null);
       const nextBalance = amount(payment.appointment_remaining_balance_amount);
-      message.success(`${money(payment.amount, payment.currency)} recorded.`);
       await refreshCheckout();
       if (nextBalance > 0) {
         setPaymentForm({ amount: nextBalance.toFixed(2), method: "cash", reference: "", managerConfirmed: false });
@@ -396,7 +529,6 @@ export default function AppointmentCheckoutDrawer({
     onSuccess: async () => {
       setPendingFinalizeKey(null);
       setStatusOverride("completed");
-      message.success("Settlement finalized and appointment completed.");
       await refreshCheckout();
       receiptsQ.refetch();
     },
@@ -418,21 +550,117 @@ export default function AppointmentCheckoutDrawer({
     });
   }
 
+  function updateAddonLine(index, changes) {
+    setAddonLines((current) => current.map((line, lineIndex) => {
+      if (lineIndex !== index) return line;
+      const next = { ...line, ...changes };
+      if (line.sentFingerprint && lineFingerprint(next) !== line.sentFingerprint) {
+        next.idempotencyKey = makeKey();
+        next.sentFingerprint = null;
+      }
+      return next;
+    }));
+    setAddonIssues((current) => current.filter((issue) => {
+      if (issue.scope !== "addon" || issue.addonIndex !== index) return true;
+      return !Object.keys(changes).some((key) => ({
+        serviceId: "service_id",
+        optionId: "service_option_id",
+        staffId: "staff_member_id",
+        performedAt: "performed_at",
+      })[key] === issue.field);
+    }));
+    setAddonOutcomeAmbiguous(false);
+    setAddonErrorMeta(null);
+    setAddonRetryAt(0);
+    setPendingAddon(null);
+  }
+
+  function addAddonLine() {
+    if (addonLines.length >= MAX_ADDONS) return;
+    setAddonLines((current) => [...current, emptyAddonLine()]);
+    setAddonIssues([]);
+    setAddonErrorMeta(null);
+    setAddonRetryAt(0);
+  }
+
+  function removeAddonLine(index) {
+    if (addonLines.length === 1) return;
+    setAddonLines((current) => current.filter((_, lineIndex) => lineIndex !== index));
+    setAddonIssues([]);
+    setAddonErrorMeta(null);
+    setAddonRetryAt(0);
+    setAddonOutcomeAmbiguous(false);
+    setPendingAddon(null);
+  }
+
   function submitAddon() {
-    if (!selectedService) return message.error("Choose a service.");
-    if (requiresOption && !selectedOption) return message.error("Choose a service option.");
-    if (Number(addonForm.quantity) < 1) return message.error("Quantity must be at least one.");
-    const payload = {
-      service_id: Number(selectedService.id),
-      quantity: Number(addonForm.quantity),
-      idempotency_key: makeKey(),
-    };
-    if (selectedOption) payload.service_option_id = Number(selectedOption.id);
-    if (addonForm.staffId) payload.staff_member_id = Number(addonForm.staffId);
-    if (addonForm.performedAt && dayjs(addonForm.performedAt).isValid()) {
-      payload.performed_at = dayjs(addonForm.performedAt).toISOString();
+    const clientIssues = [];
+    if (!addonLines.length || addonLines.length > MAX_ADDONS) {
+      clientIssues.push({
+        scope: "batch",
+        message: `Select between 1 and ${MAX_ADDONS} services.`,
+        code: "client_validation",
+        action: "correct",
+      });
     }
+
+    addonLines.forEach((line, index) => {
+      const service = catalog.find((item) => String(item.id) === String(line.serviceId));
+      const options = serviceOptions(service);
+      const option = options.find((item) => String(item.id) === String(line.optionId));
+      const eligibleStaff = eligibleStaffFor(service);
+      const staffIsEligible = !line.staffId || eligibleStaff.some((person) => staffMatches(person, line.staffId));
+
+      if (!service) clientIssues.push(clientIssue(index, "service_id", "Choose an active service."));
+      if (service && (!Number.isInteger(Number(service.id)) || Number(service.id) <= 0)) {
+        clientIssues.push(clientIssue(index, "service_id", "Choose a valid service."));
+      }
+      if (service && requiresServiceOption(service) && !option) {
+        clientIssues.push(clientIssue(index, "service_option_id", "Choose a service option."));
+      }
+      if (line.optionId && !option) {
+        clientIssues.push(clientIssue(index, "service_option_id", "Choose an available option for this service."));
+      }
+      if (option && (!Number.isInteger(Number(option.id)) || Number(option.id) <= 0)) {
+        clientIssues.push(clientIssue(index, "service_option_id", "Choose a valid service option."));
+      }
+      if (!staffIsEligible) {
+        clientIssues.push(clientIssue(index, "staff_member_id", "Choose an eligible team member or leave this unassigned."));
+      }
+      if (line.staffId && (!Number.isInteger(Number(line.staffId)) || Number(line.staffId) <= 0)) {
+        clientIssues.push(clientIssue(index, "staff_member_id", "Choose a valid team member or leave this unassigned."));
+      }
+      if (line.performedAt && !dayjs(line.performedAt).isValid()) {
+        clientIssues.push(clientIssue(index, "performed_at", "Enter a valid performance time."));
+      }
+    });
+
+    if (clientIssues.length) {
+      setAddonIssues(clientIssues);
+      return;
+    }
+
+    const payload = {
+      addons: addonLines.map((line) => {
+        const addon = {
+          service_id: Number(line.serviceId),
+          idempotency_key: line.idempotencyKey,
+        };
+        if (line.optionId) addon.service_option_id = Number(line.optionId);
+        if (line.staffId) addon.staff_member_id = Number(line.staffId);
+        if (line.performedAt) addon.performed_at = dayjs(line.performedAt).toISOString();
+        return addon;
+      }),
+    };
     const operation = { payload };
+    setAddonLines((current) => current.map((line) => ({
+      ...line,
+      sentFingerprint: lineFingerprint(line),
+    })));
+    setAddonIssues([]);
+    setAddonErrorMeta(null);
+    setAddonRetryAt(0);
+    setAddonOutcomeAmbiguous(false);
     setPendingAddon(operation);
     addonMutation.mutate(operation);
   }
@@ -555,7 +783,7 @@ export default function AppointmentCheckoutDrawer({
                   {activeAddons.map((addon) => (
                     <div className="checkout-service-line addon" key={addon.public_id ?? addon.id}>
                       <div className="checkout-line-icon"><FiPlus /></div>
-                      <div className="checkout-line-copy"><b>{serviceLineName(addon)}{amount(addon.quantity) > 1 ? ` × ${addon.quantity}` : ""}</b><span>Add-on · {addon.performed_at ? dayjs(addon.performed_at).format("h:mm A") : "Recorded today"}</span></div>
+                      <div className="checkout-line-copy"><b>{serviceLineName(addon)}</b><span>Add-on · {addon.performed_at ? dayjs(addon.performed_at).format("h:mm A") : "Recorded today"}</span></div>
                       <strong>{lineAmount(addon.gross_total, addon.currency || currency)}</strong>
                       {canAdd && <button className="checkout-void-button" onClick={() => { setVoidTarget(addon); setVoidReason(""); }} aria-label={`Void ${serviceLineName(addon)}`}>Void</button>}
                     </div>
@@ -563,24 +791,104 @@ export default function AppointmentCheckoutDrawer({
                 </div>
 
                 {showAddonForm && canAdd && (
-                  <div className="checkout-form-panel">
-                    <div className="checkout-form-title"><div><span>New add-on</span><h4>Add a service performed today</h4></div><button className="checkout-icon-button" onClick={() => setShowAddonForm(false)}><FiX /></button></div>
-                    <div className="checkout-form-grid">
-                      <label className="span-2">Service<select value={addonForm.serviceId} onChange={(event) => {
-                        const serviceId = event.target.value;
-                        const service = catalog.find((item) => String(item.id) === String(serviceId));
-                        const staff = assignedStaffIds(service);
-                        const defaultStaff = allStaff.find((person) => staff.some((id) => staffMatches(person, id))) ?? (staff.length ? null : allStaff[0]);
-                        setAddonForm((current) => ({ ...current, serviceId, optionId: "", staffId: defaultStaff?.id ?? "" }));
-                      }}><option value="">Choose a service…</option>{catalog.map((service) => <option key={service.id} value={service.id}>{service.name || `Service #${service.id}`}</option>)}</select></label>
-                      {options.length > 0 && <label className="span-2">Service option {requiresOption && <em>Required</em>}<select value={addonForm.optionId} onChange={(event) => setAddonForm((current) => ({ ...current, optionId: event.target.value }))}><option value="">{requiresOption ? "Choose an option…" : "Use standard service"}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name} · {money(option.price ?? option.amount, currency)}</option>)}</select></label>}
-                      <label>Quantity<input type="number" min="1" value={addonForm.quantity} onChange={(event) => setAddonForm((current) => ({ ...current, quantity: event.target.value }))} /></label>
-                      <label>Performed by<select value={addonForm.staffId} onChange={(event) => setAddonForm((current) => ({ ...current, staffId: event.target.value }))}><option value="">Not assigned</option>{eligibleStaff.map((person) => <option key={person.id} value={person.id}>{person.full_name || person.name || `Staff #${person.id}`}</option>)}</select></label>
-                      <label className="span-2">Performed at<input type="datetime-local" value={addonForm.performedAt} onChange={(event) => setAddonForm((current) => ({ ...current, performedAt: event.target.value }))} /></label>
+                  <div className="checkout-form-panel" ref={addonPanelRef}>
+                    <div className="checkout-form-title">
+                      <div><span>New add-ons</span><h4>Record services delivered today</h4></div>
+                      <button className="checkout-icon-button" onClick={() => setShowAddonForm(false)} aria-label="Close add-on form"><FiX /></button>
                     </div>
-                    {selectedService && <div className="checkout-price-preview"><span>Catalogue preview</span><b>{money(previewPrice, currency)} × {addonForm.quantity || 1}</b><small>The confirmed server price replaces this preview after saving.</small></div>}
-                    {addonMutation.isError && pendingAddon && <button className="checkout-retry" onClick={() => addonMutation.mutate(pendingAddon)}><FiRefreshCw /> Retry the same add-on</button>}
-                    <button className="checkout-primary" onClick={submitAddon} disabled={addonMutation.isPending}>{addonMutation.isPending ? "Adding service…" : "Add service to appointment"}</button>
+
+                    <p className="checkout-addon-intro">Add up to {MAX_ADDONS} services in one save. Prices and the updated balance are confirmed by the server.</p>
+
+                    {addonIssues.length > 0 && (
+                      <div className="checkout-validation-summary" role="alert" tabIndex={-1} ref={addonSummaryRef}>
+                        <FiAlertCircle />
+                        <div>
+                          <b>Services not saved</b>
+                          <ul>{[...new Set(addonIssues.map((issue) => issue.message))].map((text) => <li key={text}>{text}</li>)}</ul>
+                          {addonOutcomeAmbiguous && <p>Retry the exact request below, or refresh the appointment before making changes.</p>}
+                          {addonErrorMeta?.requestId && <small>Support request: {addonErrorMeta.requestId}</small>}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="checkout-addon-list">
+                      {addonLines.map((line, index) => {
+                        const selectedService = catalog.find((service) => String(service.id) === String(line.serviceId));
+                        const options = serviceOptions(selectedService);
+                        const needsOption = requiresServiceOption(selectedService);
+                        const eligibleStaff = eligibleStaffFor(selectedService);
+                        const rowIssues = addonRowIssues(index);
+                        const serviceIssue = addonFieldIssue(index, "service_id");
+                        const optionIssue = addonFieldIssue(index, "service_option_id");
+                        const staffIssue = addonFieldIssue(index, "staff_member_id");
+                        const performedIssue = addonFieldIssue(index, "performed_at");
+
+                        return (
+                          <fieldset className={`checkout-addon-card ${rowIssues.length ? "has-error" : ""}`} key={line.clientId} data-addon-index={index} disabled={addonFormLocked}>
+                            <legend><span>{String(index + 1).padStart(2, "0")}</span> Service</legend>
+                            {addonLines.length > 1 && (
+                              <button type="button" className="checkout-addon-remove" onClick={() => removeAddonLine(index)} disabled={addonFormLocked} aria-label={`Remove service ${index + 1}`}><FiX /></button>
+                            )}
+                            <div className="checkout-form-grid">
+                              <label className={`span-2 ${serviceIssue ? "has-error" : ""}`} data-addon-field="service_id">
+                                Service <em>Required</em>
+                                <PortalSelect value={line.serviceId} disabled={addonFormLocked} aria-invalid={Boolean(serviceIssue)} onChange={(event) => {
+                                  const serviceId = event.target.value;
+                                  const service = catalog.find((item) => String(item.id) === String(serviceId));
+                                  const allowedStaff = eligibleStaffFor(service);
+                                  const keepStaff = line.staffId && allowedStaff.some((person) => staffMatches(person, line.staffId));
+                                  updateAddonLine(index, { serviceId, optionId: "", staffId: keepStaff ? line.staffId : "" });
+                                }}><option value="">Choose a service…</option>{catalog.map((service) => <option key={service.id} value={service.id}>{service.name || `Service #${service.id}`}</option>)}</PortalSelect>
+                                {serviceIssue && <small className="checkout-field-error">{serviceIssue.message}</small>}
+                              </label>
+
+                              {(selectedService && (options.length > 0 || needsOption)) && (
+                                <label className={`span-2 ${optionIssue ? "has-error" : ""}`} data-addon-field="service_option_id">
+                                  Service option {needsOption && <em>Required</em>}
+                                  <PortalSelect value={line.optionId} disabled={addonFormLocked} aria-invalid={Boolean(optionIssue)} onChange={(event) => updateAddonLine(index, { optionId: event.target.value })}>
+                                    <option value="">{needsOption ? "Choose an option…" : "Use standard service"}</option>
+                                    {options.map((option) => <option key={option.id} value={option.id}>{option.name || `Option #${option.id}`}</option>)}
+                                  </PortalSelect>
+                                  {optionIssue && <small className="checkout-field-error">{optionIssue.message}</small>}
+                                </label>
+                              )}
+
+                              <label className={staffIssue ? "has-error" : ""} data-addon-field="staff_member_id">
+                                Performed by <span className="checkout-optional">Optional</span>
+                                <PortalSelect value={line.staffId} disabled={addonFormLocked} aria-invalid={Boolean(staffIssue)} onChange={(event) => updateAddonLine(index, { staffId: event.target.value })}>
+                                  <option value="">Not assigned</option>
+                                  {eligibleStaff.map((person) => <option key={person.id} value={person.id}>{person.full_name || person.name || `Staff #${person.id}`}</option>)}
+                                </PortalSelect>
+                                {staffIssue && <small className="checkout-field-error">{staffIssue.message}</small>}
+                              </label>
+
+                              <label className={performedIssue ? "has-error" : ""} data-addon-field="performed_at">
+                                Performed at <span className="checkout-optional">Optional</span>
+                                <input type="datetime-local" value={line.performedAt} aria-invalid={Boolean(performedIssue)} onChange={(event) => updateAddonLine(index, { performedAt: event.target.value })} />
+                                {performedIssue && <small className="checkout-field-error">{performedIssue.message}</small>}
+                              </label>
+                            </div>
+                            {rowIssues.some((issue) => !issue.field) && <p className="checkout-row-error">{rowIssues.find((issue) => !issue.field)?.message}</p>}
+                          </fieldset>
+                        );
+                      })}
+                    </div>
+
+                    <div className="checkout-addon-actions">
+                      <button type="button" className="checkout-text-button" onClick={addAddonLine} disabled={addonFormLocked || addonLines.length >= MAX_ADDONS}><FiPlus /> Add another service</button>
+                      <span>{addonLines.length} / {MAX_ADDONS}</span>
+                    </div>
+
+                    {addonMutation.isError && pendingAddon && (
+                      <button className="checkout-retry" onClick={() => addonMutation.mutate(pendingAddon)} disabled={addonMutation.isPending || addonRetryAt > Date.now() || addonSubmissionBlocked}>
+                        <FiRefreshCw /> {addonRetryAt > Date.now() ? "Retry when the wait period ends" : `Retry the exact ${pendingAddon.payload.addons.length === 1 ? "service" : `${pendingAddon.payload.addons.length} services`}`}
+                      </button>
+                    )}
+                    {addonOutcomeAmbiguous && <button className="checkout-retry" onClick={reconcileAddonOutcome}><FiRefreshCw /> Refresh and reconcile appointment</button>}
+                    {appointmentAddonIssue && !addonOutcomeAmbiguous && <button className="checkout-retry" onClick={reconcileAddonOutcome}><FiRefreshCw /> Refresh appointment</button>}
+                    <button className="checkout-primary" onClick={submitAddon} disabled={addonFormLocked || addonSubmissionBlocked}>
+                      {addonMutation.isPending ? "Adding services…" : `Add ${addonLines.length} ${addonLines.length === 1 ? "service" : "services"}`}
+                    </button>
                   </div>
                 )}
 
@@ -595,7 +903,7 @@ export default function AppointmentCheckoutDrawer({
                   <div className="checkout-form-grid">
                     <label>Date<input type="date" value={rescheduleForm.date} onChange={(event) => setRescheduleForm((current) => ({ ...current, date: event.target.value }))} /></label>
                     <label>Time<input type="time" value={rescheduleForm.time} onChange={(event) => setRescheduleForm((current) => ({ ...current, time: event.target.value }))} /></label>
-                    <label className="span-2">Team member<select value={rescheduleForm.staffId} onChange={(event) => setRescheduleForm((current) => ({ ...current, staffId: event.target.value }))}><option value="">Choose staff…</option>{allStaff.map((person) => <option key={person.id} value={person.id}>{person.full_name || person.name}</option>)}</select></label>
+                    <label className="span-2">Team member<PortalSelect value={rescheduleForm.staffId} onChange={(event) => setRescheduleForm((current) => ({ ...current, staffId: event.target.value }))}><option value="">Choose staff…</option>{allStaff.map((person) => <option key={person.id} value={person.id}>{person.full_name || person.name}</option>)}</PortalSelect></label>
                     <label className="span-2">Reason<input value={rescheduleForm.reason} onChange={(event) => setRescheduleForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Optional note" /></label>
                   </div>
                   <div className="checkout-secondary-buttons">
@@ -629,7 +937,7 @@ export default function AppointmentCheckoutDrawer({
                 <div className="checkout-payment-form">
                   <div className="checkout-form-title"><div><span>New tender</span><h4>Record payment</h4></div><button className="checkout-icon-button" onClick={() => setShowPayment(false)}><FiX /></button></div>
                   <label>Amount ({currency})<input inputMode="decimal" value={paymentForm.amount} onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value, managerConfirmed: false }))} /></label>
-                  <label>Payment method<select value={paymentForm.method} onChange={(event) => setPaymentForm((current) => ({ ...current, method: event.target.value, reference: "" }))}>{PAYMENT_METHODS.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}</select></label>
+                  <label>Payment method<PortalSelect value={paymentForm.method} onChange={(event) => setPaymentForm((current) => ({ ...current, method: event.target.value, reference: "" }))}>{PAYMENT_METHODS.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}</PortalSelect></label>
                   {REFERENCE_METHODS.has(paymentForm.method) && <label>Provider reference<input value={paymentForm.reference} onChange={(event) => setPaymentForm((current) => ({ ...current, reference: event.target.value }))} placeholder="Required after provider success" /></label>}
                   {paymentOverage > 0 && <label className="checkout-confirm"><input type="checkbox" checked={paymentForm.managerConfirmed} onChange={(event) => setPaymentForm((current) => ({ ...current, managerConfirmed: event.target.checked }))} /><span><b>Manager confirmed overpayment</b><small>This records {money(paymentOverage, currency)} more than the current balance.</small></span></label>}
                   <p className="checkout-payment-note">Electronic payments should only be recorded after the terminal or provider confirms success.</p>

@@ -213,17 +213,11 @@ export default function BlockedDaysPage() {
           prev.map((p) => p.id === item.id ? item : p)
               .sort((a, b) => a.start_date.localeCompare(b.start_date))
         );
-        message.success("Blocked period updated");
       } else {
         item = await blockPeriod(rangeStart, end, finalReason);
         setBlockedPeriods((prev) =>
           [...prev, item].sort((a, b) => a.start_date.localeCompare(b.start_date))
         );
-        const label =
-          rangeStart === end
-            ? dayjs(rangeStart).format("D MMM YYYY")
-            : `${dayjs(rangeStart).format("D MMM")} – ${dayjs(end).format("D MMM YYYY")}`;
-        message.success(`${label} blocked`);
       }
       queryClient.invalidateQueries({ queryKey: ["blocked-days"] });
       clearSelection();
@@ -243,11 +237,6 @@ export default function BlockedDaysPage() {
       await unblockPeriod(periodId);
       setBlockedPeriods((prev) => prev.filter((p) => p.id !== periodId));
       queryClient.invalidateQueries({ queryKey: ["blocked-days"] });
-      const label =
-        period.start_date === period.end_date
-          ? dayjs(period.start_date).format("D MMM YYYY")
-          : `${dayjs(period.start_date).format("D MMM")} – ${dayjs(period.end_date).format("D MMM YYYY")}`;
-      message.success(`${label} unblocked`);
       if (selectedPeriodId === periodId) clearSelection();
     } catch {
       message.error("Failed to unblock period");

@@ -29,6 +29,7 @@ import {
   Tooltip,
 } from "antd";
 import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
 import {
   FiClock,
   FiUser,
@@ -54,6 +55,8 @@ import {
   cancelWaitlistEntry,
 } from "../src/api/waitlist";
 import _axios from "../src/api/_axios";
+
+dayjs.extend(relativeTime);
 
 /* ─────────────────────────────────────────────
    DESIGN TOKENS
@@ -636,7 +639,6 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
   const createMutation = useMutation({
     mutationFn: createWaitlistEntry,
     onSuccess: () => {
-      message.success("Waitlist entry created");
       form.resetFields();
       setSelectedClient(null);
       onSuccess();
@@ -954,7 +956,6 @@ export default function WaitlistPage() {
     mutationFn: (id) => cancelWaitlistEntry(id),
     onMutate: (id) => setCancelling(id),
     onSuccess: (_, id) => {
-      message.success("Waitlist entry cancelled");
       setCancelling(null);
       setViewEntryId(null);
       queryClient.invalidateQueries({ queryKey: ["waitlist"] });

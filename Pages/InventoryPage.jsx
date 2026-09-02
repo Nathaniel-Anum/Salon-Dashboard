@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import PortalSelect from "../Components/PortalSelect";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Modal,
@@ -305,7 +306,6 @@ export default function InventoryPage() {
         : createInventory(values),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-inventory"] });
-      messageApi.success(editTarget ? "Inventory updated!" : "Inventory record created!");
       closeModal();
     },
     onError: () => messageApi.error("Something went wrong. Please try again."),
@@ -315,7 +315,6 @@ export default function InventoryPage() {
     mutationFn: deleteInventory,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-inventory"] });
-      messageApi.success("Inventory record deleted.");
     },
     onError: () => messageApi.error("Could not delete record."),
   });
@@ -581,7 +580,7 @@ export default function InventoryPage() {
           )}
         </div>
 
-        <select
+        <PortalSelect
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value)}
           style={{
@@ -597,7 +596,7 @@ export default function InventoryPage() {
         >
           <option value="desc">Newest first</option>
           <option value="asc">Oldest first</option>
-        </select>
+        </PortalSelect>
       </div>
 
       {/* ── Table ── */}

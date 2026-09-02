@@ -777,7 +777,6 @@ export default function SchedulePage() {
   const createSchedule = useMutation({
     mutationFn: (data) => _axios.post("/api/portal/v1/booking/schedules/", data),
     onSuccess: () => {
-      message.success("Schedule slot added");
       invalidateAll();
       setModalOpen(false);
     },
@@ -792,7 +791,6 @@ export default function SchedulePage() {
     mutationFn: ({ id, ...data }) =>
       _axios.patch(`/api/portal/v1/booking/schedules/${id}/`, data),
     onSuccess: () => {
-      message.success("Schedule updated");
       invalidateAll();
       setModalOpen(false);
       setEditEntry(null);
@@ -807,7 +805,6 @@ export default function SchedulePage() {
   const deleteSchedule = useMutation({
     mutationFn: (id) => _axios.delete(`/api/portal/v1/booking/schedules/${id}/`),
     onSuccess: () => {
-      message.success("Slot removed");
       invalidateAll();
       setDeletingId(null);
     },

@@ -3,6 +3,7 @@ import { Modal, Select, Input, Button, message, Spin } from "antd";
 import { FiEdit2, FiTrash2, FiPlus, FiShield, FiLock, FiX } from "react-icons/fi";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import _axios from "../src/api/_axios";
+import { firstApiErrorMessage } from "../src/api/apiErrors";
 
 /* ─── tiny helpers ─────────────────────────────────────── */
 /**
@@ -227,12 +228,11 @@ const RoleManagement = () => {
   const createRole = useMutation({
     mutationFn: (data) => _axios.post("/api/portal/v1/accounts/roles/", data),
     onSuccess: () => {
-      message.success("Role created successfully");
       queryClient.invalidateQueries(["roles"]);
       setAddOpen(false);
       setForm({ name: "", permission_ids: [] });
     },
-    onError: (err) => message.error(err.response?.data?.message || "Failed to create role"),
+    onError: (err) => message.error(firstApiErrorMessage(err, "Failed to create role")),
   });
 
   const updateRole = useMutation({
@@ -242,21 +242,19 @@ const RoleManagement = () => {
         permission_ids: data.permission_ids,
       }),
     onSuccess: () => {
-      message.success("Role updated successfully");
       queryClient.invalidateQueries(["roles"]);
       setEditOpen(false);
       setEditForm({ id: null, name: "", permission_ids: [] });
     },
-    onError: (err) => message.error(err.response?.data?.message || "Failed to update role"),
+    onError: (err) => message.error(firstApiErrorMessage(err, "Failed to update role")),
   });
 
   const deleteRole = useMutation({
     mutationFn: (id) => _axios.delete(`/api/portal/v1/accounts/roles/${id}/`),
     onSuccess: () => {
-      message.success("Role deleted successfully");
       queryClient.invalidateQueries(["roles"]);
     },
-    onError: (err) => message.error(err.response?.data?.message || "Failed to delete role"),
+    onError: (err) => message.error(firstApiErrorMessage(err, "Failed to delete role")),
   });
 
   const roles = Array.isArray(rolesData) ? rolesData : rolesData?.results || [];

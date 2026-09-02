@@ -115,7 +115,6 @@ export default function SettingsPage() {
   const createMutation = useMutation({
     mutationFn: createDepositRule,
     onSuccess: () => {
-      message.success("Deposit rule created");
       qc.invalidateQueries({ queryKey: ["deposit-rules"] });
       setOpen(false);
       setEditingId(null);
@@ -129,7 +128,6 @@ export default function SettingsPage() {
   const patchMutation = useMutation({
     mutationFn: ({ id, payload }) => patchDepositRule(id, payload),
     onSuccess: () => {
-      message.success("Deposit rule updated");
       qc.invalidateQueries({ queryKey: ["deposit-rules"] });
       setOpen(false);
       setEditingId(null);
@@ -143,7 +141,6 @@ export default function SettingsPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteDepositRule,
     onSuccess: () => {
-      message.success("Deposit rule deleted");
       qc.invalidateQueries({ queryKey: ["deposit-rules"] });
     },
     onError: (err) => {

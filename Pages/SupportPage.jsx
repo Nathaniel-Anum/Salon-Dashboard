@@ -316,12 +316,11 @@ export default function SupportPage() {
     }
   };
 
-  const handleMutationTicketSuccess = (raw, successText) => {
+  const handleMutationTicketSuccess = (raw) => {
     const updatedTicket = extractTicketFromMutation(raw);
     if (updatedTicket && activeTicketId) {
       qc.setQueryData(["support-ticket", activeTicketId], updatedTicket);
     }
-    message.success(successText);
     refreshWorkspace();
   };
 

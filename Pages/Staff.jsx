@@ -4,6 +4,7 @@ import { Modal, Drawer, Form, Input, Select, Button, Switch, Checkbox, message, 
 import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiGrid, FiList, FiScissors, FiChevronDown, FiChevronRight, FiMail } from "react-icons/fi";
 import { FaUserAlt } from "react-icons/fa";
 import _axios from "../src/api/_axios";
+import { firstApiErrorMessage } from "../src/api/apiErrors";
 
 /* avatar colour pool */
 const AVATAR_COLORS = [
@@ -234,13 +235,12 @@ export default function Staff() {
   const createStaff = useMutation({
     mutationFn: (data) => _axios.post("/api/portal/v1/accounts/staff/", data),
     onSuccess: () => {
-      message.success("Staff member added successfully");
       queryClient.invalidateQueries(["staff"]);
       setAddOpen(false);
       addForm.resetFields();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to add staff");
+      message.error(firstApiErrorMessage(err, "Failed to add staff"));
     },
   });
 
@@ -249,13 +249,12 @@ export default function Staff() {
     mutationFn: (data) =>
       _axios.patch(`/api/portal/v1/accounts/staff/${data.id}/`, data),
     onSuccess: () => {
-      message.success("Staff member updated successfully");
       queryClient.invalidateQueries(["staff"]);
       setEditOpen(false);
       editForm.resetFields();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to update staff");
+      message.error(firstApiErrorMessage(err, "Failed to update staff"));
     },
   });
 
@@ -269,10 +268,9 @@ export default function Staff() {
     onSuccess: async () => {
       await queryClient.invalidateQueries(["services"]);
       closeAssignDrawer();
-      message.success("Services assignment updated successfully");
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to update services assignment");
+      message.error(firstApiErrorMessage(err, "Failed to update services assignment"));
     },
   });
 
@@ -280,11 +278,10 @@ export default function Staff() {
   const deleteStaff = useMutation({
     mutationFn: (id) => _axios.delete(`/api/portal/v1/accounts/staff/${id}/`),
     onSuccess: () => {
-      message.success("Staff member removed");
       queryClient.invalidateQueries(["staff"]);
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to delete staff");
+      message.error(firstApiErrorMessage(err, "Failed to delete staff"));
     },
   });
 
@@ -321,7 +318,6 @@ export default function Staff() {
           return next;
         });
       }
-      message.success("Staff invitation sent successfully");
       queryClient.invalidateQueries({ queryKey: ["staff"] });
       setInviteOpen(false);
       inviteForm.resetFields();
@@ -590,19 +586,24 @@ export default function Staff() {
 
       ) : viewMode === "cards" ? (
         /* ── Cards grid ── */
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+          style={{ gridAutoRows: "1fr" }}
+        >
           {filtered.map((staff) => (
             <div
               key={staff.id}
-              className="relative rounded-2xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-lg"
+              className="relative rounded-2xl p-5 h-full flex flex-col transition-all duration-250 hover:-translate-y-0.5 hover:shadow-lg"
               style={isInvitedStaff(staff) ? {
                 background: "linear-gradient(145deg, #ead1ac, #d9b27e)",
                 border: "1px solid rgba(122,78,32,0.45)",
                 boxShadow: "0 8px 24px rgba(90,55,15,0.18)",
+                minHeight: 232,
               } : {
                 background: "#FDFAF5",
                 border: "1px solid rgba(187,161,79,0.18)",
                 boxShadow: "0 3px 16px rgba(39,39,39,0.06)",
+                minHeight: 232,
               }}
             >
               {/* top row */}
@@ -659,39 +660,72 @@ export default function Staff() {
               </div>
 
               {/* phone */}
-              {staff.phone && (
-                <p
-                  className="text-xs text-[#987554] mb-3"
-                  style={{
-                    fontFamily: "'Poppins', sans-serif",
-                    color: isInvitedStaff(staff) ? "#6f4821" : "#987554",
-                  }}
-                >
-                  {staff.phone}
-                </p>
-              )}
+              <p
+                className="text-xs text-[#987554] mb-3 truncate"
+                style={{
+                  minHeight: 18,
+                  fontFamily: "'Poppins', sans-serif",
+                  color: isInvitedStaff(staff) ? "#6f4821" : "#987554",
+                }}
+              >
+                {staff.phone || "No phone number"}
+              </p>
 
               {/* roles */}
-              <div className="flex flex-wrap gap-1.5 mb-4 min-h-5.5">
+              <div className="flex flex-nowrap items-center gap-1.5 mb-4 h-5.5 overflow-hidden">
                 {staff.roles?.length > 0 ? (
-                  staff.roles.map((r) => (
-                    <Tag
-                      key={r.id}
-                      className="text-[10px] rounded-full border-0 m-0 px-2.5 py-0.5"
-                      style={isInvitedStaff(staff) ? {
-                        background: "rgba(122,78,32,0.14)",
-                        color: "#6f4821",
-                        border: "1px solid rgba(122,78,32,0.18)",
-                        fontFamily: "'Poppins', sans-serif",
-                      } : {
-                        background: "rgba(187,161,79,0.12)",
-                        color: "#8a6f2e",
-                        fontFamily: "'Poppins', sans-serif",
-                      }}
-                    >
-                      {r.name}
-                    </Tag>
-                  ))
+                  <>
+                    {staff.roles.slice(0, 3).map((r) => (
+                      <Tag
+                        key={r.id}
+                        title={r.name}
+                        className="text-[10px] rounded-full border-0 m-0 px-2.5 py-0.5"
+                        style={isInvitedStaff(staff) ? {
+                          minWidth: 0,
+                          maxWidth: 96,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          flexShrink: 1,
+                          background: "rgba(122,78,32,0.14)",
+                          color: "#6f4821",
+                          border: "1px solid rgba(122,78,32,0.18)",
+                          fontFamily: "'Poppins', sans-serif",
+                        } : {
+                          minWidth: 0,
+                          maxWidth: 96,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          flexShrink: 1,
+                          background: "rgba(187,161,79,0.12)",
+                          color: "#8a6f2e",
+                          fontFamily: "'Poppins', sans-serif",
+                        }}
+                      >
+                        {r.name}
+                      </Tag>
+                    ))}
+                    {staff.roles.length > 3 && (
+                      <span
+                        title={`${staff.roles.length - 3} more role${staff.roles.length - 3 !== 1 ? "s" : ""}`}
+                        className="shrink-0 text-[10px] rounded-full px-2 py-0.5 font-semibold"
+                        style={isInvitedStaff(staff) ? {
+                          background: "rgba(122,78,32,0.18)",
+                          color: "#5f3915",
+                          border: "1px solid rgba(122,78,32,0.2)",
+                          fontFamily: "'Poppins', sans-serif",
+                        } : {
+                          background: "rgba(187,161,79,0.1)",
+                          color: "#987554",
+                          border: "1px solid rgba(187,161,79,0.18)",
+                          fontFamily: "'Poppins', sans-serif",
+                        }}
+                      >
+                        +{staff.roles.length - 3}
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <span
                     className="text-[10px] text-[#c8b890]"
@@ -712,7 +746,7 @@ export default function Staff() {
               />
 
               {/* actions */}
-              <div className="flex items-center justify-end gap-2 flex-wrap">
+              <div className="flex items-center justify-end gap-2 flex-wrap mt-auto">
                 <button
                   onClick={() => handleAssignServices(staff)}
                   className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80 cursor-pointer"

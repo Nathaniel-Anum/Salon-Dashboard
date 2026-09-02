@@ -30,6 +30,7 @@ import {
   FiExternalLink,
 } from "react-icons/fi";
 import _axios from "../src/api/_axios";
+import { firstApiErrorMessage } from "../src/api/apiErrors";
 
 /* ─────────────────────────────────────────────
    CONSTANTS
@@ -197,13 +198,12 @@ export default function CustomersPage() {
     mutationFn: (data) =>
       _axios.post("/api/portal/v1/accounts/customers/", data),
     onSuccess: () => {
-      message.success("Customer added successfully");
       queryClient.invalidateQueries(["customers"]);
       setAddOpen(false);
       addForm.resetFields();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to add customer");
+      message.error(firstApiErrorMessage(err, "Failed to add customer"));
     },
   });
 
@@ -214,13 +214,12 @@ export default function CustomersPage() {
     mutationFn: (data) =>
       _axios.patch(`/api/portal/v1/accounts/customers/${data.id}/`, data),
     onSuccess: () => {
-      message.success("Customer updated");
       queryClient.invalidateQueries(["customers"]);
       setEditOpen(false);
       editForm.resetFields();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to update customer");
+      message.error(firstApiErrorMessage(err, "Failed to update customer"));
     },
   });
 
@@ -231,11 +230,10 @@ export default function CustomersPage() {
     mutationFn: (id) =>
       _axios.delete(`/api/portal/v1/accounts/customers/${id}/`),
     onSuccess: () => {
-      message.success("Customer removed");
       queryClient.invalidateQueries(["customers"]);
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to delete customer");
+      message.error(firstApiErrorMessage(err, "Failed to delete customer"));
     },
   });
 

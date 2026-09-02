@@ -6,6 +6,297 @@ body {
   font-family: "Inter", sans-serif;
 }
 
+/* ── Portal dropdown system ────────────────────────────────────────────────
+   Warm porcelain surfaces, cocoa text and a restrained gold selection rail
+   carry the same visual language as the portal cards and navigation. */
+.portal-select.ant-select {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  outline: none !important;
+  font-family: "Poppins", sans-serif;
+}
+
+.portal-select.ant-select:not(.ant-select-customize-input) .ant-select-selector,
+.ant-select:not(.ant-select-customize-input) .ant-select-selector {
+  min-height: 40px !important;
+  padding: 0 46px 0 13px !important;
+  border: 1.5px solid #c5aa58 !important;
+  border-radius: 10px !important;
+  background: linear-gradient(180deg, #fffefa 0%, #fdf9f2 100%) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 2px 8px rgba(92, 68, 40, 0.07) !important;
+  color: #272727 !important;
+  box-sizing: border-box !important;
+  cursor: pointer !important;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease !important;
+}
+
+/* Keep Ant Design's outer control, selector and text wrapper on one height.
+   Without this, a taller selector can sit inside the library's shorter
+   single-select root and clip the selected value when the popup opens. */
+.ant-select-single:not(.ant-select-customize-input) {
+  height: 40px !important;
+}
+
+.ant-select-single:not(.ant-select-customize-input) .ant-select-selector {
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  overflow: hidden !important;
+}
+
+.ant-select-single .ant-select-selection-wrap {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.ant-select-single .ant-select-selection-item,
+.ant-select-single .ant-select-selection-placeholder {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  flex: 1;
+  line-height: normal !important;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Custom JSX labels can contain their own spans. Constrain those descendants
+   too so every long selected value resolves to an ellipsis before the fixed
+   chevron area instead of escaping the Select's text wrapper. */
+.ant-select-single .ant-select-selection-item > *,
+.ant-select-single .ant-select-selection-placeholder > * {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ant-select-single .ant-select-selection-search-input {
+  height: 38px !important;
+}
+
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector {
+  border-color: #a98c36 !important;
+  background: #fffefa !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 3px 12px rgba(92, 68, 40, 0.1) !important;
+}
+
+.ant-select-focused:not(.ant-select-disabled) .ant-select-selector {
+  border-color: #98772c !important;
+  box-shadow: 0 0 0 3px rgba(187, 161, 79, 0.16) !important;
+}
+
+.ant-select .ant-select-selection-item,
+.ant-select .ant-select-selection-placeholder,
+.ant-select .ant-select-selection-search-input {
+  font-family: "Poppins", sans-serif !important;
+  font-size: 13px !important;
+}
+
+.ant-select .ant-select-selection-item {
+  color: #332d26 !important;
+  font-weight: 500 !important;
+}
+
+.ant-select .ant-select-selection-placeholder {
+  color: #927b5e !important;
+  font-weight: 400 !important;
+}
+
+.ant-select .ant-select-arrow {
+  top: 50% !important;
+  right: 6px !important;
+  inset-inline-end: 6px !important;
+  width: 28px !important;
+  height: 28px !important;
+  margin-top: 0 !important;
+  border: 1px solid rgba(187, 161, 79, 0.24);
+  border-radius: 7px;
+  background: rgba(187, 161, 79, 0.11);
+  color: #987554 !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease !important;
+}
+
+.ant-select .ant-select-arrow svg {
+  transition: transform 160ms ease;
+}
+
+.ant-select-open .ant-select-arrow {
+  border-color: rgba(187, 161, 79, 0.48);
+  background: rgba(187, 161, 79, 0.2);
+  color: #806a2d !important;
+}
+
+.ant-select-open .ant-select-arrow svg {
+  transform: rotate(180deg);
+}
+
+.ant-select .ant-select-clear {
+  right: 8px !important;
+  inset-inline-end: 8px !important;
+  width: 24px;
+  height: 24px;
+  margin-top: 0 !important;
+  border-radius: 6px;
+  background: #f3eadb !important;
+  color: #987554 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+}
+
+.ant-select-disabled .ant-select-selector {
+  border-color: rgba(152, 117, 84, 0.22) !important;
+  background: #f4efe7 !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+}
+
+.ant-select-disabled .ant-select-arrow {
+  opacity: 0.52;
+}
+
+.ant-select-multiple .ant-select-selection-item {
+  height: 25px !important;
+  line-height: 23px !important;
+  padding-inline: 8px 5px !important;
+  border: 1px solid rgba(187, 161, 79, 0.2) !important;
+  border-radius: 7px !important;
+  background: #f1e8d7 !important;
+  color: #6f5e3e !important;
+  max-width: 150px !important;
+}
+
+.ant-select-multiple .ant-select-selection-item-content {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ant-select-multiple:not(.ant-select-customize-input) .ant-select-selector {
+  padding: 4px 8px !important;
+}
+
+.ant-select-multiple.ant-select-show-arrow:not(.ant-select-customize-input) .ant-select-selector {
+  padding-right: 44px !important;
+}
+
+.ant-select-dropdown {
+  padding: 6px !important;
+  border: 1.5px solid rgba(187, 161, 79, 0.56) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 252, 247, 0.98) !important;
+  box-shadow:
+    0 18px 45px rgba(60, 47, 31, 0.14),
+    0 3px 10px rgba(60, 47, 31, 0.08) !important;
+  backdrop-filter: blur(14px);
+  font-family: "Poppins", sans-serif !important;
+}
+
+.ant-select-dropdown .ant-select-item {
+  position: relative;
+  min-height: 38px;
+  margin: 1px 0;
+  padding: 9px 30px 9px 12px;
+  border-radius: 9px;
+  color: #3b342c;
+  font-size: 13px;
+  line-height: 20px;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease !important;
+}
+
+.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: #f5efe6 !important;
+  color: #272727 !important;
+}
+
+.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: #efe5cb !important;
+  color: #5e5125 !important;
+  font-weight: 600 !important;
+}
+
+.ant-select-dropdown .ant-select-item-option-selected::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: #bba14f;
+  content: "";
+  transform: translateY(-50%);
+}
+
+.ant-select-dropdown .ant-select-item-option-state {
+  color: #bba14f !important;
+}
+
+.ant-select-dropdown .ant-select-item-option-disabled {
+  color: #b8aa96 !important;
+}
+
+.ant-select-dropdown .ant-empty-description,
+.ant-select-dropdown .ant-select-item-empty {
+  color: #987554 !important;
+  font-size: 12px;
+}
+
+.ant-select-dropdown .rc-virtual-list-scrollbar-thumb {
+  background: rgba(152, 117, 84, 0.35) !important;
+}
+
+.ant-dropdown .ant-dropdown-menu {
+  padding: 6px !important;
+  border: 1px solid rgba(187, 161, 79, 0.26);
+  border-radius: 14px !important;
+  background: rgba(255, 252, 247, 0.98) !important;
+  box-shadow: 0 18px 45px rgba(60, 47, 31, 0.14) !important;
+  font-family: "Poppins", sans-serif;
+}
+
+.ant-dropdown .ant-dropdown-menu-item,
+.ant-dropdown .ant-dropdown-menu-submenu-title {
+  min-height: 38px;
+  border-radius: 9px !important;
+  color: #3b342c !important;
+  font-size: 13px;
+}
+
+.ant-dropdown .ant-dropdown-menu-item:hover,
+.ant-dropdown .ant-dropdown-menu-submenu-title:hover {
+  background: #f5efe6 !important;
+}
+
 /* ── Salon Login Animations ── */
 @keyframes fadeIn {
   from {

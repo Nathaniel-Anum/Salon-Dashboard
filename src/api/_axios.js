@@ -1,5 +1,10 @@
 import axios from "axios";
-
+import {
+  announcePortalSuccess,
+  isPortalRequest,
+  preparePortalError,
+  preparePortalResponse,
+} from "./portalContract.js";
 
 const _axios = axios.create({
   baseURL: "https://api.cbkbeauty.expertech.dev/",
@@ -20,43 +25,62 @@ _axios.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Handle refresh on 401
+const LOGIN_PATH = "/api/portal/v1/accounts/login/";
+
+function clearSession() {
+  localStorage.removeItem("access");
+  localStorage.removeItem("refresh");
+}
+
+function endSession() {
+  clearSession();
+  if (window.location.pathname !== "/login") window.location.assign("/login");
+}
+
+function canRefresh(error) {
+  const request = error?.config;
+  return error?.response?.status === 401
+    && isPortalRequest(request)
+    && request?.url !== LOGIN_PATH
+    && !request?._retry
+    && Boolean(localStorage.getItem("refresh"));
+}
+
+// Normalize successful portal responses and refresh an expired access token once.
 _axios.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const prepared = preparePortalResponse(response);
+    announcePortalSuccess(prepared);
+    return prepared;
+  },
   async (error) => {
     const originalRequest = error.config;
 
-    // If 401 and not already retried
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (canRefresh(error)) {
       originalRequest._retry = true;
 
       try {
         const refresh = localStorage.getItem("refresh");
-
-        //  Call refresh endpoint
         const res = await axios.post(
           "https://api.cbkbeauty.expertech.dev/api/app/v1/accounts/refresh/",
           { refresh }
         );
 
         const newAccess = res.data.access;
-
-        // Save new token
         localStorage.setItem("access", newAccess);
-
-        //  Retry original request with new token
         originalRequest.headers.Authorization = `Bearer ${newAccess}`;
 
         return _axios(originalRequest);
-      } catch (refreshError) {
-        //  Refresh failed → logout
-        localStorage.removeItem("access");
-        localStorage.removeItem("refresh");
-        window.location.href = "/login";
+      } catch {
+        endSession();
       }
     }
 
-    return Promise.reject(error);
+    if (error.response?.status === 401 && originalRequest?.url !== LOGIN_PATH) {
+      endSession();
+    }
+
+    return Promise.reject(preparePortalError(error));
   }
 );
 

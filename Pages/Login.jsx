@@ -5,6 +5,7 @@ import pic1 from "../src/cbk 6.svg";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { loginUser } from "../src/api/auth";
+import { firstApiErrorMessage } from "../src/api/apiErrors";
 
 /* ── decorative helpers ────────────────────────────── */
 const GoldDivider = () => (
@@ -39,14 +40,13 @@ const SalonLogin = ({ setIsAuthenticated }) => {
   const { mutate, isPending } = useMutation({
     mutationFn: loginUser,
     onSuccess: (data) => {
-      message.success("Logged in successfully, Welcome back!");
       localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("access", data.access);
       localStorage.setItem("refresh", data.refresh);
       navigate("/");
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Unauthorized");
+      message.error(firstApiErrorMessage(err, "Unauthorized"));
     },
   });
 

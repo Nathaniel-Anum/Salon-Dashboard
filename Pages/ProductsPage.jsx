@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import PortalSelect from "../Components/PortalSelect";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Modal,
@@ -544,7 +545,6 @@ export default function ProductsPage() {
     mutationFn: deleteProduct,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-products"] });
-      messageApi.success("Product deleted.");
     },
     onError: () => messageApi.error("Could not delete product."),
   });
@@ -554,14 +554,12 @@ export default function ProductsPage() {
       if (editTarget) {
         await saveMutation.mutateAsync({ values, productId: editTarget.id });
         qc.invalidateQueries({ queryKey: ["commerce-products"] });
-        messageApi.success("Product updated!");
         closeModal();
         return;
       }
 
       await saveMutation.mutateAsync({ values, productId: null });
       qc.invalidateQueries({ queryKey: ["commerce-products"] });
-      messageApi.success("Product created!");
       closeModal();
     } catch {
       // Errors are surfaced through mutation handlers.
@@ -830,7 +828,7 @@ export default function ProductsPage() {
           )}
         </div>
 
-        <select
+        <PortalSelect
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value)}
           style={{
@@ -846,7 +844,7 @@ export default function ProductsPage() {
         >
           <option value="desc">Newest first</option>
           <option value="asc">Oldest first</option>
-        </select>
+        </PortalSelect>
       </div>
 
       {/* ── Table ── */}

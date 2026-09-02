@@ -6,7 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Modal, Form, Input, Select, DatePicker, TimePicker, message, Tooltip, Spin } from "antd";
+import { Modal, Form, Input, Select, DatePicker, message, Tooltip, Spin } from "antd";
 import dayjs from "dayjs";
 import {
   FiChevronLeft,
@@ -29,7 +29,6 @@ import {
   FiArrowRight,
   FiArrowLeft,
   FiStar,
-  FiTrash2,
   FiAlertCircle,
   FiDollarSign,
   FiCheckCircle,
@@ -40,7 +39,16 @@ import {
 import _axios from "../src/api/_axios";
 import { fetchBlockedDays } from "../src/api/blockedDays";
 import { createWaitlistEntry } from "../src/api/waitlist";
+import { firstApiErrorMessage } from "../src/api/apiErrors";
+import {
+  buildWalkInAppointmentPayload,
+  getBookingStaffOptions,
+  normalizeBookingStaffOptions,
+  normalizeStaffRecommendation,
+  recommendWalkInStaff,
+} from "../src/api/walkIn";
 import AppointmentCheckoutDrawer from "../Components/AppointmentCheckoutDrawer";
+import PortalSelect from "../Components/PortalSelect";
 
 /* ─────────────────────────────────────────────
    CONSTANTS & HELPERS
@@ -108,44 +116,6 @@ function formatDisplayTime(timeStr) {
   return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function makeIdempotencyKey() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function matchesStaffId(person = {}, rawId) {
-  const needle = String(rawId);
-  return (
-    String(person.id) === needle ||
-    String(person.user) === needle ||
-    String(person.user_id) === needle ||
-    String(person.account_id) === needle
-  );
-}
-
-function getAssignedIdsForService(service = {}) {
-  const fromIds = service.assigned_staff_ids ?? service.staff_ids ?? [];
-  const fromObjects = Array.isArray(service.assigned_staff)
-    ? service.assigned_staff.map((item) => item?.id ?? item?.user_id ?? item?.account_id ?? item)
-    : [];
-  const singleAssignedStaff =
-    service.assigned_staff && !Array.isArray(service.assigned_staff)
-      ? [service.assigned_staff?.id ?? service.assigned_staff?.user_id ?? service.assigned_staff?.account_id ?? service.assigned_staff]
-      : [];
-  const rawStaff = Array.isArray(service.staff)
-    ? service.staff.map((item) => item?.id ?? item?.user_id ?? item?.account_id ?? item)
-    : [];
-  const singleStaff =
-    service.staff && !Array.isArray(service.staff)
-      ? [service.staff?.id ?? service.staff?.user_id ?? service.staff?.account_id ?? service.staff]
-      : [];
-  const scalarIds = [service.assigned_staff_id, service.staff_id];
-
-  return [...fromIds, ...fromObjects, ...singleAssignedStaff, ...rawStaff, ...singleStaff, ...scalarIds]
-    .filter((value) => value !== null && value !== undefined && value !== "")
-    .map(String);
-}
-
 function normalizeServiceOptions(service = {}) {
   const rawOptions =
     service.service_options ??
@@ -192,80 +162,6 @@ function getServiceDisplayPrice(service, selectedServiceOptions = {}) {
 
   const formatted = `GH₵ ${amount.toFixed(2)}`;
   return priceType === "from" ? `From ${formatted}` : formatted;
-}
-
-function buildScheduledStartIso(dateValue, timeValue) {
-  if (!dateValue || !timeValue) return null;
-  return `${dateValue.format("YYYY-MM-DD")}T${timeValue}:00Z`;
-}
-
-function normalizeStaffCandidate(candidate, fallbackStaff = []) {
-  const source = candidate?.staff ?? candidate?.staff_member ?? candidate?.staff_details ?? candidate;
-  if (source == null) return null;
-
-  if (typeof source !== "object") {
-    return fallbackStaff.find((person) => matchesStaffId(person, source)) ?? null;
-  }
-
-  const candidateIds = [source.id, source.staff_id, source.user, source.user_id, source.account_id]
-    .filter((value) => value !== null && value !== undefined && value !== "");
-
-  const matchedStaff = fallbackStaff.find((person) => candidateIds.some((value) => matchesStaffId(person, value)));
-  const fullName =
-    matchedStaff?.full_name ||
-    source.full_name ||
-    source.name ||
-    [source.first_name, source.last_name].filter(Boolean).join(" ") ||
-    null;
-
-  return {
-    ...source,
-    ...matchedStaff,
-    id: matchedStaff?.id ?? source.id ?? source.staff_id ?? source.user_id ?? source.account_id ?? null,
-    full_name: fullName,
-    role: matchedStaff?.role ?? source.role ?? source.position ?? "Team Member",
-  };
-}
-
-function normalizeAvailableStaffFromServiceDetail(raw, fallbackStaff = [], service = {}) {
-  const source = raw?.data ?? raw ?? {};
-  const pools = [
-    source.available_staff,
-    source.available_staff_members,
-    source.staff_available,
-    source.current_staff,
-    source.staff_members,
-    source.staff,
-    source.assigned_staff,
-    source.staff_details,
-    source.service?.available_staff,
-    source.service?.staff,
-    source.result?.available_staff,
-  ].filter(Array.isArray);
-
-  const normalized = pools
-    .flatMap((pool) => pool.map((candidate) => normalizeStaffCandidate(candidate, fallbackStaff)).filter(Boolean));
-
-  const deduped = [];
-  const seen = new Set();
-  normalized.forEach((person) => {
-    const key = String(person.id ?? person.user_id ?? person.account_id ?? person.full_name ?? "");
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    deduped.push(person);
-  });
-
-  if (deduped.length > 0) return deduped;
-
-  const assignedIds =
-    getAssignedIdsForService(source).length > 0
-      ? getAssignedIdsForService(source)
-      : source.service
-      ? getAssignedIdsForService(source.service)
-      : getAssignedIdsForService(service);
-
-  if (!assignedIds.length) return fallbackStaff;
-  return fallbackStaff.filter((person) => assignedIds.some((rawId) => matchesStaffId(person, rawId)));
 }
 
 /* ─────────────────────────────────────────────
@@ -610,13 +506,25 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
   const isSelected = (id) => selectedServices.some((s) => s.id === id);
   const toggle = (svc) => {
     setSelectedServices((prev) => {
-      if (prev.some((service) => service.id === svc.id)) return [];
-      return [{
+      if (prev.some((service) => service.id === svc.id)) {
+        return prev.filter((service) => service.id !== svc.id);
+      }
+      return [...prev, {
         ...svc,
         _price: priceOf(svc),
         _amount: parseFloat(svc.price || svc.amount || 0),
         _isFrom: svc.price_type === "from",
       }];
+    });
+  };
+
+  const moveService = (index, direction) => {
+    setSelectedServices((prev) => {
+      const target = index + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
     });
   };
 
@@ -709,18 +617,33 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
         ))}
       </div>
 
-      {/* Selected summary */}
+      {/* Ordered service journey */}
       {selectedServices.length > 0 && (
-        <div style={{ padding: "10px 14px", background: "rgba(187,161,79,0.08)", borderRadius: 10, border: "1px solid rgba(187,161,79,0.25)" }}>
-          <p style={{ margin: 0, fontSize: 11, fontFamily: "'Poppins',sans-serif", color: "#987554" }}>
-            <strong style={{ color: "#BBA14F" }}>{selectedServices.length}</strong> service{selectedServices.length !== 1 ? "s" : ""} selected
-            {" · "}
-            <strong style={{ color: "#BBA14F" }}>
+        <div style={{ padding: "12px 14px", background: "rgba(187,161,79,0.08)", borderRadius: 12, border: "1px solid rgba(187,161,79,0.25)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 9 }}>
+            <p style={{ ...WZ.sectionLabel, margin: 0 }}>Service order</p>
+            <strong style={{ color: "#BBA14F", fontSize: 11, fontFamily: "'Poppins',sans-serif" }}>
               {selectedServices.every((s) => s._amount === 0)
                 ? "Free"
                 : `${selectedServices.some((s) => s._isFrom) ? "From " : ""}GH₵ ${selectedServices.reduce((a, s) => a + s._amount, 0).toFixed(2)}`}
             </strong>
-          </p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {selectedServices.map((service, index) => (
+              <div key={service.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", borderRadius: 9, background: "#fff", border: "1px solid rgba(187,161,79,0.16)" }}>
+                <span style={{ width: 23, height: 23, borderRadius: "50%", display: "grid", placeItems: "center", flexShrink: 0, background: "#272727", color: "#e4ca80", fontSize: 10, fontWeight: 800, fontFamily: "'Poppins',sans-serif" }}>{index + 1}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, color: "#272727", fontSize: 11, fontWeight: 700, fontFamily: "'Poppins',sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{service.name}</p>
+                  <p style={{ margin: 0, color: "#987554", fontSize: 9, fontFamily: "'Poppins',sans-serif" }}>{service.duration ? `${service.duration} min` : "Duration set by option"}</p>
+                </div>
+                <div style={{ display: "flex", gap: 3 }}>
+                  <button aria-label={`Move ${service.name} earlier`} disabled={index === 0} onClick={() => moveService(index, -1)} style={{ border: 0, background: "transparent", color: index === 0 ? "#d7cdbf" : "#987554", cursor: index === 0 ? "not-allowed" : "pointer", padding: 4 }}>↑</button>
+                  <button aria-label={`Move ${service.name} later`} disabled={index === selectedServices.length - 1} onClick={() => moveService(index, 1)} style={{ border: 0, background: "transparent", color: index === selectedServices.length - 1 ? "#d7cdbf" : "#987554", cursor: index === selectedServices.length - 1 ? "not-allowed" : "pointer", padding: 4 }}>↓</button>
+                  <button aria-label={`Remove ${service.name}`} onClick={() => toggle(service)} style={{ border: 0, background: "transparent", color: "#c45b54", cursor: "pointer", padding: 4 }}><FiX size={12} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -809,30 +732,37 @@ function StepServiceOptions({ selectedServices, selectedServiceOptions, setSelec
 
 /* ── Step 4: Staff ── */
 function StepStaff({
-  staffList,
   selectedServices,
   selectedServiceOptions,
   staffPerService,
   setStaffPerService,
   serviceAvailabilityMap,
   isLoadingAvailability,
+  availabilityError,
+  onRetryAvailability,
+  recommendations,
+  recommendingServiceId,
+  onRecommend,
 }) {
-  const ANY = "any";
-
-  const assignedStaffForService = (svc) => {
-    const ids = getAssignedIdsForService(svc);
-    if (!ids.length) return staffList; // no restriction — all staff can do it
-    return staffList.filter((staffMember) => ids.some((rawId) => matchesStaffId(staffMember, rawId)));
-  };
-
   const setStaff = (svcId, staffId) => {
     setStaffPerService((prev) => ({ ...prev, [svcId]: staffId }));
   };
 
-  const current = (svcId) => staffPerService[svcId] || ANY;
+  const windowTime = (value) => {
+    if (!value) return "—";
+    const parsed = dayjs(value);
+    return parsed.isValid() ? parsed.format("h:mm A") : "—";
+  };
 
   return (
     <div style={{ padding: "0 28px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ padding: "11px 14px", borderRadius: 12, background: "#272727", color: "#FDFAF5", display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <FiActivity size={14} color="#e4ca80" style={{ marginTop: 2, flexShrink: 0 }} />
+        <p style={{ margin: 0, fontSize: 11, lineHeight: 1.55, fontFamily: "'Poppins',sans-serif" }}>
+          Each service starts when the previous one ends. Choose a provider for every window, or ask for one recommendation.
+        </p>
+      </div>
+
       {isLoadingAvailability && (
         <div style={{
           display: "flex", alignItems: "center", gap: 10,
@@ -841,94 +771,68 @@ function StepStaff({
         }}>
           <Spin size="small" />
           <p style={{ margin: 0, fontSize: 12, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
-            Loading staff currently available for the selected date, time, and service option.
+            Calculating service windows and eligible providers…
           </p>
         </div>
       )}
 
-      {selectedServices.map((svc) => {
-        const cur = current(svc.id);
+      {availabilityError && !isLoadingAvailability && (
+        <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(196,91,84,0.08)", border: "1px solid rgba(196,91,84,0.25)", display: "flex", alignItems: "center", gap: 10 }}>
+          <FiAlertCircle size={14} color="#c45b54" />
+          <p style={{ margin: 0, flex: 1, fontSize: 11, color: "#7f342f", fontFamily: "'Poppins',sans-serif" }}>{firstApiErrorMessage(availabilityError, "Staff options could not be loaded.")}</p>
+          <button onClick={onRetryAvailability} style={{ border: "1px solid rgba(196,91,84,0.35)", background: "#fff", color: "#7f342f", borderRadius: 8, padding: "6px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Retry</button>
+        </div>
+      )}
+
+      {!availabilityError && selectedServices.map((svc, index) => {
+        const cur = staffPerService[svc.id];
         const option = getSelectedServiceOption(svc, selectedServiceOptions);
-        const hasAvailabilityForService = Object.prototype.hasOwnProperty.call(serviceAvailabilityMap, String(svc.id));
-        const eligibleStaff = hasAvailabilityForService
-          ? serviceAvailabilityMap[String(svc.id)]?.staff ?? []
-          : assignedStaffForService(svc);
-        const hasRestriction = getAssignedIdsForService(svc).length > 0;
-        const allowAny = eligibleStaff.length > 1;
+        const availability = serviceAvailabilityMap[String(svc.id)];
+        const recommendation = recommendations[String(svc.id)];
+        const eligibleStaff = [...(availability?.staff ?? [])];
+        if (recommendation?.available && recommendation.staff && !eligibleStaff.some((person) => String(person.id) === String(recommendation.staff.id))) {
+          eligibleStaff.push(recommendation.staff);
+        }
+        const selectedStaff = eligibleStaff.find((person) => String(person.id) === String(cur));
+        const isRecommending = String(recommendingServiceId) === String(svc.id);
 
         return (
-          <div key={svc.id}>
-            <p style={{ ...WZ.sectionLabel, marginBottom: 4 }}>
-              <FiScissors size={10} style={{ marginRight: 5 }} />{svc.name}
-            </p>
-            {option && (
-              <p style={{
-                fontSize: 10, color: "#BBA14F", fontFamily: "'Poppins',sans-serif",
-                margin: "0 0 6px", fontWeight: 600,
-              }}>
-                Option: {option.name}
+          <div key={svc.id} style={{ borderRadius: 15, border: `1.5px solid ${cur ? "rgba(187,161,79,0.42)" : "rgba(187,161,79,0.2)"}`, background: "#fff", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", background: cur ? "linear-gradient(135deg,rgba(187,161,79,0.12),rgba(152,117,84,0.06))" : "#faf8f4", borderBottom: "1px solid rgba(187,161,79,0.14)" }}>
+              <span style={{ width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", background: "#272727", color: "#e4ca80", fontSize: 11, fontWeight: 800, fontFamily: "'Poppins',sans-serif", flexShrink: 0 }}>{index + 1}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#272727", fontFamily: "'Poppins',sans-serif" }}>{svc.name}</p>
+                <p style={{ margin: 0, fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+                  {option?.name || "Standard service"} · {windowTime(availability?.scheduled_start)}–{windowTime(availability?.scheduled_end)}
+                </p>
+              </div>
+              <button
+                onClick={() => onRecommend(svc, availability)}
+                disabled={!availability?.scheduled_start || isRecommending}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid rgba(187,161,79,0.38)", background: "#fff", color: "#7d6428", borderRadius: 9, padding: "7px 10px", fontSize: 10, fontWeight: 800, fontFamily: "'Poppins',sans-serif", cursor: !availability?.scheduled_start || isRecommending ? "not-allowed" : "pointer", opacity: !availability?.scheduled_start ? 0.45 : 1 }}
+              >
+                {isRecommending ? <Spin size="small" /> : <FiStar size={11} />}
+                Recommend
+              </button>
+            </div>
+
+            <div style={{ padding: "11px 12px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
+              <p style={{ margin: "0 2px 2px", color: "#987554", fontSize: 10, fontFamily: "'Poppins',sans-serif" }}>
+                {eligibleStaff.length} eligible provider{eligibleStaff.length !== 1 ? "s" : ""} for this exact window
               </p>
-            )}
-            {hasAvailabilityForService ? (
-              <p style={{
-                fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif",
-                margin: "0 0 10px",
-              }}>
-                {eligibleStaff.length} team member{eligibleStaff.length !== 1 ? "s" : ""} available for this day and time
-              </p>
-            ) : hasRestriction ? (
-              <p style={{
-                fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif",
-                margin: "0 0 10px",
-              }}>
-                {eligibleStaff.length} assigned team member{eligibleStaff.length !== 1 ? "s" : ""} for this service
-              </p>
-            ) : (
-              <p style={{
-                fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif",
-                margin: "0 0 10px",
-              }}>
-                All team members can perform this service
-              </p>
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {/* Any Team Member */}
-              {allowAny && (
-                <button
-                  onClick={() => setStaff(svc.id, ANY)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 12,
-                    padding: "10px 14px", borderRadius: 12, cursor: "pointer",
-                    border: `1.5px solid ${cur === ANY ? "#BBA14F" : "#ede8de"}`,
-                    background: cur === ANY ? "linear-gradient(135deg,rgba(187,161,79,0.1),rgba(152,117,84,0.07))" : "#faf8f4",
-                    transition: "all 0.15s", textAlign: "left",
-                  }}
-                >
-                  <div style={{
-                    width: 36, height: 36, borderRadius: "50%",
-                    background: cur === ANY ? "linear-gradient(135deg,#BBA14F,#987554)" : "rgba(187,161,79,0.12)",
-                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                  }}>
-                    <FiUsers size={15} color={cur === ANY ? "#fff" : "#BBA14F"} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif" }}>Any Available Team Member</p>
-                    <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
-                      Auto-assign from {eligibleStaff.length} available member{eligibleStaff.length !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                  {cur === ANY && (
-                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#BBA14F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <FiCheck size={12} color="#fff" />
-                    </div>
-                  )}
-                </button>
+
+              {recommendation && !recommendation.available && (
+                <div style={{ padding: "8px 10px", borderRadius: 9, background: "rgba(196,91,84,0.07)", border: "1px solid rgba(196,91,84,0.2)", color: "#7f342f", fontSize: 10, fontFamily: "'Poppins',sans-serif" }}>
+                  {recommendation.reason || "No recommendation is available for this window."}
+                  {recommendation.retry_after_seconds ? ` Try again in ${recommendation.retry_after_seconds} seconds.` : ""}
+                </div>
               )}
 
-              {/* Only show staff assigned to this service */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {eligibleStaff.map((s) => {
                 const [from, to] = avatarGradient(s.full_name);
-                const sel = cur === s.id;
+                const sel = String(cur) === String(s.id);
+                const recommended = recommendation?.available && String(recommendation.staff?.id) === String(s.id);
                 return (
                   <button
                     key={s.id}
@@ -952,7 +856,9 @@ function StepStaff({
                       {initials(s.full_name)}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>{s.full_name}</p>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>
+                        {s.full_name}{recommended ? <span style={{ marginLeft: 7, color: "#7d6428", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recommended</span> : null}
+                      </p>
                       <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>{s.role}</p>
                     </div>
                     {sel && (
@@ -964,7 +870,6 @@ function StepStaff({
                 );
               })}
 
-              {/* Fallback: if eligible list is empty (no staff assigned at all) */}
               {eligibleStaff.length === 0 && (
                 <div style={{
                   padding: "10px 14px", borderRadius: 12,
@@ -973,10 +878,15 @@ function StepStaff({
                 }}>
                   <FiAlertCircle size={13} color="#e05050" style={{ flexShrink: 0 }} />
                   <p style={{ margin: 0, fontSize: 12, color: "#e05050", fontFamily: "'Poppins',sans-serif" }}>
-                    {hasAvailabilityForService
-                      ? "No team members are available for this service at the selected day and time."
-                      : "No team members are assigned to this service yet."}
+                    {availability?.reason || "No eligible providers are available for this service window."}
                   </p>
+                </div>
+              )}
+            </div>
+              {selectedStaff?.assigned_to_service === false && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "8px 10px", borderRadius: 9, background: "rgba(212,168,71,0.1)", border: "1px solid rgba(212,168,71,0.28)" }}>
+                  <FiAlertCircle size={12} color="#9b7626" style={{ marginTop: 1, flexShrink: 0 }} />
+                  <p style={{ margin: 0, fontSize: 10, lineHeight: 1.5, color: "#74591f", fontFamily: "'Poppins',sans-serif" }}>This provider is not normally assigned to this service. Portal override will be used.</p>
                 </div>
               )}
             </div>
@@ -1173,12 +1083,20 @@ function StepDateTime({ selectedDate, setSelectedDate, selectedTime, setSelected
 }
 
 /* ── Step 6: Confirm ── */
-function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, selectedServiceOptions, staffPerService, staffList, bookingDate, bookingTime }) {
-  const staffName = (svcId) => {
+function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, selectedServiceOptions, staffPerService, serviceAvailabilityMap, recommendations, bookingDate, bookingTime }) {
+  const selectedStaff = (svcId) => {
     const id = staffPerService[svcId];
-    if (!id || id === "any") return "Any Available Team Member";
-    const s = staffList.find((x) => x.id === id);
-    return s?.full_name || "Team Member";
+    const availability = serviceAvailabilityMap[String(svcId)];
+    const recommended = recommendations[String(svcId)]?.staff;
+    return (availability?.staff ?? []).find((person) => String(person.id) === String(id))
+      ?? (String(recommended?.id) === String(id) ? recommended : null);
+  };
+
+  const windowLabel = (svcId) => {
+    const window = serviceAvailabilityMap[String(svcId)];
+    const start = window?.scheduled_start ? dayjs(window.scheduled_start).format("h:mm A") : "—";
+    const end = window?.scheduled_end ? dayjs(window.scheduled_end).format("h:mm A") : "—";
+    return `${start}–${end}`;
   };
 
   const clientDisplay = clientMode === "existing"
@@ -1217,14 +1135,16 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sel
 
       <p style={WZ.sectionLabel}>Services</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-        {selectedServices.map((svc) => (
+        {selectedServices.map((svc, index) => {
+          const provider = selectedStaff(svc.id);
+          return (
           <div key={svc.id} style={{
             display: "flex", alignItems: "center", gap: 12,
             padding: "10px 14px", borderRadius: 12,
             background: "#faf8f4", border: "1px solid rgba(187,161,79,0.18)",
           }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg,rgba(187,161,79,0.15),rgba(152,117,84,0.1))", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <FiScissors size={13} color="#BBA14F" />
+            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#272727", color: "#e4ca80", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 11, fontWeight: 800, fontFamily: "'Poppins',sans-serif" }}>
+              {index + 1}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>{svc.name}</p>
@@ -1234,12 +1154,17 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sel
                 </p>
               )}
               <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
-                <FiUsers size={10} style={{ marginRight: 4 }} />{staffName(svc.id)}
+                <FiClock size={10} style={{ marginRight: 4 }} />{windowLabel(svc.id)}
+                {" · "}<FiUsers size={10} style={{ marginRight: 4 }} />{provider?.full_name || "Provider not selected"}
               </p>
+              {provider?.assigned_to_service === false && (
+                <p style={{ margin: "3px 0 0", fontSize: 9, color: "#8a6a24", fontFamily: "'Poppins',sans-serif", fontWeight: 700 }}>Portal roster override</p>
+              )}
             </div>
             <span style={{ fontSize: 13, fontWeight: 700, color: "#BBA14F", fontFamily: "'Poppins',sans-serif", flexShrink: 0 }}>{getServiceDisplayPrice(svc, selectedServiceOptions)}</span>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Total */}
@@ -1882,702 +1807,6 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
   );
 }
 
-function BookingStatusDrawer({ booking, staff, allServices = [], allStaff = [], onClose, onStatusChange, statusLoading, onReschedule, rescheduleLoading, onCancel, cancelLoading, onDelete, deleteLoading }) {
-  const [showAddonForm, setShowAddonForm] = useState(false);
-  const [voidingAddonId, setVoidingAddonId] = useState(null);
-  const [showReschedule, setShowReschedule] = useState(false);
-  const [rescheduleDate, setRescheduleDate] = useState(null);
-  const [rescheduleTime, setRescheduleTime] = useState(null);
-  const [rescheduleReason, setRescheduleReason] = useState("");
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [localStatus, setLocalStatus] = useState(booking?.status || "pending");
-
-  const [addonForm, setAddonForm] = useState({
-    service_id: null,
-    quantity: 1,
-    staff_member_id: null,
-    performed_at: dayjs().format("YYYY-MM-DDTHH:mm"),
-    total: "",
-    discount: "0",
-  });
-
-  const queryClient = useQueryClient();
-  const bookingId = booking?.id;
-  const cfg = getStatusCfg(localStatus);
-
-  const toMoneyNumber = (raw) => {
-    const n = parseFloat(String(raw ?? "0").replace(/,/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const staffMatchesId = (person, rawId) => {
-    const needle = String(rawId);
-    return (
-      String(person.id) === needle ||
-      String(person.user) === needle ||
-      String(person.user_id) === needle ||
-      String(person.account_id) === needle
-    );
-  };
-
-  const getEligibleStaffForService = (serviceObj) => {
-    const ids = serviceObj?.assignedStaffIds ?? [];
-    if (!ids.length) return allStaff;
-    const filtered = allStaff.filter((person) => ids.some((rawId) => staffMatchesId(person, rawId)));
-    return filtered.length ? filtered : allStaff;
-  };
-
-  const serviceOptions = useMemo(() => {
-    const map = new Map();
-
-    allServices.forEach((s) => {
-      map.set(String(s.id), {
-        id: Number(s.id),
-        name: s.name || `Service #${s.id}`,
-        price: toMoneyNumber(s.price ?? s.amount),
-        assignedStaffIds: (s.assigned_staff_ids ?? s.staff_ids ?? []).map(String),
-      });
-    });
-
-    const bookingServices = Array.isArray(booking?.services) ? booking.services : [];
-    bookingServices.forEach((s) => {
-      const id = s.service_id ?? s.service ?? s.id;
-      if (!id) return;
-      const existing = map.get(String(id));
-      map.set(String(id), {
-        id: Number(id),
-        name: s.service_name ?? s.name ?? existing?.name ?? `Service #${id}`,
-        price: existing?.price ?? toMoneyNumber(s.price ?? s.amount),
-        assignedStaffIds: existing?.assignedStaffIds ?? [],
-      });
-    });
-
-    return Array.from(map.values());
-  }, [booking, allServices]);
-
-  const selectedAddonService = useMemo(
-    () => serviceOptions.find((s) => String(s.id) === String(addonForm.service_id)),
-    [serviceOptions, addonForm.service_id]
-  );
-
-  const eligibleAddonStaff = getEligibleStaffForService(selectedAddonService);
-
-  const applyServiceSelection = (serviceId) => {
-    if (!serviceId) {
-      setAddonForm((p) => ({ ...p, service_id: null }));
-      return;
-    }
-    const svc = serviceOptions.find((s) => String(s.id) === String(serviceId));
-    const eligible = getEligibleStaffForService(svc);
-    const currentStaffStillValid = eligible.some((person) => String(person.id) === String(addonForm.staff_member_id));
-    const nextStaffId = currentStaffStillValid
-      ? addonForm.staff_member_id
-      : (eligible[0]?.id ?? booking?.staffId ?? allStaff[0]?.id ?? null);
-
-    setAddonForm((p) => ({
-      ...p,
-      service_id: Number(serviceId),
-      staff_member_id: nextStaffId,
-      total: (svc?.price ?? 0).toFixed(2),
-    }));
-  };
-
-  const resetAddonForm = () => {
-    const defaultServiceId = serviceOptions[0]?.id ?? null;
-    const defaultService = serviceOptions.find((s) => String(s.id) === String(defaultServiceId));
-    const eligible = getEligibleStaffForService(defaultService);
-    const defaultStaffId = eligible[0]?.id ?? booking?.staffId ?? allStaff[0]?.id ?? null;
-    setAddonForm({
-      service_id: defaultServiceId,
-      quantity: 1,
-      staff_member_id: defaultStaffId,
-      performed_at: dayjs().format("YYYY-MM-DDTHH:mm"),
-      total: (defaultService?.price ?? 0).toFixed(2),
-      discount: "0",
-    });
-  };
-
-  const canUseAddon = localStatus === "completed";
-
-  const { data: addonsRaw, isFetching: addonsLoading } = useQuery({
-    queryKey: ["appointment-addons", bookingId],
-    queryFn: () =>
-      _axios
-        .get(`/api/portal/v1/booking/appointments/${bookingId}/addons/`)
-        .then((r) => r.data),
-    enabled: canUseAddon && Boolean(bookingId),
-    staleTime: 20_000,
-  });
-
-  const addons = useMemo(() => {
-    if (!addonsRaw) return [];
-    return Array.isArray(addonsRaw) ? addonsRaw : addonsRaw.results ?? [];
-  }, [addonsRaw]);
-
-  const createAddon = useMutation({
-    mutationFn: (payload) =>
-      _axios.post(`/api/portal/v1/booking/appointments/${bookingId}/addons/`, payload),
-    onSuccess: () => {
-      message.success("Add-on added");
-      queryClient.invalidateQueries(["appointment-addons", bookingId]);
-      queryClient.invalidateQueries(["appointments"]);
-      resetAddonForm();
-    },
-    onError: (err) => {
-      const msg =
-        err?.response?.data?.detail ||
-        err?.response?.data?.non_field_errors?.[0] ||
-        "Failed to add add-on";
-      message.error(msg);
-    },
-  });
-
-  const voidAddon = useMutation({
-    mutationFn: ({ addonId }) => {
-      setVoidingAddonId(addonId);
-      return _axios.post(`/api/portal/v1/booking/appointments/${bookingId}/addons/${addonId}/void/`);
-    },
-    onSuccess: () => {
-      message.success("Add-on voided");
-      queryClient.invalidateQueries(["appointment-addons", bookingId]);
-      queryClient.invalidateQueries(["appointments"]);
-    },
-    onError: (err) => {
-      const msg =
-        err?.response?.data?.detail ||
-        err?.response?.data?.non_field_errors?.[0] ||
-        "Failed to void add-on";
-      message.error(msg);
-    },
-    onSettled: () => setVoidingAddonId(null),
-  });
-
-  const handleCreateAddon = () => {
-    if (!addonForm.service_id || !addonForm.staff_member_id || !addonForm.total) {
-      message.error("Service, staff and total are required");
-      return;
-    }
-    const performedAtIso = dayjs(addonForm.performed_at).isValid()
-      ? dayjs(addonForm.performed_at).toISOString()
-      : dayjs().toISOString();
-
-    createAddon.mutate({
-      service_id: Number(addonForm.service_id),
-      quantity: Number(addonForm.quantity || 1),
-      staff_member_id: Number(addonForm.staff_member_id),
-      idempotency_key: makeIdempotencyKey(),
-      performed_at: performedAtIso,
-      total: String(addonForm.total),
-      discount: String(addonForm.discount || "0"),
-    });
-  };
-
-  const statusOptions = [
-    { value: "pending", label: "Pending" },
-    { value: "arrived", label: "Arrived" },
-    { value: "completed", label: "Completed" },
-    { value: "no_show", label: "No Show" },
-  ];
-
-  if (!booking) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-80"
-      style={{ background: "rgba(18,12,6,0.45)" }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          position: "absolute",
-          right: 0,
-          top: 0,
-          height: "100%",
-          width: showAddonForm ? "min(560px, 100vw)" : "min(460px, 100vw)",
-          background: "linear-gradient(180deg, #fffdf8 0%, #f9f3e8 100%)",
-          borderLeft: "1px solid rgba(187,161,79,0.2)",
-          boxShadow: "-12px 0 32px rgba(0,0,0,0.28)",
-          overflowY: "auto",
-          transition: "width 0.24s ease",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ padding: "18px 18px 22px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <div>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "#987554", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins', sans-serif" }}>
-                Appointment Actions
-              </p>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#272727", fontFamily: "'Poppins', sans-serif" }}>
-                {booking.client}
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 999,
-                border: "1px solid rgba(187,161,79,0.2)",
-                color: "#987554",
-                background: "#fff",
-                fontSize: 15,
-                cursor: "pointer",
-              }}
-            >
-              ✕
-            </button>
-          </div>
-
-          <div style={{ padding: "10px 12px", borderRadius: 12, background: "#fff", border: "1px solid rgba(187,161,79,0.2)", marginBottom: 12 }}>
-            <DetailRow icon={<FiScissors size={13} />} label="Service" value={booking.service} />
-            <DetailRow icon={<FiUser size={13} />} label="Staff" value={staff?.full_name || "Staff"} />
-            <DetailRow icon={<FiClock size={13} />} label="Time" value={formatDisplayTime(booking.startTime)} />
-          </div>
-
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ ...WZ.label, marginBottom: 6 }}>Status</label>
-            <select
-              value={localStatus}
-              onChange={(e) => {
-                const next = e.target.value;
-                setLocalStatus(next);
-                if (next !== "completed") setShowAddonForm(false);
-                if (next === "completed") {
-                  setShowAddonForm(true);
-                  resetAddonForm();
-                }
-                onStatusChange(booking.id, next);
-              }}
-              disabled={statusLoading}
-              style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
-            >
-              {statusOptions.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-            <p style={{ margin: "6px 0 0", fontSize: 11, color: cfg.dot, fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
-              Current: {cfg.label}
-            </p>
-          </div>
-
-          {canUseAddon && (
-            <div style={{ marginBottom: 12, padding: "12px", borderRadius: 12, background: "rgba(82,130,255,0.06)", border: "1px solid rgba(82,130,255,0.2)", display: "flex", flexDirection: "column", gap: 10 }}>
-              <button
-                onClick={() => {
-                  setShowAddonForm((v) => {
-                    const next = !v;
-                    if (next) resetAddonForm();
-                    return next;
-                  });
-                }}
-                style={{
-                  width: "100%",
-                  padding: "9px 10px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(82,130,255,0.35)",
-                  background: showAddonForm ? "rgba(82,130,255,0.13)" : "rgba(82,130,255,0.08)",
-                  color: "#355cc9",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  fontFamily: "'Poppins', sans-serif",
-                  cursor: "pointer",
-                }}
-              >
-                {showAddonForm ? "Hide Add On" : "Add On"}
-              </button>
-
-              {showAddonForm && (
-                <>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                    <div>
-                      <label style={{ ...WZ.label, marginBottom: 4 }}>Service</label>
-                      <select
-                        value={addonForm.service_id ?? ""}
-                        onChange={(e) => applyServiceSelection(e.target.value ? Number(e.target.value) : null)}
-                        style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
-                      >
-                        <option value="">Select service</option>
-                        {serviceOptions.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name} · GH₵ {s.price.toFixed(2)}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {selectedAddonService && (
-                      <div style={{
-                        border: "1px solid rgba(82,130,255,0.25)",
-                        background: "rgba(255,255,255,0.78)",
-                        borderRadius: 10,
-                        padding: "8px 10px",
-                      }}>
-                        <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700, color: "#2e3b63", fontFamily: "'Poppins', sans-serif" }}>
-                          {selectedAddonService.name}
-                        </p>
-                        <p style={{ margin: 0, fontSize: 11, color: "#4e6bc4", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
-                          Base Price: GH₵ {selectedAddonService.price.toFixed(2)}
-                        </p>
-                      </div>
-                    )}
-
-                    <div>
-                      <label style={{ ...WZ.label, marginBottom: 4 }}>Staff</label>
-                      <select
-                        value={addonForm.staff_member_id ?? ""}
-                        onChange={(e) => setAddonForm((p) => ({ ...p, staff_member_id: e.target.value ? Number(e.target.value) : null }))}
-                        style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
-                      >
-                        <option value="">Select staff</option>
-                        {eligibleAddonStaff.map((s) => (
-                          <option key={s.id} value={s.id}>{s.full_name || `Staff #${s.id}`}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                      <div>
-                        <label style={{ ...WZ.label, marginBottom: 4 }}>Quantity</label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={addonForm.quantity}
-                          onChange={(e) => setAddonForm((p) => ({ ...p, quantity: Number(e.target.value || 1) }))}
-                          placeholder="Quantity"
-                          style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ ...WZ.label, marginBottom: 4 }}>Performed At</label>
-                        <input
-                          type="datetime-local"
-                          value={addonForm.performed_at}
-                          onChange={(e) => setAddonForm((p) => ({ ...p, performed_at: e.target.value }))}
-                          style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                      <div>
-                        <label style={{ ...WZ.label, marginBottom: 4 }}>Amount</label>
-                        <input
-                          type="text"
-                          value={addonForm.total}
-                          onChange={(e) => setAddonForm((p) => ({ ...p, total: e.target.value }))}
-                          placeholder="Total"
-                          style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ ...WZ.label, marginBottom: 4 }}>Discount</label>
-                        <input
-                          type="text"
-                          value={addonForm.discount}
-                          onChange={(e) => setAddonForm((p) => ({ ...p, discount: e.target.value }))}
-                          placeholder="Discount"
-                          style={{ ...WZ.inputBase, padding: "9px 10px", fontSize: 12 }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleCreateAddon}
-                    disabled={createAddon.isPending}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 10,
-                      border: "none",
-                      background: createAddon.isPending
-                        ? "rgba(53,92,201,0.4)"
-                        : "linear-gradient(135deg,#5282FF,#355cc9)",
-                      color: "#fff",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      fontFamily: "'Poppins', sans-serif",
-                      cursor: createAddon.isPending ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {createAddon.isPending ? "Adding..." : "Add On"}
-                  </button>
-                </>
-              )}
-
-              <div style={{ height: 1, background: "rgba(82,130,255,0.15)" }} />
-
-              {addonsLoading ? (
-                <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}>
-                  <Spin size="small" />
-                </div>
-              ) : addons.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 12, color: "#7e8dbd", fontFamily: "'Poppins', sans-serif" }}>
-                  No add-ons yet.
-                </p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {addons.map((addon) => {
-                    const addonId = addon.id ?? addon.addon_id;
-                    const addonService =
-                      addon.service_name ||
-                      addon.service?.name ||
-                      serviceOptions.find((s) => String(s.id) === String(addon.service_id))?.name ||
-                      `Service #${addon.service_id ?? "-"}`;
-                    const isVoided = Boolean(addon.is_voided || addon.voided_at || addon.status === "voided");
-                    return (
-                      <div
-                        key={addonId}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          borderRadius: 10,
-                          border: "1px solid rgba(82,130,255,0.2)",
-                          background: isVoided ? "rgba(160,160,160,0.1)" : "#fff",
-                          padding: "8px 10px",
-                        }}
-                      >
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#2e3b63", fontFamily: "'Poppins', sans-serif" }}>
-                            {addonService}
-                          </p>
-                          <p style={{ margin: 0, fontSize: 11, color: "#7e8dbd", fontFamily: "'Poppins', sans-serif" }}>
-                            Qty {addon.quantity ?? 1} · Total {addon.total ?? "0"} · Discount {addon.discount ?? "0"}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => addonId && voidAddon.mutate({ addonId })}
-                          disabled={isVoided || voidAddon.isPending || !addonId}
-                          style={{
-                            padding: "6px 10px",
-                            borderRadius: 8,
-                            border: "1px solid rgba(224,80,80,0.35)",
-                            background: isVoided ? "rgba(120,120,120,0.12)" : "rgba(224,80,80,0.1)",
-                            color: isVoided ? "#888" : "#c73a3a",
-                            fontSize: 11,
-                            fontWeight: 700,
-                            fontFamily: "'Poppins', sans-serif",
-                            cursor: isVoided ? "not-allowed" : "pointer",
-                          }}
-                        >
-                          {voidAddon.isPending && voidingAddonId === addonId ? "Voiding..." : isVoided ? "Voided" : "Void"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          <button
-            onClick={() => {
-              setShowReschedule((v) => !v);
-              setShowCancelConfirm(false);
-              setShowDeleteConfirm(false);
-            }}
-            style={{
-              width: "100%",
-              padding: "9px 14px",
-              borderRadius: 10,
-              border: "1px solid rgba(187,161,79,0.35)",
-              background: showReschedule ? "rgba(187,161,79,0.12)" : "rgba(187,161,79,0.06)",
-              color: "#987554",
-              fontSize: 12,
-              fontWeight: 700,
-              fontFamily: "'Poppins', sans-serif",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              marginBottom: 10,
-            }}
-          >
-            <FiCalendar size={13} />
-            {showReschedule ? "Cancel Reschedule" : "Reschedule"}
-          </button>
-
-          {showReschedule && (
-            <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 12, background: "rgba(187,161,79,0.06)", border: "1px solid rgba(187,161,79,0.2)", display: "flex", flexDirection: "column", gap: 10 }}>
-              <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>
-                Choose new date and time
-              </p>
-              <DatePicker
-                value={rescheduleDate}
-                onChange={setRescheduleDate}
-                format="DD MMM YYYY"
-                style={{ width: "100%", borderRadius: 8 }}
-                disabledDate={(d) => d && d.isBefore(dayjs().startOf("day"))}
-              />
-              <TimePicker
-                value={rescheduleTime}
-                onChange={setRescheduleTime}
-                format="h:mm A"
-                minuteStep={15}
-                use12Hours
-                style={{ width: "100%", borderRadius: 8 }}
-              />
-              <textarea
-                value={rescheduleReason}
-                onChange={(e) => setRescheduleReason(e.target.value)}
-                placeholder="Reason for rescheduling (optional)"
-                rows={2}
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  border: "1px solid rgba(187,161,79,0.3)",
-                  background: "#fff",
-                  padding: "8px 10px",
-                  fontSize: 12,
-                  fontFamily: "'Poppins', sans-serif",
-                  color: "#272727",
-                  resize: "none",
-                  outline: "none",
-                  boxSizing: "border-box",
-                }}
-              />
-              <button
-                disabled={!rescheduleDate || !rescheduleTime || rescheduleLoading}
-                onClick={() => {
-                  if (!rescheduleDate || !rescheduleTime) return;
-                  onReschedule(
-                    booking.id,
-                    rescheduleDate.format("YYYY-MM-DD"),
-                    rescheduleTime.format("HH:mm"),
-                    booking.staffId,
-                    rescheduleReason.trim(),
-                  );
-                }}
-                style={{
-                  padding: "9px 14px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: (!rescheduleDate || !rescheduleTime || rescheduleLoading)
-                    ? "rgba(187,161,79,0.3)"
-                    : "linear-gradient(135deg, #BBA14F, #987554)",
-                  color: "#fff",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  fontFamily: "'Poppins', sans-serif",
-                  cursor: (!rescheduleDate || !rescheduleTime || rescheduleLoading) ? "not-allowed" : "pointer",
-                }}
-              >
-                {rescheduleLoading ? "Saving..." : "Confirm Reschedule"}
-              </button>
-            </div>
-          )}
-
-          <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 12 }} />
-
-          {!showCancelConfirm ? (
-            <button
-              onClick={() => {
-                setShowCancelConfirm(true);
-                setShowDeleteConfirm(false);
-                setShowReschedule(false);
-              }}
-              style={{
-                width: "100%", padding: "10px 0", borderRadius: 12,
-                background: "rgba(200,50,50,0.08)",
-                border: "1px solid rgba(200,50,50,0.3)",
-                color: "#e05050", fontSize: 13, fontWeight: 700,
-                fontFamily: "'Poppins', sans-serif", cursor: "pointer", marginBottom: 8,
-              }}
-            >
-              Cancel Appointment
-            </button>
-          ) : (
-            <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(200,50,50,0.06)", border: "1px solid rgba(200,50,50,0.25)", display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#e05050", fontFamily: "'Poppins', sans-serif" }}>
-                Are you sure you want to cancel this appointment?
-              </p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => setShowCancelConfirm(false)}
-                  style={{
-                    flex: 1, padding: "8px 0", borderRadius: 10,
-                    border: "1px solid rgba(187,161,79,0.3)", background: "#fff",
-                    color: "#987554", fontSize: 12, fontWeight: 700,
-                    fontFamily: "'Poppins', sans-serif", cursor: "pointer",
-                  }}
-                >
-                  No, Keep It
-                </button>
-                <button
-                  onClick={() => onCancel(booking.id)}
-                  disabled={cancelLoading}
-                  style={{
-                    flex: 1, padding: "8px 0", borderRadius: 10,
-                    border: "none",
-                    background: cancelLoading ? "rgba(200,50,50,0.3)" : "#e05050",
-                    color: "#fff", fontSize: 12, fontWeight: 700,
-                    fontFamily: "'Poppins', sans-serif",
-                    cursor: cancelLoading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {cancelLoading ? "Cancelling..." : "Yes, Cancel"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!showDeleteConfirm ? (
-            <button
-              onClick={() => {
-                setShowDeleteConfirm(true);
-                setShowCancelConfirm(false);
-                setShowReschedule(false);
-              }}
-              style={{
-                width: "100%", padding: "10px 0", borderRadius: 12,
-                background: "transparent",
-                border: "1px solid rgba(150,30,30,0.25)",
-                color: "#a83232", fontSize: 13, fontWeight: 700,
-                fontFamily: "'Poppins', sans-serif", cursor: "pointer",
-              }}
-            >
-              Delete Appointment
-            </button>
-          ) : (
-            <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(150,30,30,0.05)", border: "1px solid rgba(150,30,30,0.2)", display: "flex", flexDirection: "column", gap: 8 }}>
-              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#a83232", fontFamily: "'Poppins', sans-serif" }}>
-                This will permanently delete the appointment. Are you sure?
-              </p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  style={{
-                    flex: 1, padding: "8px 0", borderRadius: 10,
-                    border: "1px solid rgba(187,161,79,0.3)", background: "#fff",
-                    color: "#987554", fontSize: 12, fontWeight: 700,
-                    fontFamily: "'Poppins', sans-serif", cursor: "pointer",
-                  }}
-                >
-                  No, Go Back
-                </button>
-                <button
-                  onClick={() => onDelete(booking.id)}
-                  disabled={deleteLoading}
-                  style={{
-                    flex: 1, padding: "8px 0", borderRadius: 10,
-                    border: "none",
-                    background: deleteLoading ? "rgba(150,30,30,0.3)" : "#a83232",
-                    color: "#fff", fontSize: 12, fontWeight: 700,
-                    fontFamily: "'Poppins', sans-serif",
-                    cursor: deleteLoading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {deleteLoading ? "Deleting..." : "Yes, Delete"}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function DetailRow({ icon, label, value }) {
   return (
@@ -2597,8 +1826,6 @@ function DetailRow({ icon, label, value }) {
     </div>
   );
 }
-
-export { BookingStatusDrawer as LegacyBookingStatusDrawer };
 
 /* ─────────────────────────────────────────────
    APPOINTMENTS CARD VIEW
@@ -3133,7 +2360,9 @@ export default function CalendarPage() {
   const [walkIn, setWalkIn] = useState({ name: "", phone: "", email: "" });
   const [selectedServices, setSelectedServices] = useState([]); // [{ id, name, _price, _amount, ... }]
   const [selectedServiceOptions, setSelectedServiceOptions] = useState({}); // { [serviceId]: serviceOptionId }
-  const [staffPerService, setStaffPerService] = useState({});   // { [serviceId]: staffId | "any" }
+  const [staffPerService, setStaffPerService] = useState({});   // { [serviceId]: explicitly selected staffId }
+  const [staffRecommendations, setStaffRecommendations] = useState({});
+  const [recommendingServiceId, setRecommendingServiceId] = useState(null);
   const [wizDate, setWizDate] = useState(() => dayjs());
   const [wizTime, setWizTime] = useState(null);
 
@@ -3230,11 +2459,6 @@ export default function CalendarPage() {
   const selectedDateBlockReason =
     blockedDaysData.find((p) => dateStr >= p.start_date && dateStr <= p.end_date)?.reason || "";
 
-  const scheduledStartIso = useMemo(
-    () => buildScheduledStartIso(wizDate, wizTime),
-    [wizDate, wizTime]
-  );
-
   const serviceOptionsReady = useMemo(
     () => selectedServices.every((service) => {
       const options = normalizeServiceOptions(service);
@@ -3245,57 +2469,41 @@ export default function CalendarPage() {
 
   const shouldFetchServiceAvailability =
     selectedServices.length > 0 &&
-    !!scheduledStartIso &&
+    !!wizDate &&
+    !!wizTime &&
     serviceOptionsReady;
 
-  const { data: serviceAvailabilityMap = {}, isFetching: isFetchingServiceAvailability } = useQuery({
+  const {
+    data: serviceAvailabilityMap = {},
+    isFetching: isFetchingServiceAvailability,
+    error: serviceAvailabilityError,
+    refetch: refetchServiceAvailability,
+  } = useQuery({
     queryKey: [
       "booking-service-availability",
-      scheduledStartIso,
-      selectedServices.map((service) => service.id).sort((a, b) => a - b),
+      wizDate?.format("YYYY-MM-DD"),
+      wizTime,
+      selectedServices.map((service) => service.id),
       selectedServices.map((service) => [service.id, selectedServiceOptions[service.id] ?? null]),
     ],
     enabled: shouldFetchServiceAvailability,
     queryFn: async () => {
-      const entries = await Promise.all(
-        selectedServices.map(async (service) => {
-          const selectedOptionId = selectedServiceOptions[service.id];
-
-          try {
-            const response = await _axios.get(`/api/portal/v1/booking/services/${service.id}/`, {
-              params: {
-                scheduled_start: scheduledStartIso,
-                ...(selectedOptionId ? { service_option_id: selectedOptionId } : {}),
-              },
-            });
-
-            return [
-              String(service.id),
-              {
-                staff: normalizeAvailableStaffFromServiceDetail(response.data, visibleStaff, service),
-                source: "live",
-              },
-            ];
-          } catch {
-            const assignedIds = getAssignedIdsForService(service);
-            const fallbackStaff = assignedIds.length
-              ? visibleStaff.filter((person) => assignedIds.some((rawId) => matchesStaffId(person, rawId)))
-              : visibleStaff;
-
-            return [
-              String(service.id),
-              {
-                staff: fallbackStaff,
-                source: "fallback",
-              },
-            ];
-          }
-        })
-      );
-
-      return Object.fromEntries(entries);
+      const requestedServices = selectedServices.map((service) => ({
+        service_id: service.id,
+        ...(selectedServiceOptions[service.id]
+          ? { service_option_id: Number(selectedServiceOptions[service.id]) }
+          : {}),
+      }));
+      const response = await getBookingStaffOptions({
+        appointment_date: wizDate.format("YYYY-MM-DD"),
+        start_time: `${wizTime}:00`,
+        services: requestedServices,
+      });
+      const rows = normalizeBookingStaffOptions(response, requestedServices, visibleStaff);
+      return Object.fromEntries(rows.map((row) => [String(row.service_id), row]));
     },
     staleTime: 60_000,
+    retry: 1,
   });
 
   /* ── Normalise API → internal booking shape ── */
@@ -3477,6 +2685,8 @@ export default function CalendarPage() {
     setSelectedServices([]);
     setSelectedServiceOptions({});
     setStaffPerService({});
+    setStaffRecommendations({});
+    setRecommendingServiceId(null);
     setWizDate(dayjs());
     setWizTime(null);
   }, []);
@@ -3505,7 +2715,18 @@ export default function CalendarPage() {
       );
       return Object.keys(next).length === Object.keys(prev).length ? prev : next;
     });
+
+    setStaffRecommendations((prev) => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([serviceId]) => selectedIds.has(String(serviceId)))
+      );
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
   }, [selectedServices]);
+
+  useEffect(() => {
+    setStaffRecommendations({});
+  }, [wizDate, wizTime, selectedServiceOptions, selectedServices]);
 
   useEffect(() => {
     setStaffPerService((prev) => {
@@ -3513,11 +2734,6 @@ export default function CalendarPage() {
       const next = {};
 
       Object.entries(prev).forEach(([serviceId, staffId]) => {
-        if (staffId === "any") {
-          next[serviceId] = staffId;
-          return;
-        }
-
         const availability = serviceAvailabilityMap[String(serviceId)];
         if (!availability) {
           next[serviceId] = staffId;
@@ -3525,7 +2741,11 @@ export default function CalendarPage() {
         }
 
         const stillAvailable = (availability.staff || []).some((person) => String(person.id) === String(staffId));
-        if (stillAvailable) {
+        const recommendation = staffRecommendations[String(serviceId)];
+        const stillRecommended = recommendation?.available
+          && String(recommendation.staff?.id) === String(staffId)
+          && (!recommendation.expires_at || Date.parse(recommendation.expires_at) > Date.now());
+        if (stillAvailable || stillRecommended) {
           next[serviceId] = staffId;
           return;
         }
@@ -3535,7 +2755,54 @@ export default function CalendarPage() {
 
       return changed ? next : prev;
     });
-  }, [serviceAvailabilityMap]);
+  }, [serviceAvailabilityMap, staffRecommendations]);
+
+  const recommendStaffForService = useCallback(async (service, availability) => {
+    if (!availability?.scheduled_start) return;
+    setRecommendingServiceId(service.id);
+    try {
+      const selectedOptionId = selectedServiceOptions[service.id];
+      const response = await recommendWalkInStaff({
+        service_id: service.id,
+        ...(selectedOptionId ? { service_option_id: Number(selectedOptionId) } : {}),
+        scheduled_start: availability.scheduled_start,
+      });
+      const recommendation = normalizeStaffRecommendation(response, visibleStaff);
+      setStaffRecommendations((prev) => ({ ...prev, [String(service.id)]: recommendation }));
+      if (recommendation.available && recommendation.staff?.id != null) {
+        setStaffPerService((prev) => ({ ...prev, [service.id]: recommendation.staff.id }));
+      }
+    } catch (error) {
+      message.error(firstApiErrorMessage(error, "A provider could not be recommended for this service."));
+    } finally {
+      setRecommendingServiceId(null);
+    }
+  }, [selectedServiceOptions, visibleStaff]);
+
+  const staffSelectionsValid = useMemo(() => {
+    if (!shouldFetchServiceAvailability || isFetchingServiceAvailability || serviceAvailabilityError) return false;
+    return selectedServices.every((service) => {
+      const selectedStaffId = staffPerService[service.id];
+      if (!selectedStaffId) return false;
+      const availability = serviceAvailabilityMap[String(service.id)];
+      const manuallyEligible = (availability?.staff ?? []).some(
+        (person) => String(person.id) === String(selectedStaffId)
+      );
+      const recommendation = staffRecommendations[String(service.id)];
+      const recommendationEligible = recommendation?.available
+        && String(recommendation.staff?.id) === String(selectedStaffId)
+        && (!recommendation.expires_at || Date.parse(recommendation.expires_at) > Date.now());
+      return manuallyEligible || recommendationEligible;
+    });
+  }, [
+    shouldFetchServiceAvailability,
+    isFetchingServiceAvailability,
+    serviceAvailabilityError,
+    selectedServices,
+    staffPerService,
+    serviceAvailabilityMap,
+    staffRecommendations,
+  ]);
 
   /* ── Wizard validation per step ── */
   const wizStepValid = useMemo(() => {
@@ -3552,13 +2819,9 @@ export default function CalendarPage() {
         if (blockedDateSet.has(wizDate.format("YYYY-MM-DD"))) return false;
         return true;
       case 4: // Staff
-        if (!shouldFetchServiceAvailability || isFetchingServiceAvailability) return false;
-        return selectedServices.every((service) => {
-          const availability = serviceAvailabilityMap[String(service.id)];
-          return Array.isArray(availability?.staff) && availability.staff.length > 0;
-        });
+        return staffSelectionsValid;
       case 5: // Confirm
-        return true;
+        return staffSelectionsValid;
       default:
         return false;
     }
@@ -3572,9 +2835,7 @@ export default function CalendarPage() {
     wizDate,
     wizTime,
     blockedDateSet,
-    shouldFetchServiceAvailability,
-    isFetchingServiceAvailability,
-    serviceAvailabilityMap,
+    staffSelectionsValid,
   ]);
 
   /* ── POST mutation — create appointment ── */
@@ -3582,7 +2843,6 @@ export default function CalendarPage() {
     mutationFn: (data) =>
       _axios.post("/api/portal/v1/booking/appointments/", data),
     onSuccess: (_, sentPayload) => {
-      message.success("Appointment booked!");
       // Invalidate the specific date that was booked (may differ from today)
       const bookedDate = sentPayload?.appointment_date ?? dateStr;
       queryClient.invalidateQueries({ queryKey: ["appointments", bookedDate] });
@@ -3597,20 +2857,13 @@ export default function CalendarPage() {
     },
     onError: (err, sentPayload) => {
       const data = err?.response?.data ?? {};
-      const msg =
-        data.detail ||
-        data.non_field_errors?.[0] ||
-        Object.values(data)?.[0]?.[0] ||
-        "Failed to create appointment";
+      const msg = firstApiErrorMessage(err, "Failed to create appointment");
 
       // ── Waitlist eligible? Offer fallback ──
       const isWaitlistEligible =
         data.waitlist_eligible === true ||
-        (typeof data.detail === "string" &&
-          (data.detail.toLowerCase().includes("waitlist") ||
-           data.detail.toLowerCase().includes("fully booked") ||
-           data.detail.toLowerCase().includes("after hours") ||
-           data.detail.toLowerCase().includes("closing")));
+        ["waitlist_eligible", "slot_unavailable", "fully_booked", "outside_business_hours"]
+          .includes(data.code);
 
       if (isWaitlistEligible) {
         // Pre-fill staff from whatever was resolved in the failed payload
@@ -3622,6 +2875,10 @@ export default function CalendarPage() {
         setWaitlistPrompt({ payload: sentPayload, errorMsg: msg });
       } else {
         message.error(msg);
+        if (err?.response?.status === 409 || data.code === "conflict") {
+          setWizStep(4);
+          refetchServiceAvailability();
+        }
       }
       createAppointment.reset();
     },
@@ -3631,7 +2888,6 @@ export default function CalendarPage() {
   const createWaitlist = useMutation({
     mutationFn: (data) => createWaitlistEntry(data),
     onSuccess: () => {
-      message.success("Added to waitlist successfully!");
       setWaitlistPrompt(null);
       setWaitlistDate(null);
       setWaitlistStaffPerService({});
@@ -3640,12 +2896,7 @@ export default function CalendarPage() {
       addForm.resetFields();
     },
     onError: (err) => {
-      const msg =
-        err?.response?.data?.detail ||
-        err?.response?.data?.non_field_errors?.[0] ||
-        Object.values(err?.response?.data ?? {})?.[0]?.[0] ||
-        "Failed to add to waitlist";
-      message.error(msg);
+      message.error(firstApiErrorMessage(err, "Failed to add to waitlist"));
     },
   });
 
@@ -3660,7 +2911,6 @@ export default function CalendarPage() {
       });
     },
     onSuccess: () => {
-      message.success("Booking rescheduled");
       queryClient.invalidateQueries(["appointments", dateStr]);
       refetchApts();
     },
@@ -3676,8 +2926,6 @@ export default function CalendarPage() {
     mutationFn: ({ id, status }) =>
       _axios.post(`/api/portal/v1/booking/appointments/${id}/status/`, { status }),
     onSuccess: (_, { status }) => {
-      const label = STATUS_CFG[status]?.label || status;
-      message.success(`Status updated to ${label}`);
       setSelectedBooking((prev) => prev ? { ...prev, status } : prev);
       setStatusDrawerBooking((prev) => prev ? { ...prev, status } : prev);
       queryClient.invalidateQueries(["appointments", dateStr]);
@@ -3701,7 +2949,6 @@ export default function CalendarPage() {
         reason:     reason || "",
       }),
     onSuccess: () => {
-      message.success("Appointment rescheduled");
       setSelectedBooking(null);
       setStatusDrawerBooking(null);
       queryClient.invalidateQueries(["appointments", dateStr]);
@@ -3717,7 +2964,6 @@ export default function CalendarPage() {
     mutationFn: (id) =>
       _axios.post(`/api/portal/v1/booking/appointments/${id}/cancel/`),
     onSuccess: () => {
-      message.success("Appointment cancelled");
       setSelectedBooking(null);
       setStatusDrawerBooking(null);
       queryClient.invalidateQueries(["appointments", dateStr]);
@@ -3733,7 +2979,6 @@ export default function CalendarPage() {
     mutationFn: (id) =>
       _axios.delete(`/api/portal/v1/booking/appointments/${id}/`),
     onSuccess: () => {
-      message.success("Appointment deleted");
       setSelectedBooking(null);
       setStatusDrawerBooking(null);
       queryClient.invalidateQueries(["appointments", dateStr]);
@@ -4585,7 +3830,7 @@ export default function CalendarPage() {
         footer={null}
         title={null}
         closeIcon={false}
-        width={560}
+        width={640}
         styles={{
           content: {
             background: "#FDFAF5",
@@ -4623,10 +3868,10 @@ export default function CalendarPage() {
               </div>
               <div>
                 <p style={{ margin: 0, fontSize: 8, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(187,161,79,0.65)", fontFamily: "'Poppins',sans-serif" }}>
-                  {["Select Client", "Choose Services", "Choose Options", "Date & Time", "Team Member", "Confirm Booking"][wizStep]}
+                  {["Select Client", "Build Service Order", "Choose Options", "Anchor Date & Time", "Choose Providers", "Review Walk-in"][wizStep]}
                 </p>
                 <p style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#FDFAF5", fontFamily: "'Playfair Display',serif", lineHeight: 1.25 }}>
-                  New Appointment
+                  New Walk-in Appointment
                 </p>
               </div>
             </div>
@@ -4697,13 +3942,17 @@ export default function CalendarPage() {
           )}
           {wizStep === 4 && (
             <StepStaff
-              staffList={visibleStaff}
               selectedServices={selectedServices}
               selectedServiceOptions={selectedServiceOptions}
               staffPerService={staffPerService}
               setStaffPerService={setStaffPerService}
               serviceAvailabilityMap={serviceAvailabilityMap}
               isLoadingAvailability={isFetchingServiceAvailability}
+              availabilityError={serviceAvailabilityError}
+              onRetryAvailability={refetchServiceAvailability}
+              recommendations={staffRecommendations}
+              recommendingServiceId={recommendingServiceId}
+              onRecommend={recommendStaffForService}
             />
           )}
           {wizStep === 5 && (
@@ -4714,7 +3963,8 @@ export default function CalendarPage() {
               selectedServices={selectedServices}
               selectedServiceOptions={selectedServiceOptions}
               staffPerService={staffPerService}
-              staffList={visibleStaff}
+              serviceAvailabilityMap={serviceAvailabilityMap}
+              recommendations={staffRecommendations}
               bookingDate={wizDate}
               bookingTime={wizTime}
             />
@@ -4778,164 +4028,61 @@ export default function CalendarPage() {
                 : wizStep === 2
                 ? "Pick Date & Time"
                 : wizStep === 3
-                ? "Select Staff"
+                ? "Choose Providers"
                 : "Continue"}
               <FiArrowRight size={14} />
             </button>
           ) : (
             <button
               onClick={async () => {
-                /* ─────────────────────────────────────────────
-                   BUILD APPOINTMENT PAYLOAD
-                   Two distinct shapes depending on client mode:
-
-                   Existing customer:
-                   { customer_id, appointment_date, start_time, services }
-
-                   Walk-in / Guest:
-                   { guest: { full_name, phone_number },
-                     appointment_date, start_time, services,
-                     staff, booking_source: "walk-in", notes }
-                ───────────────────────────────────────────── */
-
-                /**
-                 * Resolve staff for each service:
-                 * - If a specific staff was picked → use that.
-                 * - If "any" (or nothing picked) → randomly select from the
-                 *   service's assigned_staff_ids list (or full staff list if none assigned).
-                 *
-                 * NOTE: assigned_staff_ids may contain staff profile IDs, user IDs, or
-                 * account IDs depending on the API. We match against every known ID field
-                 * on the staff object to be safe.
-                 */
-                const pickRandomFrom = (pool) => {
-                  if (!pool.length) return null;
-                  return pool[Math.floor(Math.random() * pool.length)].id;
-                };
-
-                /**
-                 * Returns true if the staff object `s` matches any of the given IDs.
-                 * Checks s.id, s.user, s.user_id, s.account_id as both number and string.
-                 */
-                const staffMatchesId = (s, rawId) => {
-                  const needle = String(rawId);
-                  return (
-                    String(s.id)         === needle ||
-                    String(s.user)       === needle ||
-                    String(s.user_id)    === needle ||
-                    String(s.account_id) === needle
-                  );
-                };
-
-                const resolveStaffForService = (svc) => {
-                  const picked = staffPerService[svc.id];
-                  const availability = serviceAvailabilityMap[String(svc.id)];
-                  const assignedIds = getAssignedIdsForService(svc);
-                  const pool = Array.isArray(availability?.staff)
-                    ? availability.staff
-                    : assignedIds.length
-                    ? visibleStaff.filter((s) => assignedIds.some((rawId) => staffMatchesId(s, rawId)))
-                    : visibleStaff;
-
-                  // If user picked a specific staff, accept it only if it's allowed by this service.
-                  if (picked && picked !== "any") {
-                    const pickedStaff = visibleStaff.find((s) => String(s.id) === String(picked));
-                    if (!pickedStaff) return null;
-                    const pickedAllowed = pool.some((staffMember) => String(staffMember.id) === String(picked));
-                    if (pickedAllowed) return Number(picked);
-                  }
-
-                  return pickRandomFrom(pool);
-                };
-
-                // Top-level staff: use first service's resolved staff (used for walk-in payload)
-                const resolvedStaff = selectedServices.length > 0
-                  ? resolveStaffForService(selectedServices[0])
-                  : null;
-
-                // Date / time — backend expects "YYYY-MM-DD" and "HH:mm:ss"
-                const appointmentDate = wizDate.format("YYYY-MM-DD");
-                const startTime       = `${wizTime}:00`;   // e.g. "10:00:00"
-
-                // Services array — each item is { service_id, staff_id (resolved) }
-                const services = selectedServices.map((s) => {
-                  const staffId = resolveStaffForService(s);
-                  const selectedOptionId = selectedServiceOptions[s.id];
-                  return staffId
-                    ? {
-                        service_id: s.id,
-                        ...(selectedOptionId ? { service_option_id: Number(selectedOptionId) } : {}),
-                        staff_id: staffId,
-                      }
-                    : {
-                        service_id: s.id,
-                        ...(selectedOptionId ? { service_option_id: Number(selectedOptionId) } : {}),
-                      };
-                });
-
-                // Guard: for restricted services, a resolved assigned staff must exist.
-                const hasUnresolvedRestrictedService = selectedServices.some((svc) => {
-                  const availability = serviceAvailabilityMap[String(svc.id)];
-                  if (Array.isArray(availability?.staff) && availability.staff.length === 0) return true;
-                  const assignedIds = getAssignedIdsForService(svc);
-                  if (!assignedIds.length && !Array.isArray(availability?.staff)) return false;
-                  const chosen = services.find((x) => String(x.service_id) === String(svc.id));
-                  return !chosen?.staff_id;
-                });
-
-                if (hasUnresolvedRestrictedService) {
-                  message.error("One or more selected services has no available staff for the selected day and time.");
+                if (!staffSelectionsValid) {
+                  message.error("Review each service window and choose an eligible provider before booking.");
                   setWizStep(4);
                   return;
                 }
-
-                let payload;
-
-                if (clientMode === "existing" && selectedClient) {
-                  // ── Existing registered customer ──
-                  payload = {
-                    customer_id:      selectedClient.id,
-                    appointment_date: appointmentDate,
-                    start_time:       startTime,
-                    services,         // each item includes staff_id when resolved
-                  };
-                } else {
-                  // ── Walk-in / Guest ──
-                  payload = {
+                try {
+                  const services = selectedServices.map((service) => ({
+                    service_id: service.id,
+                    ...(selectedServiceOptions[service.id]
+                      ? { service_option_id: Number(selectedServiceOptions[service.id]) }
+                      : {}),
+                    staff_id: staffPerService[service.id],
+                  }));
+                  const payload = buildWalkInAppointmentPayload({
+                    customerId: clientMode === "existing" ? selectedClient?.id : null,
                     guest: {
-                      full_name:    walkIn.name.trim(),
-                      phone_number: walkIn.phone.trim(),
-                      ...(walkIn.email.trim() ? { email: walkIn.email.trim() } : {}),
+                      full_name: walkIn.name,
+                      phone_number: walkIn.phone,
+                      email: walkIn.email,
                     },
-                    appointment_date: appointmentDate,
-                    start_time:       startTime,
+                    appointmentDate: wizDate.format("YYYY-MM-DD"),
+                    startTime: `${wizTime}:00`,
                     services,
-                    ...(resolvedStaff !== null ? { staff: resolvedStaff } : {}),
-                    booking_source:   "walk-in",
-                    notes:            "",
-                  };
+                  });
+                  createAppointment.mutate(payload);
+                } catch (error) {
+                  message.error(error.message);
+                  setWizStep(4);
                 }
-
-                createAppointment.mutate(payload);
               }}
-              disabled={createAppointment.isPending}
+              disabled={createAppointment.isPending || !staffSelectionsValid}
               style={{
                 display: "flex", alignItems: "center", gap: 7,
                 padding: "10px 26px", borderRadius: 10, border: "none",
-                background: createAppointment.isPending
+                background: createAppointment.isPending || !staffSelectionsValid
                   ? "rgba(187,161,79,0.5)"
                   : "linear-gradient(135deg,#BBA14F,#987554)",
                 color: "#fff",
                 fontFamily: "'Poppins',sans-serif", fontSize: 13, fontWeight: 700,
-                cursor: createAppointment.isPending ? "not-allowed" : "pointer",
-                boxShadow: createAppointment.isPending ? "none" : "0 4px 14px rgba(187,161,79,0.4)",
+                cursor: createAppointment.isPending || !staffSelectionsValid ? "not-allowed" : "pointer",
+                boxShadow: createAppointment.isPending || !staffSelectionsValid ? "none" : "0 4px 14px rgba(187,161,79,0.4)",
                 transition: "opacity 0.15s",
               }}
-              onMouseEnter={(e) => { if (!createAppointment.isPending) e.currentTarget.style.opacity = "0.88"; }}
+              onMouseEnter={(e) => { if (!createAppointment.isPending && staffSelectionsValid) e.currentTarget.style.opacity = "0.88"; }}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
             >
               <FiCheckCircle size={15} />
-              {createAppointment.isPending ? "Booking…" : "✦ Book Appointment"}
+              {createAppointment.isPending ? "Booking…" : "✦ Book Walk-in"}
             </button>
           )}
         </div>

@@ -3,6 +3,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { message, Modal, Drawer, Table, Input } from "antd";
 import { FiTag, FiUsers, FiGift, FiRefreshCw, FiPauseCircle, FiPlayCircle, FiPlus } from "react-icons/fi";
 import _axios from "../src/api/_axios";
+import { firstApiErrorMessage } from "../src/api/apiErrors";
+import PortalSelect from "../Components/PortalSelect";
 
 const normalizeList = (raw) => {
   if (Array.isArray(raw)) return raw;
@@ -275,7 +277,6 @@ export default function CampaignsPage() {
         version: Number(publishVersion || 1),
       }),
     onSuccess: () => {
-      message.success("Campaign published");
       setActionReason("");
       setOptimisticPublishedIds((prev) => {
         if (!campaignPublicId) return prev;
@@ -287,7 +288,7 @@ export default function CampaignsPage() {
       refetchDetail();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to publish campaign");
+      message.error(firstApiErrorMessage(err, "Failed to publish campaign"));
     },
   });
 
@@ -298,13 +299,12 @@ export default function CampaignsPage() {
         idempotency_key: makeIdempotencyKey(),
       }),
     onSuccess: () => {
-      message.success("Campaign paused");
       setActionReason("");
       refetchCampaigns();
       refetchDetail();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to pause campaign");
+      message.error(firstApiErrorMessage(err, "Failed to pause campaign"));
     },
   });
 
@@ -315,20 +315,18 @@ export default function CampaignsPage() {
         idempotency_key: makeIdempotencyKey(),
       }),
     onSuccess: () => {
-      message.success("Campaign resumed");
       setActionReason("");
       refetchCampaigns();
       refetchDetail();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to resume campaign");
+      message.error(firstApiErrorMessage(err, "Failed to resume campaign"));
     },
   });
 
   const createCampaign = useMutation({
     mutationFn: (payload) => _axios.post("/api/portal/v1/campaigns/", payload),
     onSuccess: (res) => {
-      message.success("Campaign created");
       const created = res?.data || {};
       const nextId = created.public_id || created.id || null;
       refetchCampaigns();
@@ -348,7 +346,7 @@ export default function CampaignsPage() {
       });
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to create campaign");
+      message.error(firstApiErrorMessage(err, "Failed to create campaign"));
     },
   });
 
@@ -552,7 +550,7 @@ export default function CampaignsPage() {
 
           <div>
             <label style={{ display: "block", fontSize: 11, color: "#987554", fontWeight: 700, marginBottom: 4 }}>Trigger Type</label>
-            <select
+            <PortalSelect
               value={createForm.trigger_type}
               onChange={(e) => setCreateForm((p) => ({ ...p, trigger_type: e.target.value }))}
               className="w-full rounded-lg px-3 py-2 text-sm"
@@ -561,7 +559,7 @@ export default function CampaignsPage() {
               {TRIGGER_TYPE_OPTIONS.map((trigger) => (
                 <option key={trigger} value={trigger}>{trigger}</option>
               ))}
-            </select>
+            </PortalSelect>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

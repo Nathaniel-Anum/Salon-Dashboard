@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import PortalSelect from "../Components/PortalSelect";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Modal,
@@ -332,7 +333,6 @@ export default function CategoriesPage() {
         : createCategory(values),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-categories"] });
-      messageApi.success(editTarget ? "Category updated!" : "Category created!");
       closeModal();
     },
     onError: () => messageApi.error("Something went wrong. Please try again."),
@@ -342,7 +342,6 @@ export default function CategoriesPage() {
     mutationFn: deleteCategory,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-categories"] });
-      messageApi.success("Category deleted.");
     },
     onError: () => messageApi.error("Could not delete category."),
   });
@@ -590,7 +589,7 @@ export default function CategoriesPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 lg:shrink-0">
-          <select
+          <PortalSelect
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
             style={{
@@ -606,7 +605,7 @@ export default function CategoriesPage() {
           >
             <option value="desc">Newest first</option>
             <option value="asc">Oldest first</option>
-          </select>
+          </PortalSelect>
 
           <div
             className="flex items-center rounded-full p-1 gap-1"

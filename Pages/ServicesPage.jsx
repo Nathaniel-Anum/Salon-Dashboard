@@ -52,6 +52,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import _axios from "../src/api/_axios";
+import { firstApiErrorMessage } from "../src/api/apiErrors";
 
 /* ─────────────────────────────────────────────
    CONSTANTS
@@ -1821,13 +1822,12 @@ export default function ServicesPage() {
       });
     },
     onSuccess: () => {
-      message.success("Service created successfully");
       queryClient.invalidateQueries(["services"]);
       setAddOpen(false);
       addForm.resetFields();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to create service");
+      message.error(firstApiErrorMessage(err, "Failed to create service"));
     },
   });
 
@@ -1848,24 +1848,22 @@ export default function ServicesPage() {
       });
     },
     onSuccess: () => {
-      message.success("Service updated successfully");
       queryClient.invalidateQueries(["services"]);
       setEditOpen(false);
       editForm.resetFields();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to update service");
+      message.error(firstApiErrorMessage(err, "Failed to update service"));
     },
   });
 
   const deleteServiceOption = useMutation({
     mutationFn: (id) => _axios.delete(`/api/portal/v1/booking/service-options/${id}/`),
     onSuccess: () => {
-      message.success("Service option deleted");
       queryClient.invalidateQueries(["services"]);
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to delete service option");
+      message.error(firstApiErrorMessage(err, "Failed to delete service option"));
     },
   });
 
@@ -1878,11 +1876,10 @@ export default function ServicesPage() {
     mutationFn: (id) =>
       _axios.delete(`/api/portal/v1/booking/services/${id}/`),
     onSuccess: () => {
-      message.success("Service deleted");
       queryClient.invalidateQueries(["services"]);
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to delete service");
+      message.error(firstApiErrorMessage(err, "Failed to delete service"));
     },
   });
 
@@ -1894,13 +1891,12 @@ export default function ServicesPage() {
     mutationFn: (data) =>
       _axios.post("/api/portal/v1/booking/service-categories/", data),
     onSuccess: () => {
-      message.success("Category created");
       queryClient.invalidateQueries(["service-categories"]);
       setAddCatOpen(false);
       addCatForm.resetFields();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to create category");
+      message.error(firstApiErrorMessage(err, "Failed to create category"));
     },
   });
 
@@ -1912,13 +1908,12 @@ export default function ServicesPage() {
     mutationFn: (data) =>
       _axios.patch(`/api/portal/v1/booking/service-categories/${data.id}/`, { name: data.name, description: data.description ?? "" }),
     onSuccess: () => {
-      message.success("Category updated");
       queryClient.invalidateQueries(["service-categories"]);
       setEditCatOpen(false);
       editCatForm.resetFields();
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to update category");
+      message.error(firstApiErrorMessage(err, "Failed to update category"));
     },
   });
 
@@ -1930,12 +1925,11 @@ export default function ServicesPage() {
     mutationFn: (id) =>
       _axios.delete(`/api/portal/v1/booking/service-categories/${id}/`),
     onSuccess: () => {
-      message.success("Category deleted");
       queryClient.invalidateQueries(["service-categories"]);
       setActiveCat("all");
     },
     onError: (err) => {
-      message.error(err.response?.data?.message || "Failed to delete category");
+      message.error(firstApiErrorMessage(err, "Failed to delete category"));
     },
   });
 

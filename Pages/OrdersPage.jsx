@@ -15,6 +15,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import PortalSelect from "../Components/PortalSelect";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Modal,
@@ -448,7 +449,6 @@ function NewOrderModal({ open, onClose, products, customers, onSuccess }) {
     mutationFn: createOrder,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-orders"] });
-      messageApi.success("Order created!");
       form.resetFields();
       setItems([{ product_id: undefined, quantity: 1 }]);
       onSuccess?.();
@@ -805,7 +805,6 @@ export default function OrdersPage() {
     mutationFn: confirmOrder,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-orders"] });
-      messageApi.success("Order confirmed!");
     },
     onError: () => messageApi.error("Action failed. Please try again."),
   });
@@ -814,7 +813,6 @@ export default function OrdersPage() {
     mutationFn: completeOrder,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-orders"] });
-      messageApi.success("Order marked as completed!");
     },
     onError: () => messageApi.error("Action failed. Please try again."),
   });
@@ -823,7 +821,6 @@ export default function OrdersPage() {
     mutationFn: cancelOrder,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commerce-orders"] });
-      messageApi.success("Order cancelled.");
     },
     onError: () => messageApi.error("Action failed. Please try again."),
   });
@@ -1110,7 +1107,7 @@ export default function OrdersPage() {
           )}
         </div>
 
-        <select
+        <PortalSelect
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value)}
           style={{
@@ -1126,7 +1123,7 @@ export default function OrdersPage() {
         >
           <option value="desc">Newest first</option>
           <option value="asc">Oldest first</option>
-        </select>
+        </PortalSelect>
       </div>
 
       {/* ── Table ── */}

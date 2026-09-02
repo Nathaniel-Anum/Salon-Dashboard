@@ -353,6 +353,136 @@
   box-shadow: 0 10px 30px rgba(33, 31, 27, 0.06);
 }
 
+.checkout-addon-intro {
+  margin: 10px 0 0;
+  color: var(--checkout-muted);
+  font: 400 10px/1.55 "Poppins", sans-serif;
+}
+
+.checkout-addon-list {
+  display: grid;
+  gap: 11px;
+  margin-top: 14px;
+}
+
+.checkout-addon-card {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  padding: 5px 13px 14px;
+  border: 1px solid rgba(33, 31, 27, 0.11);
+  border-radius: 13px;
+  background: #fffdf9;
+}
+
+.checkout-addon-card.has-error {
+  border-color: rgba(163, 63, 63, 0.38);
+  box-shadow: inset 3px 0 0 rgba(163, 63, 63, 0.65);
+}
+
+.checkout-addon-card legend {
+  padding: 0 7px 0 0;
+  color: var(--checkout-muted);
+  font: 700 9px/1.2 "Poppins", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.checkout-addon-card legend span {
+  display: inline-grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  margin-right: 6px;
+  border-radius: 50%;
+  color: white;
+  background: var(--checkout-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkout-addon-remove {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--checkout-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.checkout-addon-remove:hover,
+.checkout-addon-remove:focus-visible {
+  color: var(--checkout-red);
+  background: rgba(163, 63, 63, 0.07);
+}
+
+.checkout-addon-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 11px 1px 14px;
+}
+
+.checkout-addon-actions span {
+  color: var(--checkout-muted);
+  font: 600 9px/1 "Poppins", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.checkout-addon-actions .checkout-text-button:disabled,
+.checkout-addon-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.checkout-validation-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(163, 63, 63, 0.3);
+  border-radius: 11px;
+  outline: none;
+  color: var(--checkout-red);
+  background: #fff5f2;
+  font: 400 10px/1.45 "Poppins", sans-serif;
+}
+
+.checkout-validation-summary:focus-visible {
+  box-shadow: 0 0 0 3px rgba(163, 63, 63, 0.14);
+}
+
+.checkout-validation-summary > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.checkout-validation-summary b,
+.checkout-validation-summary p,
+.checkout-validation-summary small {
+  display: block;
+  margin: 0;
+}
+
+.checkout-validation-summary ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
+.checkout-validation-summary p,
+.checkout-validation-summary small {
+  margin-top: 5px;
+  color: #765a53;
+  font-size: 9px;
+}
+
 .checkout-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -380,6 +510,30 @@
   font-style: normal;
 }
 
+.checkout-optional {
+  color: #9a9187;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkout-field-error,
+.checkout-row-error {
+  color: var(--checkout-red);
+  font: 500 9px/1.4 "Poppins", sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkout-row-error {
+  margin: 8px 0 0;
+}
+
+.checkout-form-grid label.has-error input,
+.checkout-form-grid label.has-error .ant-select-selector {
+  border-color: rgba(163, 63, 63, 0.65) !important;
+}
+
 .checkout-form-grid input,
 .checkout-form-grid select,
 .checkout-payment-form input,
@@ -393,6 +547,15 @@
   outline: none;
   background: #fffdf9;
   color: var(--checkout-ink);
+  font: 500 12px/1.4 "Poppins", sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkout-form-grid .portal-select,
+.checkout-payment-form .portal-select {
+  width: 100%;
+  min-height: 40px;
   font: 500 12px/1.4 "Poppins", sans-serif;
   text-transform: none;
   letter-spacing: 0;
@@ -465,6 +628,11 @@
   border-radius: 9px;
   background: rgba(163, 63, 63, 0.06);
   color: var(--checkout-red);
+}
+
+.checkout-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .checkout-history,
@@ -912,6 +1080,14 @@
 
   .checkout-secondary-buttons {
     grid-template-columns: 1fr;
+  }
+
+  .checkout-addon-card .checkout-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .checkout-addon-card .checkout-form-grid .span-2 {
+    grid-column: span 1;
   }
 }
 
