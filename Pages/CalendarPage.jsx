@@ -2464,6 +2464,7 @@ export default function CalendarPage() {
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [view, setView] = useState("calendar"); // "calendar" | "cards"
+  const [staffFilter, setStaffFilter] = useState("scheduled");
   const [dragging, setDragging] = useState(null); // { booking, offsetSlots }
   const [dragOverCol, setDragOverCol] = useState(null);  // staffId
   const [dragOverSlot, setDragOverSlot] = useState(null); // slot index
@@ -2542,7 +2543,7 @@ export default function CalendarPage() {
     return map;
   }, [schedulesData, selectedDate, visibleStaff]);
   const scheduleDataReady = !schedulesLoading && !schedulesError;
-  const calendarStaff = useMemo(() => {
+  const scheduledStaff = useMemo(() => {
     if (!scheduleDataReady) return [];
 
     return visibleStaff.filter((staff) => {
@@ -2559,6 +2560,30 @@ export default function CalendarPage() {
       });
     });
   }, [scheduleDataReady, schedulesByStaff, visibleStaff]);
+  const calendarStaff = useMemo(() => {
+    if (staffFilter === "all") return visibleStaff;
+    if (staffFilter.startsWith("staff:")) {
+      const selectedStaffId = staffFilter.slice("staff:".length);
+      return visibleStaff.filter((staff) => String(staff.id) === selectedStaffId);
+    }
+    return scheduledStaff;
+  }, [scheduledStaff, staffFilter, visibleStaff]);
+  const staffFilterOptions = useMemo(() => [
+    {
+      label: "Roster views",
+      options: [
+        { value: "scheduled", label: `Scheduled staff (${scheduledStaff.length})` },
+        { value: "all", label: `All staff (${visibleStaff.length})` },
+      ],
+    },
+    {
+      label: "Individual staff",
+      options: visibleStaff.map((staff) => ({
+        value: `staff:${staff.id}`,
+        label: staff.full_name,
+      })),
+    },
+  ], [scheduledStaff.length, visibleStaff]);
 
   /* ── Fetch services (for Add form dropdown) ── */
   const { data: servicesRaw } = useQuery({
@@ -3238,7 +3263,7 @@ export default function CalendarPage() {
     const slot = yToSlot(y);
     const staffSchedule = schedulesByStaff.get(String(staffId)) ?? [];
     const isAvailable =
-      !scheduleDataReady || isSlotInsideSchedule(staffSchedule, slot * SLOT_MINS);
+      scheduleDataReady && isSlotInsideSchedule(staffSchedule, slot * SLOT_MINS);
     e.dataTransfer.dropEffect = isAvailable ? "move" : "none";
     if (!isAvailable) {
       setDragOverCol(null);
@@ -3258,7 +3283,7 @@ export default function CalendarPage() {
     const slot = yToSlot(y);
     const staffSchedule = schedulesByStaff.get(String(staffId)) ?? [];
     const isAvailable =
-      !scheduleDataReady || isSlotInsideSchedule(staffSchedule, slot * SLOT_MINS);
+      scheduleDataReady && isSlotInsideSchedule(staffSchedule, slot * SLOT_MINS);
     if (!isAvailable) {
       setDragOverCol(null);
       setDragOverSlot(null);
@@ -3655,6 +3680,45 @@ export default function CalendarPage() {
           </div>
         </div>
 
+        {view === "calendar" && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: isMobile ? "8px 16px" : "8px 28px",
+              background: CALENDAR_SURFACE.muted,
+              borderBottom: "1px solid rgba(92,74,52,0.14)",
+              flexShrink: 0,
+            }}
+          >
+            <FiUsers size={13} color="#8b744e" style={{ flexShrink: 0 }} />
+            {!isMobile && (
+              <span style={{ color: "#6f5a42", fontSize: 10, fontWeight: 700, fontFamily: "'Poppins',sans-serif", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                Showing
+              </span>
+            )}
+            <Select
+              value={staffFilter}
+              onChange={setStaffFilter}
+              options={staffFilterOptions}
+              showSearch
+              optionFilterProp="label"
+              popupMatchSelectWidth={260}
+              aria-label="Filter calendar staff"
+              style={{
+                width: isMobile ? "100%" : 220,
+                fontFamily: "'Poppins',sans-serif",
+              }}
+            />
+            {!isMobile && (
+              <span style={{ marginLeft: "auto", color: "rgba(111,90,66,0.72)", fontSize: 10, fontFamily: "'Poppins',sans-serif" }}>
+                {calendarStaff.length} column{calendarStaff.length !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* ── Blocked day banner — shown when the selected date is closed ── */}
         {selectedDateIsBlocked && (
           <div style={{
@@ -3750,12 +3814,14 @@ export default function CalendarPage() {
                     fontWeight: 600,
                   }}
                 >
-                  {schedulesLoading && <Spin size="small" />}
-                  {schedulesLoading
+                  {schedulesLoading && staffFilter === "scheduled" && <Spin size="small" />}
+                  {schedulesLoading && staffFilter === "scheduled"
                     ? "Loading staff schedules…"
-                    : schedulesError
+                    : schedulesError && staffFilter === "scheduled"
                     ? "Staff schedules could not be loaded."
-                    : "No staff scheduled for this day."}
+                    : staffFilter === "scheduled"
+                    ? "No staff scheduled for this day."
+                    : "No staff match this filter."}
                 </div>
               )}
               {calendarStaff.map((staff, i) => {
@@ -4022,7 +4088,7 @@ export default function CalendarPage() {
                     <div className="absolute inset-0" style={{ zIndex: 6 }}>
                       {timeLabels.map(({ s, mins }) => {
                         const isAvailable =
-                          !scheduleDataReady || isSlotInsideSchedule(staffSchedule, mins);
+                          scheduleDataReady && isSlotInsideSchedule(staffSchedule, mins);
                         const isHovered =
                           hoveredTimeSlot?.staffId === staff.id &&
                           hoveredTimeSlot?.slot === s;
