@@ -53,12 +53,24 @@ import PortalSelect from "../Components/PortalSelect";
 /* ─────────────────────────────────────────────
    CONSTANTS & HELPERS
 ───────────────────────────────────────────── */
-const HOUR_START = 8;          // 08:00
-const HOUR_END   = 20;         // 20:00
-const SLOT_MINS  = 15;         // granularity
-const TOTAL_SLOTS = ((HOUR_END - HOUR_START) * 60) / SLOT_MINS; // 48
-const SLOT_HEIGHT_PX = 64;     // height of each 15-min row
-const COLUMN_W = 220;          // px width per person column
+const CALENDAR_START_HOUR = 0;  // 12:00 AM
+const CALENDAR_END_HOUR   = 24; // midnight boundary after 11:45 PM
+const BOOKING_START_HOUR  = 8;  // booking wizard availability starts at 08:00
+const BOOKING_END_HOUR    = 20; // booking wizard availability ends at 20:00
+const SLOT_MINS = 15;
+const TOTAL_SLOTS = ((CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60) / SLOT_MINS; // 96
+const SLOT_HEIGHT_PX = 18;      // four compact quarter-hour rows = 72px per hour
+const COLUMN_W = 220;           // px width per person column
+
+// Warm stone surfaces keep the dense calendar comfortable during long shifts.
+const CALENDAR_SURFACE = {
+  shell: "#E7E1D8",
+  raised: "#F0ECE5",
+  muted: "#E3DDD3",
+  grid: "#ECE7DF",
+  cardTop: "#F4F0EA",
+  cardBottom: "#EAE4DC",
+};
 
 const AVATAR_COLORS = [
   ["#BBA14F", "#987554"],
@@ -84,15 +96,15 @@ function initials(name = "") {
     .toUpperCase();
 }
 
-/** Convert "HH:MM" → minutes from HOUR_START */
+/** Convert "HH:MM" → minutes from the start of the calendar day */
 function timeToMins(timeStr) {
   const [h, m] = timeStr.split(":").map(Number);
-  return (h - HOUR_START) * 60 + m;
+  return (h - CALENDAR_START_HOUR) * 60 + m;
 }
 
-/** Minutes from HOUR_START → "HH:MM" */
+/** Minutes from the start of the calendar day → "HH:MM" */
 function minsToTime(mins) {
-  const total = mins + HOUR_START * 60;
+  const total = mins + CALENDAR_START_HOUR * 60;
   const h = Math.floor(total / 60) % 24;
   const m = total % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -102,6 +114,16 @@ function minsToTime(mins) {
 function minsToY(mins) {
   const slot = mins / SLOT_MINS;
   return slot * SLOT_HEIGHT_PX;
+}
+
+/** Exact current position in the GMT+0 day, including seconds. */
+function getGmtMinutes(date = new Date()) {
+  return (
+    (date.getUTCHours() - CALENDAR_START_HOUR) * 60 +
+    date.getUTCMinutes() +
+    date.getUTCSeconds() / 60 +
+    date.getUTCMilliseconds() / 60_000
+  );
 }
 
 /** Slot index from raw pixel y */
@@ -114,6 +136,101 @@ function formatDisplayTime(timeStr) {
   const ampm = h >= 12 ? "PM" : "AM";
   const h12 = h % 12 || 12;
   return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function formatCurrentTime(minutesFromMidnight) {
+  const totalMinutes = Math.floor(Math.max(0, minutesFromMidnight));
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = totalMinutes % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+/** Convert a schedule API time ("HH:MM" or "HH:MM:SS") to minutes after midnight. */
+function scheduleTimeToMins(timeStr) {
+  const [hours, minutes] = String(timeStr ?? "").split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+/** The schedule API uses Monday=0 through Sunday=6. */
+function scheduleWeekday(date) {
+  return (date.getUTCDay() + 6) % 7;
+}
+
+/** A complete 15-minute cell must be inside an active schedule window. */
+function isSlotInsideSchedule(scheduleEntries, slotStartMins) {
+  const slotEndMins = slotStartMins + SLOT_MINS;
+  const parsedEntries = scheduleEntries
+    .map((entry) => ({
+      ...entry,
+      startMins: scheduleTimeToMins(entry.start_time),
+      endMins: scheduleTimeToMins(entry.end_time),
+    }))
+    .filter((entry) => entry.startMins !== null && entry.endMins !== null);
+
+  const insideActiveWindow = parsedEntries.some(
+    (entry) =>
+      entry.is_available !== false &&
+      slotStartMins >= entry.startMins &&
+      slotEndMins <= entry.endMins
+  );
+  const overlapsInactiveWindow = parsedEntries.some(
+    (entry) =>
+      entry.is_available === false &&
+      slotStartMins < entry.endMins &&
+      slotEndMins > entry.startMins
+  );
+
+  return insideActiveWindow && !overlapsInactiveWindow;
+}
+
+/**
+ * Split a staff member's appointments into independent overlap clusters, then
+ * assign lanes inside each cluster. A busy hour no longer narrows every card
+ * in the rest of that staff member's day.
+ */
+function layoutBookingLanes(bookings) {
+  const sorted = [...bookings].sort((a, b) => {
+    const startDiff = timeToMins(a.startTime) - timeToMins(b.startTime);
+    if (startDiff !== 0) return startDiff;
+    return b.durationMins - a.durationMins;
+  });
+  const clusters = [];
+  let currentCluster = [];
+  let clusterEnd = -Infinity;
+
+  sorted.forEach((booking) => {
+    const start = timeToMins(booking.startTime);
+    const end = start + booking.durationMins;
+    if (currentCluster.length > 0 && start >= clusterEnd) {
+      clusters.push(currentCluster);
+      currentCluster = [];
+      clusterEnd = -Infinity;
+    }
+    currentCluster.push(booking);
+    clusterEnd = Math.max(clusterEnd, end);
+  });
+  if (currentCluster.length > 0) clusters.push(currentCluster);
+
+  return clusters.flatMap((cluster) => {
+    const laneEnds = [];
+    const positioned = cluster.map((booking) => {
+      const start = timeToMins(booking.startTime);
+      const end = start + booking.durationMins;
+      let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(end);
+      } else {
+        laneEnds[lane] = end;
+      }
+      return { booking, lane };
+    });
+    const laneCount = Math.max(1, laneEnds.length);
+    return positioned.map((item) => ({ ...item, laneCount }));
+  });
 }
 
 function normalizeServiceOptions(service = {}) {
@@ -898,12 +1015,21 @@ function StepStaff({
 }
 
 /* ── Step 4: Date & Time ── */
-function StepDateTime({ selectedDate, setSelectedDate, selectedTime, setSelectedTime, blockedDateSet = new Set() }) {
+function StepDateTime({
+  selectedDate,
+  setSelectedDate,
+  selectedTime,
+  setSelectedTime,
+  blockedDateSet = new Set(),
+  checkingAvailability = false,
+  availabilityError = null,
+  hasAvailableStaff = null,
+}) {
   const today = dayjs().startOf("day");
 
-  // Build time slots 08:00–20:00 every 15 min
+  // Build bookable business-hour slots every 15 min.
   const slots = [];
-  for (let h = HOUR_START; h < HOUR_END; h++) {
+  for (let h = BOOKING_START_HOUR; h < BOOKING_END_HOUR; h++) {
     for (let m = 0; m < 60; m += SLOT_MINS) {
       const hh = String(h).padStart(2, "0");
       const mm = String(m).padStart(2, "0");
@@ -1077,6 +1203,43 @@ function StepDateTime({ selectedDate, setSelectedDate, selectedTime, setSelected
             );
           })}
         </div>
+
+        {selectedTime && !selectedIsBlocked && (
+          <div
+            role="status"
+            style={{
+              marginTop: 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "9px 11px",
+              borderRadius: 9,
+              border: availabilityError
+                ? "1px solid rgba(126,77,62,0.28)"
+                : hasAvailableStaff === false
+                ? "1px solid rgba(126,77,62,0.25)"
+                : "1px solid rgba(187,161,79,0.22)",
+              background: availabilityError || hasAvailableStaff === false
+                ? "rgba(126,77,62,0.08)"
+                : "rgba(187,161,79,0.07)",
+              color: availabilityError || hasAvailableStaff === false ? "#7e4d3e" : "#765f28",
+              fontFamily: "'Poppins',sans-serif",
+              fontSize: 11,
+              fontWeight: 600,
+              lineHeight: 1.45,
+            }}
+          >
+            {checkingAvailability ? (
+              <><Spin size="small" /> Checking staff availability…</>
+            ) : availabilityError ? (
+              "Staff availability could not be verified. Please try this time again."
+            ) : hasAvailableStaff === false ? (
+              "No staff member can cover the complete service time. Please choose another time."
+            ) : hasAvailableStaff === true ? (
+              <><FiCheck size={13} /> Staff are available for this time.</>
+            ) : null}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1118,6 +1281,24 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sel
     return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
   })();
 
+  const staffGroups = (() => {
+    const groups = new Map();
+    selectedServices.forEach((service, serviceIndex) => {
+      const provider = selectedStaff(service.id);
+      const staffId = provider?.id ?? staffPerService[service.id] ?? "unassigned";
+      const key = String(staffId);
+      if (!groups.has(key)) {
+        groups.set(key, {
+          staffId,
+          provider,
+          services: [],
+        });
+      }
+      groups.get(key).services.push({ service, serviceIndex });
+    });
+    return [...groups.values()];
+  })();
+
   const row = (label, value, gold) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, padding: "9px 0", borderBottom: "1px solid rgba(187,161,79,0.1)" }}>
       <span style={{ fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>{label}</span>
@@ -1133,36 +1314,57 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sel
         {row("Time", timeDisplay)}
       </div>
 
-      <p style={WZ.sectionLabel}>Services</p>
+      <p style={WZ.sectionLabel}>Staff assignments</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-        {selectedServices.map((svc, index) => {
-          const provider = selectedStaff(svc.id);
+        {staffGroups.map((group) => {
+          const providerName = group.provider?.full_name || "Provider not selected";
+          const [from, to] = avatarGradient(providerName);
           return (
-          <div key={svc.id} style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "10px 14px", borderRadius: 12,
-            background: "#faf8f4", border: "1px solid rgba(187,161,79,0.18)",
-          }}>
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#272727", color: "#e4ca80", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 11, fontWeight: 800, fontFamily: "'Poppins',sans-serif" }}>
-              {index + 1}
+            <div
+              key={String(group.staffId)}
+              style={{
+                overflow: "hidden",
+                borderRadius: 13,
+                background: "#faf8f4",
+                border: "1px solid rgba(187,161,79,0.2)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 13px", background: "rgba(187,161,79,0.07)", borderBottom: "1px solid rgba(187,161,79,0.14)" }}>
+                <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${from},${to})`, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 10, fontWeight: 800, fontFamily: "'Poppins',sans-serif" }}>
+                  {initials(providerName)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#272727", fontFamily: "'Poppins',sans-serif" }}>{providerName}</p>
+                  <p style={{ margin: 0, fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+                    {group.services.length} service{group.services.length !== 1 ? "s" : ""} assigned
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ padding: "4px 13px 7px" }}>
+                {group.services.map(({ service, serviceIndex }) => {
+                  const selectedOption = getSelectedServiceOption(service, selectedServiceOptions);
+                  return (
+                    <div key={service.id} style={{ display: "grid", gridTemplateColumns: "24px minmax(0,1fr) auto", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid rgba(187,161,79,0.1)" }}>
+                      <span style={{ width: 22, height: 22, borderRadius: 7, background: "#272727", color: "#e4ca80", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, fontFamily: "'Poppins',sans-serif" }}>
+                        {serviceIndex + 1}
+                      </span>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#3d2e1e", fontFamily: "'Poppins',sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {service.name}{selectedOption?.name ? ` · ${selectedOption.name}` : ""}
+                        </p>
+                        <p style={{ margin: "2px 0 0", fontSize: 10, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
+                          <FiClock size={9} style={{ marginRight: 4 }} />{windowLabel(service.id)}
+                        </p>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#BBA14F", fontFamily: "'Poppins',sans-serif", whiteSpace: "nowrap" }}>
+                        {getServiceDisplayPrice(service, selectedServiceOptions)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>{svc.name}</p>
-              {getSelectedServiceOption(svc, selectedServiceOptions)?.name && (
-                <p style={{ margin: 0, fontSize: 11, color: "#BBA14F", fontFamily: "'Poppins',sans-serif", fontWeight: 600 }}>
-                  <FiTag size={10} style={{ marginRight: 4 }} />{getSelectedServiceOption(svc, selectedServiceOptions)?.name}
-                </p>
-              )}
-              <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>
-                <FiClock size={10} style={{ marginRight: 4 }} />{windowLabel(svc.id)}
-                {" · "}<FiUsers size={10} style={{ marginRight: 4 }} />{provider?.full_name || "Provider not selected"}
-              </p>
-              {provider?.assigned_to_service === false && (
-                <p style={{ margin: "3px 0 0", fontSize: 9, color: "#8a6a24", fontFamily: "'Poppins',sans-serif", fontWeight: 700 }}>Portal roster override</p>
-              )}
-            </div>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "#BBA14F", fontFamily: "'Poppins',sans-serif", flexShrink: 0 }}>{getServiceDisplayPrice(svc, selectedServiceOptions)}</span>
-          </div>
           );
         })}
       </div>
@@ -1235,16 +1437,17 @@ function StaffCircle({ staff, isActive, onClick }) {
 /* ─────────────────────────────────────────────
    BOOKING CARD — draggable appointment block rendered inside the calendar grid.
    Each card is absolutely positioned by start time and sized by duration.
-   On hover it reveals a rich info overlay showing all booking details.
+   On hover it opens a separate, compact preview without changing card geometry.
 ───────────────────────────────────────────── */
 function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDragEnd, onClick }) {
   /* ── Geometry ── */
   const startMins = timeToMins(booking.startTime);
   const topPx     = minsToY(startMins);
-  const heightPx  = Math.max(
-    (booking.durationMins / SLOT_MINS) * SLOT_HEIGHT_PX - 4,
-    SLOT_HEIGHT_PX - 4
+  const heightPx = Math.max(
+    (booking.durationMins / SLOT_MINS) * SLOT_HEIGHT_PX - 2,
+    SLOT_HEIGHT_PX - 2
   );
+  const isMicroCard = heightPx < 34;
 
   /* ── Status colour config ── */
   const cfg = getStatusCfg(booking.status);
@@ -1254,55 +1457,143 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
   const leftPct  = colOffset * slotW;
   const rightPct = 100 - (colOffset + 1) * slotW;
 
-  /* ── Hover state that toggles the info overlay ── */
+  /* ── Hover state is visual only; the floating preview lives outside the card. ── */
   const [hovered, setHovered] = useState(false);
 
   /* ── Derive enriched data from booking.raw (full API response) ── */
   const raw = booking.raw || {};
 
   // Collect all services from raw — supports both single and multi-service bookings
-  const rawServices = Array.isArray(raw.services) && raw.services.length > 0
-    ? raw.services                              // new multi-service shape
+  const rawServices = Array.isArray(booking.services) && booking.services.length > 0
+    ? booking.services                          // staff-specific calendar segment
+    : Array.isArray(raw.services) && raw.services.length > 0
+      ? raw.services                            // legacy full appointment shape
     : raw.service_name                          // legacy single-service fallback
       ? [{ service_name: raw.service_name, staff_name: raw.staff_name }]
       : [];
 
-  // Resolve staff display name — check multiple possible API field names
-  const staffDisplay =
-    raw.staff_full_name ||
-    raw.staff_name      ||
-    raw.assigned_staff  ||
-    booking.staffName   ||
-    null;
-
   // Calculate end time from start + duration
   const endMins   = startMins + booking.durationMins;
-  const endTime   = `${String(Math.floor((endMins + HOUR_START * 60) / 60) % 24).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+  const endTime   = `${String(Math.floor((endMins + CALENDAR_START_HOUR * 60) / 60) % 24).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
 
   // Format duration as "1h 30m" or "45m"
   const durLabel  = booking.durationMins >= 60
     ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
     : `${booking.durationMins}m`;
 
-  return (
+  const serviceSummary = rawServices
+    .map((service) => service.service_name || service.name)
+    .filter(Boolean)
+    .join(" · ") || booking.service || "Service not specified";
+
+  const hoverPreview = (
     <div
-      draggable={!isPast}
-      onDragStart={(e) => !isPast && onDragStart(e, booking)}
+      style={{
+        width: 230,
+        padding: "5px 4px 4px",
+        fontFamily: "'Poppins',sans-serif",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 9,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            background: "rgba(187,161,79,0.16)",
+            color: "#e4ca80",
+          }}
+        >
+          <FiUser size={13} />
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              color: "#fffdf7",
+              fontSize: 12,
+              fontWeight: 800,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {booking.client}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: cfg.dot }} />
+            <span style={{ color: cfg.dot, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              {cfg.label}
+            </span>
+            {booking.segmentCount > 1 && (
+              <span style={{ color: "rgba(255,253,247,0.5)", fontSize: 9 }}>
+                · assignment {booking.segmentIndex + 1} of {booking.segmentCount}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height: 1, background: "rgba(187,161,79,0.18)", marginBottom: 8 }} />
+
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 7, marginBottom: 8 }}>
+        <FiScissors size={11} color="#c9ae5e" style={{ flexShrink: 0, marginTop: 2 }} />
+        <span
+          style={{
+            color: "rgba(255,253,247,0.88)",
+            fontSize: 11,
+            fontWeight: 600,
+            lineHeight: 1.4,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {serviceSummary}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <FiClock size={11} color="#c9ae5e" style={{ flexShrink: 0 }} />
+        <span style={{ color: "#fffdf7", fontSize: 11, fontWeight: 700 }}>
+          {formatDisplayTime(booking.startTime)}–{formatDisplayTime(endTime)}
+        </span>
+        <span style={{ marginLeft: "auto", color: "rgba(255,253,247,0.55)", fontSize: 10 }}>
+          {durLabel}
+        </span>
+      </div>
+    </div>
+  );
+
+  return (
+    <Tooltip
+      title={hoverPreview}
+      placement="rightTop"
+      mouseEnterDelay={0.2}
+      color="#17130d"
+      overlayStyle={{ maxWidth: 260 }}
+    >
+    <div
+      draggable={!isPast && !booking.isServiceSegment}
+      onDragStart={(e) => !isPast && !booking.isServiceSegment && onDragStart(e, booking)}
       onDragEnd={onDragEnd}
       onClick={() => onClick(booking)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         position: "absolute",
-        top:    topPx + 2,
+        top:    topPx + 1,
         left:   `calc(${leftPct}% + 4px)`,
         right:  `calc(${rightPct}% + 4px)`,
         height: heightPx,
-        /* Lift hovered card above neighbours */
-        zIndex: hovered ? 40 : 10,
-        borderRadius: 10,
-        overflow: "visible",           // allow overlay to spill beyond card height
-        cursor: isPast ? "not-allowed" : "grab",
+        zIndex: 10,
+        borderRadius: isMicroCard ? 5 : 8,
+        overflow: "hidden",
+        cursor: isPast ? "not-allowed" : booking.isServiceSegment ? "pointer" : "grab",
         /* Pure black card */
         background: isPast
           ? "#1c1c1c"
@@ -1315,7 +1606,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
             : "1px solid rgba(187,161,79,0.45)",
         userSelect: "none",
         opacity: isPast ? 0.6 : 1,
-        transition: "box-shadow 0.18s ease, border-color 0.18s ease, z-index 0s",
+        transition: "border-color 0.18s ease, opacity 0.18s ease",
       }}
     >
       {/* Gold top accent bar */}
@@ -1332,21 +1623,16 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
       {/* ── Compact card content (always visible) ── */}
       <div style={{
         display: "flex",
-        flexDirection: "column",
         justifyContent: "center",
         height: "100%",
-        paddingTop: 7,
-        paddingBottom: 6,
-        paddingLeft: 10,
-        paddingRight: 8,
-        gap: 3,
-        /* Fade out content when overlay is shown so it doesn't bleed through */
-        opacity: hovered ? 0 : 1,
-        transition: "opacity 0.15s ease",
+        flexDirection: isMicroCard ? "row" : "column",
+        alignItems: isMicroCard ? "center" : "stretch",
+        padding: isMicroCard ? "1px 6px" : "5px 8px 4px",
+        gap: isMicroCard ? 5 : 2,
       }}>
 
         {/* Status badge row */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
           <span style={{
             width: 6, height: 6,
             borderRadius: "50%",
@@ -1354,7 +1640,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
             display: "inline-block",
             flexShrink: 0,
           }} />
-          <span style={{
+          {!isMicroCard && <span style={{
             fontSize: 10,
             fontWeight: 800,
             textTransform: "uppercase",
@@ -1364,27 +1650,28 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
             textShadow: "0 1px 4px rgba(0,0,0,0.8)",
           }}>
             {cfg.label}
-          </span>
+          </span>}
         </div>
 
         {/* Client name */}
         <p style={{
           margin: 0,
-          fontSize: 14,
+          fontSize: isMicroCard ? 10 : 12,
           fontWeight: 800,
           color: "#FFFFFF",
           fontFamily: "'Poppins', sans-serif",
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
-          lineHeight: 1.2,
+          lineHeight: 1.1,
+          flex: isMicroCard ? 1 : "unset",
           textShadow: "0 1px 6px rgba(0,0,0,0.9)",
         }}>
           {booking.client}
         </p>
 
         {/* Service name — only when card is tall enough */}
-        {heightPx > 72 && (
+        {heightPx > 70 && (
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <FiScissors size={10} color="#FFFFFF" style={{ flexShrink: 0 }} />
             <span style={{
@@ -1403,7 +1690,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
         )}
 
         {/* Time range — only when card is tall enough */}
-        {heightPx > 100 && (
+        {heightPx > 96 && (
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <FiClock size={9} color="#FFFFFF" style={{ flexShrink: 0 }} />
             <span style={{
@@ -1421,172 +1708,8 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
         )}
       </div>
 
-      {/* ── Hover info overlay — rich booking details panel ── */}
-      {hovered && (
-        <div
-          /* Stop hover events from leaking to grid so the overlay stays open */
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          style={{
-            position: "absolute",
-            /* Anchor to top of card; min height covers the card itself */
-            top: 0,
-            left: 0,
-            right: 0,
-            minHeight: Math.max(heightPx, 160),
-            zIndex: 50,
-            borderRadius: 10,
-            background: "linear-gradient(160deg, #1a1308 0%, #100d05 60%, #0b0800 100%)",
-            border: "1.5px solid rgba(187,161,79,0.65)",
-            boxShadow: "none",
-            padding: "10px 12px 12px",
-            pointerEvents: "none",             // overlay is read-only; clicks fall to card below
-            display: "flex",
-            flexDirection: "column",
-            gap: 7,
-          }}
-        >
-          {/* Gold top accent bar on overlay */}
-          <div style={{
-            position: "absolute",
-            top: 0, left: 0, right: 0,
-            height: 3,
-            borderRadius: "10px 10px 0 0",
-            background: "linear-gradient(90deg, #BBA14F, #e4ca80)",
-          }} />
-
-          {/* ── Client row ── */}
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 4 }}>
-            <FiUser size={12} color="#BBA14F" style={{ flexShrink: 0 }} />
-            <span style={{
-              fontSize: 13,
-              fontWeight: 800,
-              color: "#FDFAF5",
-              fontFamily: "'Poppins', sans-serif",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}>
-              {booking.client}
-            </span>
-          </div>
-
-          {/* ── Status badge ── */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{
-              width: 7, height: 7,
-              borderRadius: "50%",
-              background: cfg.dot,
-              display: "inline-block",
-              flexShrink: 0,
-            }} />
-            <span style={{
-              fontSize: 10,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              color: cfg.dot,
-              fontFamily: "'Poppins', sans-serif",
-            }}>
-              {cfg.label}
-            </span>
-          </div>
-
-          {/* Divider */}
-          <div style={{ height: 1, background: "rgba(187,161,79,0.2)", margin: "0 0 1px" }} />
-
-          {/* ── Services list (supports multiple services) ── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {rawServices.length > 0 ? rawServices.map((svc, idx) => (
-              <div key={idx} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {/* Service name */}
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <FiScissors size={11} color="#BBA14F" style={{ flexShrink: 0 }} />
-                  <span style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "#FDFAF5",
-                    fontFamily: "'Poppins', sans-serif",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}>
-                    {svc.service_name || svc.name || booking.service}
-                  </span>
-                </div>
-                {/* Per-service staff if present */}
-                {svc.staff_name && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 17 }}>
-                    <FiUsers size={10} color="rgba(187,161,79,0.6)" style={{ flexShrink: 0 }} />
-                    <span style={{
-                      fontSize: 11,
-                      color: "rgba(253,250,245,0.65)",
-                      fontFamily: "'Poppins', sans-serif",
-                    }}>
-                      {svc.staff_name}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )) : (
-              /* Fallback: single service from booking object */
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <FiScissors size={11} color="#BBA14F" style={{ flexShrink: 0 }} />
-                <span style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "#FDFAF5",
-                  fontFamily: "'Poppins', sans-serif",
-                }}>
-                  {booking.service || "—"}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* ── Assigned staff (top-level) — shown when not per-service ── */}
-          {staffDisplay && rawServices.every(s => !s.staff_name) && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <FiUsers size={11} color="#BBA14F" style={{ flexShrink: 0 }} />
-              <span style={{
-                fontSize: 12,
-                color: "rgba(253,250,245,0.8)",
-                fontFamily: "'Poppins', sans-serif",
-              }}>
-                {staffDisplay}
-              </span>
-            </div>
-          )}
-
-          {/* Divider */}
-          <div style={{ height: 1, background: "rgba(187,161,79,0.2)" }} />
-
-          {/* ── Time & duration row ── */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <FiClock size={11} color="#BBA14F" style={{ flexShrink: 0 }} />
-            <span style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: "#FDFAF5",
-              fontFamily: "'Poppins', sans-serif",
-            }}>
-              {formatDisplayTime(booking.startTime)}
-              <span style={{ color: "rgba(187,161,79,0.7)", margin: "0 4px" }}>→</span>
-              {formatDisplayTime(endTime)}
-            </span>
-            <span style={{
-              marginLeft: "auto",
-              fontSize: 11,
-              color: "rgba(253,250,245,0.5)",
-              fontFamily: "'Poppins', sans-serif",
-              whiteSpace: "nowrap",
-            }}>
-              {durLabel}
-            </span>
-          </div>
-        </div>
-      )}
     </div>
+    </Tooltip>
   );
 }
 
@@ -1601,7 +1724,7 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
   const [from, to] = avatarGradient(staff?.full_name || "");
   const startMins = timeToMins(booking.startTime);
   const endMins = startMins + booking.durationMins;
-  const endTimeStr = `${String(Math.floor((endMins + HOUR_START * 60) / 60) % 24).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+  const endTimeStr = `${String(Math.floor((endMins + CALENDAR_START_HOUR * 60) / 60) % 24).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
   const durLabel = booking.durationMins >= 60
     ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
     : `${booking.durationMins}m`;
@@ -1664,7 +1787,7 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
           </div>
 
           <h3 className="text-lg font-bold text-[#272727] mb-4" style={{ fontFamily: "'Playfair Display', serif", margin: "0 0 16px" }}>
-            {booking.service}
+            {booking.appointmentServiceSummary || booking.service}
           </h3>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
@@ -1865,7 +1988,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
 
       {/* ── Mobile: Search bar + horizontal staff chips ── */}
       {isMobile ? (
-        <div style={{ flexShrink: 0, borderBottom: "1px solid rgba(187,161,79,0.15)", background: "#faf8f4" }}>
+        <div style={{ flexShrink: 0, borderBottom: "1px solid rgba(187,161,79,0.15)", background: CALENDAR_SURFACE.muted }}>
           {/* Search */}
           <div style={{ padding: "12px 14px 10px" }}>
             <div
@@ -1951,7 +2074,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
           width: 220,
           flexShrink: 0,
           borderRight: "1px solid rgba(187,161,79,0.15)",
-          background: "#faf8f4",
+          background: CALENDAR_SURFACE.muted,
           display: "flex",
           flexDirection: "column",
           overflowY: "auto",
@@ -2251,10 +2374,10 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
                           : `${booking.durationMins}m`;
                       return (
                         <div
-                          key={booking.id}
+                          key={booking.calendarId ?? booking.id}
                           onClick={() => onCardClick(booking)}
                           style={{
-                            background: "linear-gradient(145deg, #ffffff 0%, #faf8f4 100%)",
+                            background: `linear-gradient(145deg, ${CALENDAR_SURFACE.cardTop} 0%, ${CALENDAR_SURFACE.cardBottom} 100%)`,
                             border: "1px solid rgba(187,161,79,0.22)",
                             borderRadius: 16,
                             overflow: "hidden",
@@ -2344,14 +2467,12 @@ export default function CalendarPage() {
   const [dragging, setDragging] = useState(null); // { booking, offsetSlots }
   const [dragOverCol, setDragOverCol] = useState(null);  // staffId
   const [dragOverSlot, setDragOverSlot] = useState(null); // slot index
+  const [hoveredTimeSlot, setHoveredTimeSlot] = useState(null); // { staffId, slot }
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [statusDrawerBooking, setStatusDrawerBooking] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm] = Form.useForm();
-  const [nowMins, setNowMins] = useState(() => {
-    const n = new Date();
-    return (n.getHours() - HOUR_START) * 60 + n.getMinutes();
-  });
+  const [nowMins, setNowMins] = useState(() => getGmtMinutes());
 
   /* ── Wizard state ── */
   const [wizStep, setWizStep] = useState(0);
@@ -2391,6 +2512,53 @@ export default function CalendarPage() {
     if (!staffRaw) return [];
     return Array.isArray(staffRaw) ? staffRaw : staffRaw.results ?? [];
   }, [staffRaw]);
+
+  /* ── Fetch weekly staff schedules ── */
+  const {
+    data: schedulesRaw,
+    isLoading: schedulesLoading,
+    isError: schedulesError,
+  } = useQuery({
+    queryKey: ["schedules-all"],
+    queryFn: () =>
+      _axios.get("/api/portal/v1/booking/schedules/").then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const schedulesData = useMemo(() => {
+    if (!schedulesRaw) return [];
+    return Array.isArray(schedulesRaw) ? schedulesRaw : schedulesRaw.results ?? [];
+  }, [schedulesRaw]);
+  const schedulesByStaff = useMemo(() => {
+    const weekday = scheduleWeekday(selectedDate);
+    const map = new Map(visibleStaff.map((staff) => [String(staff.id), []]));
+
+    schedulesData.forEach((entry) => {
+      if (Number(entry.day_of_week) !== weekday) return;
+      const staffId = typeof entry.staff === "object" ? entry.staff?.id : entry.staff;
+      const key = String(staffId);
+      if (map.has(key)) map.get(key).push(entry);
+    });
+
+    return map;
+  }, [schedulesData, selectedDate, visibleStaff]);
+  const scheduleDataReady = !schedulesLoading && !schedulesError;
+  const calendarStaff = useMemo(() => {
+    if (!scheduleDataReady) return [];
+
+    return visibleStaff.filter((staff) => {
+      const entries = schedulesByStaff.get(String(staff.id)) ?? [];
+      return entries.some((entry) => {
+        const startMins = scheduleTimeToMins(entry.start_time);
+        const endMins = scheduleTimeToMins(entry.end_time);
+        return (
+          entry.is_available !== false &&
+          startMins !== null &&
+          endMins !== null &&
+          endMins > startMins
+        );
+      });
+    });
+  }, [scheduleDataReady, schedulesByStaff, visibleStaff]);
 
   /* ── Fetch services (for Add form dropdown) ── */
   const { data: servicesRaw } = useQuery({
@@ -2509,65 +2677,9 @@ export default function CalendarPage() {
   /* ── Normalise API → internal booking shape ── */
   const dayBookings = useMemo(() => {
     const raw = Array.isArray(aptsRaw) ? aptsRaw : aptsRaw?.results ?? [];
-    return raw.map((apt) => {
-      /* ── Date: prefer scheduled_start, fall back to appointment_date ── */
-      const aptDate = apt.scheduled_start
-        ? apt.scheduled_start.slice(0, 10)
-        : apt.appointment_date ?? dateStr;
-
-      /* ── Start time: prefer scheduled_start slice, fall back to start_time field ── */
-      let startTime = "09:00";
-      if (apt.scheduled_start && apt.scheduled_start.length >= 16) {
-        startTime = apt.scheduled_start.slice(11, 16);           // "HH:MM" from ISO
-      } else if (apt.start_time) {
-        startTime = apt.start_time.slice(0, 5);                  // "HH:MM" from "HH:mm:ss"
-      }
-
-      /* ── Services array (needed for staffId fallback and service name below) ── */
+    return raw.flatMap((apt) => {
       const services = apt.services ?? apt.booking_services ?? [];
       const firstService = services[0];
-
-      /* ── Staff ID: handle plain id, nested object, staff_details, or per-service ── */
-      let staffId =
-        (typeof apt.staff === "object" && apt.staff !== null
-          ? apt.staff.id
-          : apt.staff_details?.id ?? (apt.staff != null ? apt.staff : undefined)) ??
-        firstService?.staff_id ??
-        firstService?.staff ??
-        null;
-
-      /*
-       * Fallback: when the list endpoint returns staff:null (existing customer bookings),
-       * try to resolve a staff from the service's assigned_staff_ids via serviceLookup.
-       * This ensures the booking appears under a valid staff column on the calendar.
-       */
-      if (staffId == null) {
-        // Try to find the service object by name or id
-        const svcName = apt.service_name || apt.service_summary || "";
-        const svcById = serviceLookup[apt.service];
-        const svcByName = svcName
-          ? Object.values(serviceLookup).find(
-              (s) => s.name?.toLowerCase() === svcName.toLowerCase()
-            )
-          : null;
-        const svcObj = svcById || svcByName;
-        if (svcObj) {
-          const assignedIds = svcObj.assigned_staff_ids ?? svcObj.staff_ids ?? [];
-          if (assignedIds.length > 0) {
-            // Pick the first assigned staff that exists in visibleStaff
-            const match = visibleStaff.find((s) =>
-              assignedIds.includes(s.id) || assignedIds.includes(String(s.id))
-            );
-            if (match) staffId = match.id;
-          }
-        }
-        // Ultimate fallback: assign to the first staff so it's visible
-        if (staffId == null && visibleStaff.length > 0) {
-          staffId = visibleStaff[0].id;
-        }
-      }
-
-      /* ── Client name: try all known response shapes ── */
       const client =
         apt.customer_name ||
         apt.customer_full_name ||
@@ -2577,30 +2689,6 @@ export default function CalendarPage() {
           ? `${apt.customer_details.first_name ?? ""} ${apt.customer_details.last_name ?? ""}`.trim()
           : null) ||
         (apt.customer ? `Client #${apt.customer}` : "Walk-in");
-
-      /* ── Service name: try all known response shapes ── */
-      const service =
-        apt.service_name ||
-        apt.service_details?.name ||
-        firstService?.service_name ||
-        firstService?.name ||
-        serviceLookup[apt.service]?.name ||
-        "Service";
-
-      /* ── Duration ── */
-      const durationMins =
-        apt.total_duration_minutes ??
-        apt.duration_mins ??
-        apt.service_details?.duration_mins ??
-        apt.service_details?.duration ??
-        firstService?.duration_mins ??
-        serviceLookup[apt.service]?.duration_mins ??
-        serviceLookup[apt.service]?.duration ??
-        60;
-
-      const normStaffId = staffId != null ? Number(staffId) : null;
-
-      /* ── Phone: try all known response shapes ── */
       const phone =
         apt.guest_customer?.phone_number ||
         apt.phone_number ||
@@ -2610,39 +2698,168 @@ export default function CalendarPage() {
         apt.guest_phone ||
         null;
 
-      return {
-        id:          apt.id,
-        staffId:     normStaffId,  // normalise to number for === comparisons
+      const orderedServiceLines = services
+        .map((service, originalIndex) => {
+          const rawStaff = service.staff_id ?? service.staff;
+          const staffId = typeof rawStaff === "object" ? rawStaff?.id : rawStaff;
+          const startMs = Date.parse(service.scheduled_start);
+          const endMs = Date.parse(service.scheduled_end);
+          const sequence = Number(service.sequence);
+          return {
+            service,
+            originalIndex,
+            staffId: staffId != null ? Number(staffId) : null,
+            startMs,
+            endMs,
+            sequence: Number.isFinite(sequence) ? sequence : originalIndex + 1,
+          };
+        })
+        .sort((a, b) => a.sequence - b.sequence || a.originalIndex - b.originalIndex);
+
+      const canSplitByService =
+        orderedServiceLines.length > 0 &&
+        orderedServiceLines.every(
+          (line) =>
+            Number.isFinite(line.staffId) &&
+            Number.isFinite(line.startMs) &&
+            Number.isFinite(line.endMs) &&
+            line.endMs > line.startMs
+        );
+
+      if (canSplitByService) {
+        const groups = [];
+        orderedServiceLines.forEach((line) => {
+          const previous = groups.at(-1);
+          if (
+            previous &&
+            previous.staffId === line.staffId &&
+            previous.endMs === line.startMs
+          ) {
+            previous.lines.push(line);
+            previous.endMs = line.endMs;
+            return;
+          }
+          groups.push({
+            staffId: line.staffId,
+            startMs: line.startMs,
+            endMs: line.endMs,
+            lines: [line],
+          });
+        });
+
+        return groups.map((group, groupIndex) => {
+          const groupServices = group.lines.map((line) => line.service);
+          const startIso = group.lines[0].service.scheduled_start;
+          const segmentServiceIds = groupServices.map(
+            (service, index) => service.id ?? service.service_id ?? index
+          );
+          return {
+            id: apt.id,
+            appointmentId: apt.id,
+            calendarId: `${apt.id}:${segmentServiceIds.join("-")}`,
+            staffId: group.staffId,
+            client,
+            service: groupServices
+              .map((service) => service.service_name || service.name || "Service")
+              .join(" · "),
+            appointmentServiceSummary: apt.service_summary || apt.service_name || "Service",
+            services: groupServices,
+            startTime: startIso.slice(11, 16),
+            durationMins: Math.max(1, Math.round((group.endMs - group.startMs) / 60_000)),
+            status: (apt.status || "pending").replace("_", "-"),
+            date: startIso.slice(0, 10),
+            phone,
+            isServiceSegment: groups.length > 1,
+            segmentIndex: groupIndex,
+            segmentCount: groups.length,
+            raw: apt,
+          };
+        });
+      }
+
+      const aptDate = apt.scheduled_start
+        ? apt.scheduled_start.slice(0, 10)
+        : apt.appointment_date ?? dateStr;
+      const startTime = apt.scheduled_start?.length >= 16
+        ? apt.scheduled_start.slice(11, 16)
+        : apt.start_time?.slice(0, 5) || "09:00";
+      let staffId =
+        (typeof apt.staff === "object" && apt.staff !== null
+          ? apt.staff.id
+          : apt.staff_details?.id ?? (apt.staff != null ? apt.staff : undefined)) ??
+        firstService?.staff_id ??
+        (typeof firstService?.staff === "object" ? firstService.staff?.id : firstService?.staff) ??
+        null;
+
+      if (staffId == null) {
+        const svcName = apt.service_name || apt.service_summary || "";
+        const svcById = serviceLookup[apt.service];
+        const svcByName = svcName
+          ? Object.values(serviceLookup).find(
+              (service) => service.name?.toLowerCase() === svcName.toLowerCase()
+            )
+          : null;
+        const svcObj = svcById || svcByName;
+        const assignedIds = svcObj?.assigned_staff_ids ?? svcObj?.staff_ids ?? [];
+        const match = visibleStaff.find((staff) =>
+          assignedIds.includes(staff.id) || assignedIds.includes(String(staff.id))
+        );
+        staffId = match?.id ?? visibleStaff[0]?.id ?? null;
+      }
+
+      const service =
+        apt.service_name ||
+        apt.service_details?.name ||
+        firstService?.service_name ||
+        firstService?.name ||
+        serviceLookup[apt.service]?.name ||
+        "Service";
+      const durationMins =
+        apt.total_duration_minutes ??
+        apt.duration_mins ??
+        apt.service_details?.duration_mins ??
+        apt.service_details?.duration ??
+        firstService?.duration_minutes ??
+        firstService?.duration_mins ??
+        serviceLookup[apt.service]?.duration_mins ??
+        serviceLookup[apt.service]?.duration ??
+        60;
+
+      return [{
+        id: apt.id,
+        appointmentId: apt.id,
+        calendarId: String(apt.id),
+        staffId: staffId != null ? Number(staffId) : null,
         client,
         service,
-        services,      // keep full array for detail overlay
+        appointmentServiceSummary: apt.service_summary || apt.service_name || service,
+        services,
         startTime,
         durationMins,
-        status:      (apt.status || "pending").replace("_", "-"),
-        date:        aptDate,
+        status: (apt.status || "pending").replace("_", "-"),
+        date: aptDate,
         phone,
-        raw:         apt,
-      };
+        isServiceSegment: false,
+        segmentIndex: 0,
+        segmentCount: 1,
+        raw: apt,
+      }];
     });
   }, [aptsRaw, serviceLookup, dateStr, visibleStaff]);
 
-  /* auto-scroll to current time on mount */
+  /* Keep every selected day anchored at its finite midnight start. */
   useEffect(() => {
     const el = bodyRef.current;
-    if (!el || !isToday) return;
-    const targetY = Math.max(0, nowY - 120);
-    el.scrollTop = targetY;
-    if (gridRef.current) gridRef.current.scrollTop = targetY;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!el || view !== "calendar") return;
+    el.scrollTop = 0;
+    if (gridRef.current) gridRef.current.scrollTop = 0;
+  }, [dateStr, view]);
 
-  /* update current-time line every minute */
+  /* Track the exact GMT+0 position; each tick reads the clock to avoid drift. */
   useEffect(() => {
-    const tick = () => {
-      const n = new Date();
-      setNowMins((n.getHours() - HOUR_START) * 60 + n.getMinutes());
-    };
-    const id = setInterval(tick, 60_000);
+    const tick = () => setNowMins(getGmtMinutes());
+    tick();
+    const id = setInterval(tick, 1_000);
     return () => clearInterval(id);
   }, []);
 
@@ -2804,6 +3021,22 @@ export default function CalendarPage() {
     staffRecommendations,
   ]);
 
+  const serviceWindowsAvailable = useMemo(() => {
+    if (!shouldFetchServiceAvailability || isFetchingServiceAvailability || serviceAvailabilityError) {
+      return false;
+    }
+    return selectedServices.every((service) => {
+      const availability = serviceAvailabilityMap[String(service.id)];
+      return availability?.available === true && (availability.staff ?? []).length > 0;
+    });
+  }, [
+    shouldFetchServiceAvailability,
+    isFetchingServiceAvailability,
+    serviceAvailabilityError,
+    selectedServices,
+    serviceAvailabilityMap,
+  ]);
+
   /* ── Wizard validation per step ── */
   const wizStepValid = useMemo(() => {
     switch (wizStep) {
@@ -2817,7 +3050,7 @@ export default function CalendarPage() {
       case 3: // Date & Time — also blocked if selected date is a blocked day
         if (!wizDate || !wizTime) return false;
         if (blockedDateSet.has(wizDate.format("YYYY-MM-DD"))) return false;
-        return true;
+        return serviceWindowsAvailable;
       case 4: // Staff
         return staffSelectionsValid;
       case 5: // Confirm
@@ -2835,6 +3068,7 @@ export default function CalendarPage() {
     wizDate,
     wizTime,
     blockedDateSet,
+    serviceWindowsAvailable,
     staffSelectionsValid,
   ]);
 
@@ -2997,12 +3231,20 @@ export default function CalendarPage() {
 
   function handleDragOver(e, staffId) {
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
     if (!bodyRef.current) return;
 
     const gridRect = bodyRef.current.getBoundingClientRect();
     const y = e.clientY - gridRect.top + bodyRef.current.scrollTop;
     const slot = yToSlot(y);
+    const staffSchedule = schedulesByStaff.get(String(staffId)) ?? [];
+    const isAvailable =
+      !scheduleDataReady || isSlotInsideSchedule(staffSchedule, slot * SLOT_MINS);
+    e.dataTransfer.dropEffect = isAvailable ? "move" : "none";
+    if (!isAvailable) {
+      setDragOverCol(null);
+      setDragOverSlot(null);
+      return;
+    }
     setDragOverCol(staffId);
     setDragOverSlot(slot);
   }
@@ -3014,6 +3256,14 @@ export default function CalendarPage() {
     const gridRect = bodyRef.current.getBoundingClientRect();
     const y = e.clientY - gridRect.top + bodyRef.current.scrollTop;
     const slot = yToSlot(y);
+    const staffSchedule = schedulesByStaff.get(String(staffId)) ?? [];
+    const isAvailable =
+      !scheduleDataReady || isSlotInsideSchedule(staffSchedule, slot * SLOT_MINS);
+    if (!isAvailable) {
+      setDragOverCol(null);
+      setDragOverSlot(null);
+      return;
+    }
     const newMins = slot * SLOT_MINS;
     const nowFloor = Math.floor(nowMins / SLOT_MINS) * SLOT_MINS;
 
@@ -3057,7 +3307,7 @@ export default function CalendarPage() {
   const timeLabels = [];
   for (let s = 0; s < TOTAL_SLOTS; s++) {
     const mins = s * SLOT_MINS;
-    const totalMin = mins + HOUR_START * 60;
+    const totalMin = mins + CALENDAR_START_HOUR * 60;
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
     const isHour = m === 0;
@@ -3075,7 +3325,7 @@ export default function CalendarPage() {
     year: "numeric",
   });
 
-  const totalDayBookings = dayBookings.length;
+  const totalDayBookings = new Set(dayBookings.map((booking) => booking.appointmentId ?? booking.id)).size;
 
   return (
     <div
@@ -3096,7 +3346,7 @@ export default function CalendarPage() {
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          background: "#f8f6f2",
+          background: CALENDAR_SURFACE.shell,
           overflow: "hidden",
           /* no border-radius when filling the whole frame */
         }}
@@ -3110,7 +3360,7 @@ export default function CalendarPage() {
             justifyContent: "space-between",
             padding: isMobile ? "12px 16px" : "16px 28px",
             borderBottom: "1px solid rgba(187,161,79,0.15)",
-            background: "#ffffff",
+            background: CALENDAR_SURFACE.raised,
             gap: isMobile ? 10 : 16,
             flexShrink: 0,
           }}
@@ -3456,7 +3706,7 @@ export default function CalendarPage() {
             display: "flex",
             flexShrink: 0,
             borderBottom: "1px solid rgba(187,161,79,0.15)",
-            background: "#faf8f4",
+            background: CALENDAR_SURFACE.muted,
           }}
         >
           {/* Time gutter header */}
@@ -3464,7 +3714,7 @@ export default function CalendarPage() {
             style={{
               width: gutterW,
               flexShrink: 0,
-              borderRight: "1px solid rgba(187,161,79,0.15)",
+              borderRight: "1px solid rgba(92,74,52,0.25)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -3481,10 +3731,39 @@ export default function CalendarPage() {
             style={{ scrollbarWidth: "none" }}
             onScroll={(e) => syncHorizontalScroll(e.currentTarget, bodyRef.current)}
           >
-            <div className="flex" style={{ minWidth: visibleStaff.length * colW }}>
-              {visibleStaff.map((staff, i) => {
+            <div
+              className="flex"
+              style={{ minWidth: calendarStaff.length ? calendarStaff.length * colW : "100%" }}
+            >
+              {calendarStaff.length === 0 && (
+                <div
+                  style={{
+                    width: "100%",
+                    minHeight: 54,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    color: schedulesError ? "#7e4d3e" : "#78654f",
+                    fontFamily: "'Poppins',sans-serif",
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  {schedulesLoading && <Spin size="small" />}
+                  {schedulesLoading
+                    ? "Loading staff schedules…"
+                    : schedulesError
+                    ? "Staff schedules could not be loaded."
+                    : "No staff scheduled for this day."}
+                </div>
+              )}
+              {calendarStaff.map((staff, i) => {
                 const [from, to] = avatarGradient(staff.full_name);
                 const staffBookings = dayBookings.filter((b) => b.staffId === staff.id);
+                const staffAppointmentCount = new Set(
+                  staffBookings.map((booking) => booking.appointmentId ?? booking.id)
+                ).size;
                 return (
                   <div
                     key={staff.id}
@@ -3496,8 +3775,8 @@ export default function CalendarPage() {
                       gap: isMobile ? 6 : 10,
                       padding: isMobile ? "8px 10px" : "10px 16px",
                       borderRight:
-                        i < visibleStaff.length - 1
-                          ? "1px solid rgba(255,255,255,0.06)"
+                        i < calendarStaff.length - 1
+                          ? "1px solid rgba(92,74,52,0.2)"
                           : "none",
                     }}
                   >
@@ -3543,7 +3822,7 @@ export default function CalendarPage() {
                           fontFamily: "'Poppins', sans-serif",
                         }}
                       >
-                        {staffBookings.length} booking{staffBookings.length !== 1 ? "s" : ""}
+                        {staffAppointmentCount} booking{staffAppointmentCount !== 1 ? "s" : ""}
                       </p>
                     </div>
                   </div>
@@ -3561,8 +3840,8 @@ export default function CalendarPage() {
             style={{
               width: gutterW,
               flexShrink: 0,
-              borderRight: "1px solid rgba(187,161,79,0.15)",
-              background: "#faf8f4",
+              borderRight: "1px solid rgba(92,74,52,0.25)",
+              background: CALENDAR_SURFACE.muted,
               overflowY: "auto",
               overflowX: "hidden",
               scrollbarWidth: "none",
@@ -3571,7 +3850,7 @@ export default function CalendarPage() {
             ref={gridRef}
           >
             <div style={{ height: TOTAL_SLOTS * SLOT_HEIGHT_PX, position: "relative" }}>
-              {timeLabels.map(({ s, h, isHour, isHalfHour }) => (
+              {timeLabels.map(({ s, h, isHour }) => (
                 <div
                   key={s}
                   style={{
@@ -3580,24 +3859,30 @@ export default function CalendarPage() {
                     height: SLOT_HEIGHT_PX,
                     width: "100%",
                     display: "flex",
-                    alignItems: "center",
+                    alignItems: "flex-start",
                     justifyContent: "flex-end",
-                    paddingRight: 10,
+                    paddingRight: isMobile ? 7 : 10,
+                    paddingTop: 3,
+                    boxSizing: "border-box",
                   }}
                 >
-                  {(isHour || isHalfHour) && (
+                  {isHour && (
                     <span
                       style={{
-                        fontSize: isHour ? 11 : 9,
+                        display: "inline-flex",
+                        alignItems: "baseline",
+                        gap: 3,
+                        fontSize: isMobile ? 10 : 11,
                         fontFamily: "'Poppins', sans-serif",
-                        color: isHour ? "#272727" : "#987554",
-                        fontWeight: isHour ? 600 : 400,
+                        color: "#272727",
+                        fontWeight: 700,
                         lineHeight: 1,
                       }}
                     >
-                      {isHour
-                        ? `${h % 12 || 12}${h >= 12 ? "pm" : "am"}`
-                        : ":30"}
+                      <span>{h % 12 || 12}</span>
+                      <span style={{ fontSize: 7, color: "#78654f", letterSpacing: "0.06em" }}>
+                        {h >= 12 ? "PM" : "AM"}
+                      </span>
                     </span>
                   )}
                 </div>
@@ -3620,32 +3905,31 @@ export default function CalendarPage() {
             <div
               className="flex relative"
               style={{
-                minWidth: visibleStaff.length * colW,
+                minWidth: calendarStaff.length ? calendarStaff.length * colW : "100%",
                 height: TOTAL_SLOTS * SLOT_HEIGHT_PX,
               }}
             >
               {/* Horizontal slot lines (shared background) */}
-              <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
+              <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 6 }}>
                 {timeLabels.map(({ s, isHour, isHalfHour }) => (
                   <div
                     key={s}
                     className="absolute left-0 right-0"
                     style={{
                       top: s * SLOT_HEIGHT_PX,
-                      height: isHour ? 2 : 1,
+                      height: 1,
                       background: isHour
-                        ? "rgba(187,161,79,0.35)"
+                        ? "rgba(124,100,64,0.16)"
                         : isHalfHour
-                        ? "rgba(187,161,79,0.18)"
-                        : "rgba(187,161,79,0.1)",
-                      boxShadow: isHour ? "0 0 1px rgba(187,161,79,0.25)" : "none",
+                        ? "rgba(124,100,64,0.07)"
+                        : "rgba(124,100,64,0.035)",
                     }}
                   />
                 ))}
               </div>
 
               {/* Current time line */}
-              {isToday && nowMins >= 0 && nowMins <= (HOUR_END - HOUR_START) * 60 && (
+              {isToday && nowMins >= 0 && nowMins <= (CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60 && (
                 <div
                   className="absolute left-0 right-0 pointer-events-none"
                   style={{ top: nowY, zIndex: 20 }}
@@ -3684,7 +3968,7 @@ export default function CalendarPage() {
                       fontFamily: "'Poppins', sans-serif",
                     }}
                   >
-                    {formatDisplayTime(minsToTime(Math.max(0, nowMins)))}
+                    {formatCurrentTime(nowMins)}
                   </span>
                 </div>
               )}
@@ -3698,29 +3982,18 @@ export default function CalendarPage() {
                     height: Math.min(nowY, TOTAL_SLOTS * SLOT_HEIGHT_PX),
                     background:
                       "repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.015) 6px, rgba(255,255,255,0.015) 12px)",
-                    zIndex: 2,
+                    zIndex: 7,
                   }}
                 />
               )}
 
               {/* Staff columns */}
-              {visibleStaff.map((staff, i) => {
+              {calendarStaff.map((staff, i) => {
                 const colBookings = dayBookings.filter((b) => b.staffId === staff.id);
                 const isDropTarget = dragOverCol === staff.id;
+                const staffSchedule = schedulesByStaff.get(String(staff.id)) ?? [];
 
-                // ── Overlap layout: assign each booking a column slot ──
-                // Simple greedy algorithm: track end times of each "lane"
-                const lanes = []; // each lane = end time (mins) of last booking in it
-                const bookingLayout = colBookings.map((booking) => {
-                  const start = timeToMins(booking.startTime);
-                  const end   = start + booking.durationMins;
-                  // find the first free lane
-                  let lane = lanes.findIndex((laneEnd) => laneEnd <= start);
-                  if (lane === -1) { lane = lanes.length; lanes.push(end); }
-                  else lanes[lane] = end;
-                  return { booking, lane };
-                });
-                const totalLanes = Math.max(1, lanes.length);
+                const bookingLayout = layoutBookingLanes(colBookings);
 
                 return (
                   <div
@@ -3730,12 +4003,12 @@ export default function CalendarPage() {
                       width: colW,
                       height: TOTAL_SLOTS * SLOT_HEIGHT_PX,
                       borderRight:
-                        i < visibleStaff.length - 1
-                          ? "1px solid rgba(187,161,79,0.12)"
+                        i < calendarStaff.length - 1
+                          ? "1px solid rgba(92,74,52,0.22)"
                           : "none",
                       background: isDropTarget
                         ? "rgba(187,161,79,0.12)"
-                        : "#ffffff",
+                        : CALENDAR_SURFACE.grid,
                       transition: "background 0.15s",
                       zIndex: 5,
                     }}
@@ -3745,6 +4018,90 @@ export default function CalendarPage() {
                       if (dragOverCol === staff.id) setDragOverCol(null);
                     }}
                   >
+                    {/* Quarter-hour hit areas reveal exact time only on hover. */}
+                    <div className="absolute inset-0" style={{ zIndex: 6 }}>
+                      {timeLabels.map(({ s, mins }) => {
+                        const isAvailable =
+                          !scheduleDataReady || isSlotInsideSchedule(staffSchedule, mins);
+                        const isHovered =
+                          hoveredTimeSlot?.staffId === staff.id &&
+                          hoveredTimeSlot?.slot === s;
+                        return (
+                          <div
+                            key={s}
+                            className="absolute left-0 right-0"
+                            style={{
+                              top: s * SLOT_HEIGHT_PX,
+                              height: SLOT_HEIGHT_PX,
+                              background: isAvailable ? "transparent" : "rgba(126,77,62,0.105)",
+                              cursor: isAvailable ? "default" : "not-allowed",
+                            }}
+                            onMouseEnter={() => setHoveredTimeSlot({ staffId: staff.id, slot: s })}
+                            onMouseLeave={() => setHoveredTimeSlot(null)}
+                            onClick={(e) => {
+                              if (!isAvailable) e.stopPropagation();
+                            }}
+                            onPointerDown={(e) => {
+                              if (!isAvailable) e.stopPropagation();
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!isAvailable) {
+                                e.dataTransfer.dropEffect = "none";
+                                setDragOverCol(null);
+                                setDragOverSlot(null);
+                                return;
+                              }
+                              handleDragOver(e, staff.id);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!isAvailable) {
+                                setDragOverCol(null);
+                                setDragOverSlot(null);
+                                return;
+                              }
+                              handleDrop(e, staff.id);
+                            }}
+                          >
+                            {isHovered && (
+                              <span style={{
+                                position: "absolute",
+                                top: 2,
+                                bottom: 2,
+                                left: 4,
+                                right: 4,
+                                borderRadius: 100,
+                                background: isAvailable
+                                  ? "rgba(39,39,39,0.58)"
+                                  : "rgba(126,77,62,0.64)",
+                                color: "#F8F4EC",
+                                fontSize: 8,
+                                fontWeight: 700,
+                                lineHeight: 1.25,
+                                letterSpacing: "0.02em",
+                                fontFamily: "'Poppins', sans-serif",
+                                border: "1px solid rgba(255,255,255,0.16)",
+                                boxShadow: "0 2px 7px rgba(39,39,39,0.13)",
+                                backdropFilter: "blur(6px)",
+                                WebkitBackdropFilter: "blur(6px)",
+                                whiteSpace: "nowrap",
+                                pointerEvents: "none",
+                                zIndex: 15,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}>
+                                {formatDisplayTime(minsToTime(s * SLOT_MINS))}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
                     {/* Drop indicator line */}
                     {isDropTarget && dragOverSlot !== null && (() => {
                       const dropMins = dragOverSlot * SLOT_MINS;
@@ -3768,13 +4125,13 @@ export default function CalendarPage() {
                       );
                     })()}
 
-                    {bookingLayout.map(({ booking, lane }) => (
+                    {bookingLayout.map(({ booking, lane, laneCount }) => (
                       <BookingCard
-                        key={booking.id}
+                        key={booking.calendarId ?? booking.id}
                         booking={booking}
                         isPast={bookingIsPast(booking)}
                         colOffset={lane}
-                        colCount={totalLanes}
+                        colCount={laneCount}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                         onClick={setSelectedBooking}
@@ -3794,7 +4151,7 @@ export default function CalendarPage() {
       {/* Booking detail modal */}
       {selectedBooking && (
         <BookingModal
-          key={selectedBooking.id}
+          key={selectedBooking.calendarId ?? selectedBooking.id}
           booking={selectedBooking}
           staff={visibleStaff.find((s) => s.id === selectedBooking.staffId)}
           onClose={() => setSelectedBooking(null)}
@@ -3938,6 +4295,13 @@ export default function CalendarPage() {
               selectedTime={wizTime}
               setSelectedTime={setWizTime}
               blockedDateSet={blockedDateSet}
+              checkingAvailability={shouldFetchServiceAvailability && isFetchingServiceAvailability}
+              availabilityError={serviceAvailabilityError}
+              hasAvailableStaff={
+                shouldFetchServiceAvailability && !isFetchingServiceAvailability && !serviceAvailabilityError
+                  ? serviceWindowsAvailable
+                  : null
+              }
             />
           )}
           {wizStep === 4 && (
