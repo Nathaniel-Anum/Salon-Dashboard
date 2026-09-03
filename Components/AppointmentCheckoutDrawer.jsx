@@ -280,7 +280,11 @@ export default function AppointmentCheckoutDrawer({
   const [pendingFinalizeKey, setPendingFinalizeKey] = useState(null);
   const [showScheduleActions, setShowScheduleActions] = useState(false);
   const [rescheduleForm, setRescheduleForm] = useState({
-    date: dayjs().format("YYYY-MM-DD"),
+    date:
+      booking?.date ||
+      booking?.raw?.scheduled_start?.slice(0, 10) ||
+      booking?.raw?.appointment_date ||
+      dayjs().format("YYYY-MM-DD"),
     time: booking?.startTime || "09:00",
     staffId: booking?.staffId || "",
     reason: "",

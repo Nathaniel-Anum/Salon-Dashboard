@@ -41,6 +41,10 @@ import { fetchBlockedDays } from "../src/api/blockedDays";
 import { createWaitlistEntry } from "../src/api/waitlist";
 import { firstApiErrorMessage } from "../src/api/apiErrors";
 import {
+  getStaffServiceOverride,
+  moveAppointment,
+} from "../src/api/appointmentSchedule";
+import {
   buildWalkInAppointmentPayload,
   getBookingStaffOptions,
   normalizeBookingStaffOptions,
@@ -61,6 +65,119 @@ const SLOT_MINS = 15;
 const TOTAL_SLOTS = ((CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60) / SLOT_MINS; // 96
 const SLOT_HEIGHT_PX = 18;      // four compact quarter-hour rows = 72px per hour
 const COLUMN_W = 220;           // px width per person column
+const CALENDAR_PREFERENCES_KEY = "portal.calendar.preferences.v1";
+
+function loadCalendarPreferences() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CALENDAR_PREFERENCES_KEY) || "{}");
+    return stored && typeof stored === "object" ? stored : {};
+  } catch {
+    return {};
+  }
+}
+
+function appointmentDate(appointment = {}) {
+  return (
+    appointment.scheduled_start?.slice(0, 10) ||
+    appointment.appointment_date ||
+    appointment.date ||
+    null
+  );
+}
+
+function replaceDateAndTime(value, date, time) {
+  if (!value || typeof value !== "string") return value;
+  const datePart = date || value.slice(0, 10);
+  const timePart = time || value.slice(11, 16);
+  return value.length >= 16
+    ? `${datePart}T${timePart}${value.slice(16)}`
+    : `${datePart}T${timePart}:00`;
+}
+
+function shiftIso(value, deltaMs) {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed + deltaMs).toISOString() : value;
+}
+
+function optimisticScheduleAppointment(appointment, update) {
+  const currentDate = appointmentDate(appointment) || update.date;
+  const currentTime =
+    appointment.scheduled_start?.slice(11, 16) ||
+    appointment.start_time?.slice(0, 5) ||
+    update.start_time;
+  const nextDate = update.date ?? currentDate;
+  const nextTime = update.start_time?.slice(0, 5) ?? currentTime;
+  const currentAnchor = Date.parse(`${currentDate}T${currentTime}:00Z`);
+  const nextAnchor = Date.parse(`${nextDate}T${nextTime}:00Z`);
+  const deltaMs = Number.isFinite(currentAnchor) && Number.isFinite(nextAnchor)
+    ? nextAnchor - currentAnchor
+    : 0;
+  const staffId = update.staff_id;
+  const setStaff = (value) => {
+    if (staffId === undefined) return value;
+    return value && typeof value === "object" ? { ...value, id: staffId } : staffId;
+  };
+  const servicesKey = Array.isArray(appointment.services)
+    ? "services"
+    : Array.isArray(appointment.booking_services)
+      ? "booking_services"
+      : null;
+  const services = servicesKey
+    ? appointment[servicesKey].map((service) => ({
+        ...service,
+        ...(staffId !== undefined ? {
+          staff_id: staffId,
+          ...(service.staff !== undefined ? { staff: setStaff(service.staff) } : {}),
+        } : {}),
+        ...(service.scheduled_start ? { scheduled_start: shiftIso(service.scheduled_start, deltaMs) } : {}),
+        ...(service.scheduled_end ? { scheduled_end: shiftIso(service.scheduled_end, deltaMs) } : {}),
+      }))
+    : null;
+
+  return {
+    ...appointment,
+    ...(nextDate ? { appointment_date: nextDate, date: nextDate } : {}),
+    ...(nextTime ? { start_time: nextTime } : {}),
+    ...(appointment.scheduled_start || (nextDate && nextTime)
+      ? { scheduled_start: replaceDateAndTime(appointment.scheduled_start, nextDate, nextTime) }
+      : {}),
+    ...(appointment.scheduled_end && deltaMs
+      ? { scheduled_end: shiftIso(appointment.scheduled_end, deltaMs) }
+      : {}),
+    ...(staffId !== undefined ? {
+      staff: setStaff(appointment.staff),
+      ...(appointment.staff_details
+        ? { staff_details: { ...appointment.staff_details, id: staffId } }
+        : {}),
+    } : {}),
+    ...(servicesKey ? { [servicesKey]: services } : {}),
+  };
+}
+
+function updateAppointmentCollection(data, appointmentId, updater, cacheDate, replacement = null) {
+  if (!data) return data;
+  const isArray = Array.isArray(data);
+  const rows = isArray ? data : Array.isArray(data.results) ? data.results : null;
+  if (!rows) return data;
+
+  let found = false;
+  const nextRows = rows.flatMap((appointment) => {
+    if (String(appointment.id) !== String(appointmentId)) return [appointment];
+    found = true;
+    const updated = updater(appointment);
+    return !cacheDate || appointmentDate(updated) === cacheDate ? [updated] : [];
+  });
+  if (!found && replacement && (!cacheDate || appointmentDate(replacement) === cacheDate)) {
+    nextRows.push(replacement);
+  }
+
+  if (isArray) return nextRows;
+  return {
+    ...data,
+    results: nextRows,
+    ...(typeof data.count === "number" ? { count: nextRows.length } : {}),
+  };
+}
 
 // Warm stone surfaces keep the dense calendar comfortable during long shifts.
 const CALENDAR_SURFACE = {
@@ -1439,7 +1556,7 @@ function StaffCircle({ staff, isActive, onClick }) {
    Each card is absolutely positioned by start time and sized by duration.
    On hover it opens a separate, compact preview without changing card geometry.
 ───────────────────────────────────────────── */
-function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDragEnd, onClick }) {
+function BookingCard({ booking, isPast, isMoving, colOffset, colCount, onDragStart, onDragEnd, onClick }) {
   /* ── Geometry ── */
   const startMins = timeToMins(booking.startTime);
   const topPx     = minsToY(startMins);
@@ -1578,8 +1695,8 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
       overlayStyle={{ maxWidth: 260 }}
     >
     <div
-      draggable={!isPast && !booking.isServiceSegment}
-      onDragStart={(e) => !isPast && !booking.isServiceSegment && onDragStart(e, booking)}
+      draggable={!isPast && !isMoving && !booking.isServiceSegment}
+      onDragStart={(e) => !isPast && !isMoving && !booking.isServiceSegment && onDragStart(e, booking)}
       onDragEnd={onDragEnd}
       onClick={() => onClick(booking)}
       onMouseEnter={() => setHovered(true)}
@@ -1593,7 +1710,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
         zIndex: 10,
         borderRadius: isMicroCard ? 5 : 8,
         overflow: "hidden",
-        cursor: isPast ? "not-allowed" : booking.isServiceSegment ? "pointer" : "grab",
+        cursor: isPast ? "not-allowed" : isMoving ? "progress" : booking.isServiceSegment ? "pointer" : "grab",
         /* Pure black card */
         background: isPast
           ? "#1c1c1c"
@@ -1605,7 +1722,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
             ? "1px solid rgba(187,161,79,0.8)"
             : "1px solid rgba(187,161,79,0.45)",
         userSelect: "none",
-        opacity: isPast ? 0.6 : 1,
+        opacity: isPast ? 0.6 : isMoving ? 0.72 : 1,
         transition: "border-color 0.18s ease, opacity 0.18s ease",
       }}
     >
@@ -1649,7 +1766,7 @@ function BookingCard({ booking, isPast, colOffset, colCount, onDragStart, onDrag
             fontFamily: "'Poppins', sans-serif",
             textShadow: "0 1px 4px rgba(0,0,0,0.8)",
           }}>
-            {cfg.label}
+            {isMoving ? "Saving move…" : cfg.label}
           </span>}
         </div>
 
@@ -2462,15 +2579,25 @@ export default function CalendarPage() {
   const isMobile = windowW < 640;
   const isTablet = windowW >= 640 && windowW < 1024;
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [view, setView] = useState("calendar"); // "calendar" | "cards"
-  const [staffFilter, setStaffFilter] = useState("scheduled");
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const savedDate = loadCalendarPreferences().date;
+    const parsed = savedDate ? new Date(`${savedDate}T12:00:00Z`) : new Date();
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  });
+  const [view, setView] = useState(() => {
+    const savedView = loadCalendarPreferences().view;
+    return ["calendar", "cards"].includes(savedView) ? savedView : "calendar";
+  }); // "calendar" | "cards"
+  const [staffFilter, setStaffFilter] = useState(
+    () => loadCalendarPreferences().staffFilter || "scheduled",
+  );
   const [dragging, setDragging] = useState(null); // { booking, offsetSlots }
   const [dragOverCol, setDragOverCol] = useState(null);  // staffId
   const [dragOverSlot, setDragOverSlot] = useState(null); // slot index
   const [hoveredTimeSlot, setHoveredTimeSlot] = useState(null); // { staffId, slot }
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [statusDrawerBooking, setStatusDrawerBooking] = useState(null);
+  const [scheduleOverride, setScheduleOverride] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm] = Form.useForm();
   const [nowMins, setNowMins] = useState(() => getGmtMinutes());
@@ -2503,6 +2630,14 @@ export default function CalendarPage() {
   const dateStr = selectedDate.toISOString().slice(0, 10);
   const isToday = dateStr === new Date().toISOString().slice(0, 10);
 
+  useEffect(() => {
+    localStorage.setItem(CALENDAR_PREFERENCES_KEY, JSON.stringify({
+      date: dateStr,
+      view,
+      staffFilter,
+    }));
+  }, [dateStr, staffFilter, view]);
+
   /* ── Fetch staff ── */
   const { data: staffRaw } = useQuery({
     queryKey: ["staff"],
@@ -2513,6 +2648,14 @@ export default function CalendarPage() {
     if (!staffRaw) return [];
     return Array.isArray(staffRaw) ? staffRaw : staffRaw.results ?? [];
   }, [staffRaw]);
+
+  useEffect(() => {
+    if (!staffRaw || !staffFilter.startsWith("staff:")) return;
+    const savedStaffId = staffFilter.slice("staff:".length);
+    if (!visibleStaff.some((staff) => String(staff.id) === savedStaffId)) {
+      setStaffFilter("scheduled");
+    }
+  }, [staffFilter, staffRaw, visibleStaff]);
 
   /* ── Fetch weekly staff schedules ── */
   const {
@@ -3159,24 +3302,78 @@ export default function CalendarPage() {
     },
   });
 
-  /* ── PATCH mutation — reschedule (drag & drop) ── */
-  const reschedule = useMutation({
-    mutationFn: ({ id, startTime, staffId }) => {
-      // Reconstruct full ISO string from dateStr + new time
-      const iso = `${dateStr}T${startTime}:00`;
-      return _axios.patch(`/api/portal/v1/booking/appointments/${id}/`, {
-        scheduled_start: iso,
-        staff: staffId,
+  const replaceAppointmentAcrossCaches = useCallback((appointment) => {
+    const appointmentId = appointment?.id;
+    if (appointmentId == null) return;
+
+    queryClient.getQueriesData({ queryKey: ["appointments"] }).forEach(([key, data]) => {
+      const cacheDate = typeof key[1] === "string" ? key[1] : null;
+      queryClient.setQueryData(
+        key,
+        updateAppointmentCollection(
+          data,
+          appointmentId,
+          () => appointment,
+          cacheDate,
+          appointment,
+        ),
+      );
+    });
+    queryClient.setQueryData(["checkout-appointment", appointmentId], appointment);
+  }, [queryClient]);
+
+  const restoreAppointmentCaches = useCallback((snapshots = []) => {
+    snapshots.forEach(([key, data]) => queryClient.setQueryData(key, data));
+  }, [queryClient]);
+
+  /* ── PATCH mutation — one schedule contract for drag/drop and drawer edits ── */
+  const scheduleMutation = useMutation({
+    mutationFn: ({ id, update }) => moveAppointment(id, update),
+    onMutate: async (operation) => {
+      if (!operation.optimistic) return { snapshots: [] };
+
+      await queryClient.cancelQueries({ queryKey: ["appointments"] });
+      const snapshots = queryClient.getQueriesData({ queryKey: ["appointments"] });
+      snapshots.forEach(([key, data]) => {
+        const cacheDate = typeof key[1] === "string" ? key[1] : null;
+        queryClient.setQueryData(
+          key,
+          updateAppointmentCollection(
+            data,
+            operation.id,
+            (appointment) => optimisticScheduleAppointment(appointment, operation.update),
+            cacheDate,
+          ),
+        );
       });
+      return { snapshots };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["appointments", dateStr]);
-      refetchApts();
+    onSuccess: (appointment, operation) => {
+      replaceAppointmentAcrossCaches(appointment);
+      setScheduleOverride(null);
+
+      if (operation.source === "drawer") {
+        setSelectedBooking(null);
+        setStatusDrawerBooking(null);
+      }
+
+      const nextDate = appointmentDate(appointment) || operation.update.date;
+      queryClient.invalidateQueries({ queryKey: ["appointments", dateStr] });
+      if (nextDate && nextDate !== dateStr) {
+        queryClient.invalidateQueries({ queryKey: ["appointments", nextDate] });
+      }
     },
-    onError: () => {
-      message.error("Failed to reschedule");
-      // Refetch to revert optimistic state
-      refetchApts();
+    onError: (error, operation, context) => {
+      restoreAppointmentCaches(context?.snapshots);
+      const override = getStaffServiceOverride(error);
+
+      if (override) {
+        setScheduleOverride({ operation, ...override });
+        return;
+      }
+
+      setScheduleOverride(null);
+      message.error(firstApiErrorMessage(error, "The appointment could not be moved."));
     },
   });
 
@@ -3195,26 +3392,6 @@ export default function CalendarPage() {
                        error?.response?.data?.outstanding_balance || 
                        "Failed to update status";
       message.error(errorMsg);
-    },
-  });
-
-  /* ── POST mutation — reschedule from modal ── */
-  const rescheduleFromModal = useMutation({
-    mutationFn: ({ id, date, time, staffId, reason }) =>
-      _axios.post(`/api/portal/v1/booking/appointments/${id}/schedule/`, {
-        date,
-        start_time: `${time}:00`,
-        staff_id:   staffId,
-        reason:     reason || "",
-      }),
-    onSuccess: () => {
-      setSelectedBooking(null);
-      setStatusDrawerBooking(null);
-      queryClient.invalidateQueries(["appointments", dateStr]);
-      refetchApts();
-    },
-    onError: () => {
-      message.error("Failed to reschedule appointment");
     },
   });
 
@@ -3250,6 +3427,10 @@ export default function CalendarPage() {
 
   /* ── Drag & Drop ── */
   function handleDragStart(e, booking) {
+    if (scheduleMutation.isPending) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.effectAllowed = "move";
     setDragging({ booking });
   }
@@ -3303,11 +3484,15 @@ export default function CalendarPage() {
 
     const newTime = minsToTime(newMins);
 
-    // PATCH to backend (refetch on success/error handles state update)
-    reschedule.mutate({
-      id: dragging.booking.id,
-      startTime: newTime,
-      staffId,
+    scheduleMutation.mutate({
+      id: dragging.booking.appointmentId ?? dragging.booking.id,
+      update: {
+        date: dateStr,
+        start_time: newTime,
+        staff_id: Number(staffId),
+      },
+      source: "drag",
+      optimistic: true,
     });
 
     setDragging(null);
@@ -4196,6 +4381,11 @@ export default function CalendarPage() {
                         key={booking.calendarId ?? booking.id}
                         booking={booking}
                         isPast={bookingIsPast(booking)}
+                        isMoving={
+                          scheduleMutation.isPending &&
+                          String(scheduleMutation.variables?.id) ===
+                            String(booking.appointmentId ?? booking.id)
+                        }
                         colOffset={lane}
                         colCount={laneCount}
                         onDragStart={handleDragStart}
@@ -4237,14 +4427,144 @@ export default function CalendarPage() {
           allStaff={visibleStaff}
           onClose={() => setStatusDrawerBooking(null)}
           onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
-          onReschedule={(id, date, time, staffId, reason) => rescheduleFromModal.mutate({ id, date, time, staffId, reason })}
-          rescheduleLoading={rescheduleFromModal.isPending}
+          onReschedule={(id, date, time, staffId, reason) => scheduleMutation.mutate({
+            id,
+            update: {
+              date,
+              start_time: time,
+              staff_id: staffId,
+              ...(reason?.trim() ? { reason: reason.trim() } : {}),
+            },
+            source: "drawer",
+            optimistic: false,
+          })}
+          rescheduleLoading={
+            scheduleMutation.isPending && scheduleMutation.variables?.source === "drawer"
+          }
           onCancel={(id) => cancelAppointment.mutate(id)}
           cancelLoading={cancelAppointment.isPending}
           onDelete={(id) => deleteAppointment.mutate(id)}
           deleteLoading={deleteAppointment.isPending}
         />
       )}
+
+      <Modal
+        open={Boolean(scheduleOverride)}
+        onCancel={() => {
+          if (!scheduleMutation.isPending) setScheduleOverride(null);
+        }}
+        footer={null}
+        closable={!scheduleMutation.isPending}
+        mask={{ closable: false }}
+        keyboard={!scheduleMutation.isPending}
+        centered
+        width={470}
+        styles={{
+          content: {
+            padding: 0,
+            overflow: "hidden",
+            borderRadius: 18,
+            background: "#FDFAF5",
+            border: "1px solid rgba(187,161,79,0.28)",
+          },
+          mask: { backdropFilter: "blur(5px)", background: "rgba(30,24,14,0.55)" },
+        }}
+      >
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 14,
+          padding: "22px 24px 18px", background: "#211b13",
+        }}>
+          <div style={{
+            width: 38, height: 38, flexShrink: 0, borderRadius: 11,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#211b13", background: "#D4A847",
+          }}>
+            <FiAlertCircle size={19} />
+          </div>
+          <div>
+            <h3 style={{
+              margin: 0, color: "#fff", fontSize: 18,
+              fontFamily: "'Playfair Display', serif",
+            }}>
+              Confirm provider override
+            </h3>
+            <p style={{
+              margin: "5px 0 0", color: "rgba(255,255,255,0.7)",
+              fontSize: 12, lineHeight: 1.55, fontFamily: "'Poppins', sans-serif",
+            }}>
+              {scheduleOverride?.message}
+            </p>
+          </div>
+        </div>
+
+        <div style={{ padding: "20px 24px 24px", fontFamily: "'Poppins', sans-serif" }}>
+          <p style={{ margin: "0 0 10px", color: "#5f4932", fontSize: 12, fontWeight: 700 }}>
+            {scheduleOverride?.staff?.full_name || "The selected provider"} is not assigned to:
+          </p>
+          <ul style={{
+            margin: "0 0 20px", padding: 0, listStyle: "none",
+            display: "grid", gap: 7,
+          }}>
+            {(scheduleOverride?.services || []).map((service) => (
+              <li key={service.service_id ?? service.service_name} style={{
+                display: "flex", alignItems: "center", gap: 9,
+                padding: "9px 11px", borderRadius: 9,
+                color: "#3d2e1e", fontSize: 12,
+                background: "rgba(212,168,71,0.09)",
+                border: "1px solid rgba(212,168,71,0.24)",
+              }}>
+                <FiScissors size={13} color="#987554" />
+                {service.service_name || `Service #${service.service_id}`}
+              </li>
+            ))}
+          </ul>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => setScheduleOverride(null)}
+              disabled={scheduleMutation.isPending}
+              style={{
+                padding: "9px 18px", borderRadius: 9,
+                border: "1px solid rgba(152,117,84,0.3)", background: "#fff",
+                color: "#6b5138", fontSize: 12, fontWeight: 600,
+                cursor: scheduleMutation.isPending ? "not-allowed" : "pointer",
+              }}
+            >
+              Keep original appointment
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const operation = scheduleOverride?.operation;
+                if (!operation) return;
+                scheduleMutation.mutate({
+                  ...operation,
+                  update: {
+                    ...operation.update,
+                    confirm_unassigned_staff: true,
+                  },
+                  optimistic: false,
+                  isConfirmation: true,
+                });
+              }}
+              disabled={scheduleMutation.isPending || !scheduleOverride?.canProceed}
+              style={{
+                padding: "9px 19px", borderRadius: 9, border: "none",
+                background: scheduleMutation.isPending || !scheduleOverride?.canProceed
+                  ? "rgba(152,117,84,0.45)"
+                  : "linear-gradient(135deg,#BBA14F,#987554)",
+                color: "#fff", fontSize: 12, fontWeight: 700,
+                cursor: scheduleMutation.isPending || !scheduleOverride?.canProceed
+                  ? "not-allowed"
+                  : "pointer",
+              }}
+            >
+              {scheduleMutation.isPending ? "Moving appointment…" : "Proceed with provider"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Add Appointment Wizard Modal ── */}
       <Modal
