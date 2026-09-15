@@ -27,6 +27,9 @@ import {
   Input,
   message,
   Tooltip,
+  Spin,
+  Alert,
+  Button,
 } from "antd";
 import {
   FiPlus,
@@ -41,6 +44,8 @@ import {
 } from "react-icons/fi";
 import dayjs from "dayjs";
 import _axios from "../src/api/_axios";
+import ScheduleV2Page from "./ScheduleV2Page";
+import { useBookingV2 } from "../src/hooks/useBookingV2";
 
 /* ── Palette ── */
 const GOLD   = "#BBA14F";
@@ -672,10 +677,19 @@ function RosterView({ staffList, rosterMap, onAdd, onEdit, onDelete, deleting })
   );
 }
 
+function StatPill({ label, value, color }) {
+  return (
+    <div style={{ padding: "10px 18px", borderRadius: 12, border: `1px solid ${BORDER}`, background: CREAM, boxShadow: "0 2px 8px rgba(187,161,79,0.06)" }}>
+      <p style={{ margin: 0, fontSize: 10, color: MID, fontFamily: "'Poppins', sans-serif", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</p>
+      <p style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 700, color, fontFamily: "'Poppins', sans-serif", lineHeight: 1 }}>{value}</p>
+    </div>
+  );
+}
+
 /* ─────────────────────────────────────────────
    MAIN PAGE
 ───────────────────────────────────────────── */
-export default function SchedulePage() {
+function LegacySchedulePage() {
   const queryClient = useQueryClient();
 
   const [viewMode,     setViewMode]     = useState("roster"); // "roster" | "staff"
@@ -859,14 +873,6 @@ export default function SchedulePage() {
     label: s.full_name || s.name || `Staff #${s.id}`,
   }));
 
-  /* ── Stat pills helper ── */
-  const StatPill = ({ label, value, color }) => (
-    <div style={{ padding: "10px 18px", borderRadius: 12, border: `1px solid ${BORDER}`, background: CREAM, boxShadow: "0 2px 8px rgba(187,161,79,0.06)" }}>
-      <p style={{ margin: 0, fontSize: 10, color: MID, fontFamily: "'Poppins', sans-serif", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</p>
-      <p style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 700, color, fontFamily: "'Poppins', sans-serif", lineHeight: 1 }}>{value}</p>
-    </div>
-  );
-
   return (
     <div style={{ padding: "0 0 40px" }}>
 
@@ -1009,5 +1015,35 @@ export default function SchedulePage() {
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
       `}</style>
     </div>
+  );
+}
+
+export default function SchedulePage() {
+  const bookingV2 = useBookingV2();
+  const connectedApi = import.meta.env.VITE_API_BASE_URL || "https://api.cbkbeauty.expertech.dev";
+
+  if (bookingV2.loading) {
+    return <div style={{ padding: 24, borderRadius: 18, background: "#fffdf9" }}><Spin /><span style={{ marginLeft: 12, color: "#76644f" }}>Checking scheduling capabilities…</span></div>;
+  }
+
+  if (bookingV2.error) {
+    return <Alert type="error" showIcon message="Scheduling capabilities could not be checked." description="The editor is paused so a legacy write cannot conflict with the new shift engine." action={<Button onClick={() => bookingV2.refresh()}>Try again</Button>} />;
+  }
+
+  if (bookingV2.enabled) return <ScheduleV2Page />;
+  return (
+    <>
+      {import.meta.env.DEV && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 18, borderRadius: 14 }}
+          message="Booking V2 is installed, but the connected backend has it switched off."
+          description={`The capability check at ${connectedApi} returned 404. Set BOOKING_V2_PORTAL_ENABLED=True on that backend, restart it, then retry.`}
+          action={<Button onClick={() => bookingV2.refresh()}>Retry capability check</Button>}
+        />
+      )}
+      <LegacySchedulePage />
+    </>
   );
 }

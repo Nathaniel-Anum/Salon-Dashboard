@@ -12,6 +12,7 @@ import PublicRoute from "../Components/PublicRoute";
 import RoleManagement from "../Pages/RoleManagement";
 import Staff from "../Pages/Staff";
 import CalendarPage from "../Pages/CalendarPage";
+import AppointmentsPage from "../Pages/AppointmentsPage";
 import ServicesPage from "../Pages/ServicesPage";
 import CustomersPage from "../Pages/CustomersPage";
 import BlockedDaysPage from "../Pages/BlockedDaysPage";
@@ -21,7 +22,6 @@ import ProductsPage from "../Pages/ProductsPage";
 import OrdersPage from "../Pages/OrdersPage";
 import InventoryPage from "../Pages/InventoryPage";
 import AnalyticsPage from "../Pages/AnalyticsPage";
-import TransactionsPage from "../Pages/TransactionsPage";
 import SettingsPage from "../Pages/SettingsPage";
 import CampaignsPage from "../Pages/CampaignsPage";
 import SupportPage from "../Pages/SupportPage";
@@ -66,6 +66,7 @@ export default function App() {
             <Route path="/role-management" element={<RoleManagement/>}/>
             <Route path="/staff" element={<Staff/>}/>
             <Route path="/calendar" element={<CalendarPage/>}/>
+            <Route path="/appointments" element={<AppointmentsPage/>}/>
             <Route path="/services" element={<ServicesPage/>}/>
             <Route path="/clients" element={<CustomersPage/>}/>
             <Route path="/clients/:id" element={<ClientProfilePage/>}/>
@@ -75,7 +76,6 @@ export default function App() {
             <Route path="/commerce/orders" element={<OrdersPage/>}/>
             <Route path="/commerce/inventory" element={<InventoryPage/>}/>
             <Route path="/analytics" element={<AnalyticsPage/>}/>
-            <Route path="/transactions" element={<TransactionsPage/>}/>
             <Route path="/waitlist" element={<WaitlistPage/>}/>
             <Route path="/schedules" element={<SchedulePage/>}/>
             <Route path="/settings" element={<SettingsPage/>}/>

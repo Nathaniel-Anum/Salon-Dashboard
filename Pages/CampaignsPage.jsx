@@ -848,7 +848,7 @@ export default function CampaignsPage() {
         open={enrollmentsDrawerOpen}
         onClose={() => setEnrollmentsDrawerOpen(false)}
         placement="right"
-        width={960}
+        size={960}
       >
         <div className="mb-3">
           <Input
@@ -875,7 +875,7 @@ export default function CampaignsPage() {
         open={grantsDrawerOpen}
         onClose={() => setGrantsDrawerOpen(false)}
         placement="right"
-        width={1020}
+        size={1020}
       >
         <div className="mb-3">
           <Input

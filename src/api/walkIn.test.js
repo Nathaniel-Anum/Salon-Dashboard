@@ -68,7 +68,7 @@ test("honors an unavailable window even if a stale staff list is present", () =>
 
 test("builds an ordered walk-in payload with explicit staff and no top-level staff", () => {
   const payload = buildWalkInAppointmentPayload({
-    customerId: 7,
+    identity: { kind: "registered", id: 7, label: "Registered customer" },
     appointmentDate: "2026-09-10",
     startTime: "10:00:00",
     services: [
@@ -80,6 +80,35 @@ test("builds an ordered walk-in payload with explicit staff and no top-level sta
   assert.equal(payload.booking_source, "walk-in");
   assert.deepEqual(payload.services.map((service) => service.staff_id), [12, 18]);
   assert.equal(Object.hasOwn(payload, "staff"), false);
+});
+
+test("builds a saved-guest walk-in payload without leaking another identity", () => {
+  const payload = buildWalkInAppointmentPayload({
+    identity: { kind: "guest", id: 184, label: "Ama Mensah" },
+    appointmentDate: "2026-09-10",
+    startTime: "10:00:00",
+    services: [{ service_id: 21, staff_id: 12 }],
+  });
+
+  assert.equal(payload.guest_customer_id, 184);
+  assert.equal(Object.hasOwn(payload, "customer_id"), false);
+  assert.equal(Object.hasOwn(payload, "guest"), false);
+  assert.equal(payload.booking_source, "walk-in");
+});
+
+test("allows a new guest with email only", () => {
+  const payload = buildWalkInAppointmentPayload({
+    identity: { kind: "new_guest", fullName: "Efua Owusu", email: "EFUA@example.com" },
+    appointmentDate: "2026-09-10",
+    startTime: "10:00:00",
+    services: [{ service_id: 21, staff_id: 12 }],
+  });
+
+  assert.deepEqual(payload.guest, {
+    full_name: "Efua Owusu",
+    email: "efua@example.com",
+    phone_number: null,
+  });
 });
 
 test("refuses to create a payload with an unresolved service provider", () => {

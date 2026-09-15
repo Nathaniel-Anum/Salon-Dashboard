@@ -1,0 +1,342 @@
+.no-show-modal .ant-modal-content {
+  max-height: min(90vh, 860px);
+  overflow-y: auto;
+  border: 1px solid rgba(187, 161, 79, 0.24);
+  border-radius: 20px;
+  padding: 0;
+  background: #fdfaf5;
+  box-shadow: 0 24px 80px rgba(39, 39, 39, 0.22);
+}
+
+.no-show-modal .ant-modal-close {
+  top: 20px;
+  right: 20px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.no-show-modal-header {
+  display: flex;
+  gap: 14px;
+  padding: 24px 56px 22px 24px;
+  color: #fff;
+  background: #272727;
+}
+
+.no-show-warning-icon {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(187, 161, 79, 0.38);
+  border-radius: 12px;
+  color: #d7bb67;
+  background: rgba(187, 161, 79, 0.11);
+}
+
+.no-show-modal-header span,
+.no-show-financial-heading span {
+  display: block;
+  margin-bottom: 3px;
+  color: #bba14f;
+  font: 600 12px/1.4 "Poppins", sans-serif;
+}
+
+.no-show-modal-header h2 {
+  margin: 0;
+  color: #fff;
+  font: 600 22px/1.25 "Playfair Display", serif;
+}
+
+.no-show-modal-header p {
+  max-width: 450px;
+  margin: 7px 0 0;
+  color: rgba(255, 255, 255, 0.65);
+  font: 400 12px/1.55 "Poppins", sans-serif;
+}
+
+.no-show-loading {
+  display: flex;
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #987554;
+  font: 500 13px "Poppins", sans-serif;
+}
+
+.no-show-modal .ant-alert,
+.no-show-financial-panel,
+.no-show-price-section,
+.no-show-payment-panel,
+.no-show-field,
+.no-show-modal-actions,
+.no-show-blocking-message {
+  margin-right: 24px;
+  margin-left: 24px;
+}
+
+.no-show-modal > .ant-modal-content > .ant-modal-body > .ant-alert {
+  margin-top: 18px;
+}
+
+.no-show-financial-panel {
+  margin-top: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(187, 161, 79, 0.22);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.no-show-financial-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(187, 161, 79, 0.14);
+  background: rgba(187, 161, 79, 0.055);
+}
+
+.no-show-financial-heading h3 {
+  margin: 0;
+  color: #272727;
+  font: 600 15px/1.35 "Poppins", sans-serif;
+}
+
+.no-show-settlement-state {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font: 700 11px/1.2 "Poppins", sans-serif;
+}
+
+.no-show-settlement-state.has-balance {
+  color: #8a5618;
+  background: #fff1d8;
+}
+
+.no-show-settlement-state.is-settled {
+  color: #1a7741;
+  background: #e7f5ec;
+}
+
+.no-show-summary-grid {
+  padding: 8px 16px;
+}
+
+.no-show-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+  color: #987554;
+  font: 400 12px/1.4 "Poppins", sans-serif;
+}
+
+.no-show-summary-row strong {
+  color: #564534;
+  font-weight: 600;
+}
+
+.no-show-summary-row.is-strong {
+  margin-top: 3px;
+  border-top: 1px solid rgba(187, 161, 79, 0.12);
+  color: #272727;
+  font-weight: 600;
+}
+
+.no-show-summary-row.is-strong strong {
+  color: #272727;
+  font-size: 14px;
+}
+
+.no-show-financial-fallback {
+  margin: 0;
+  padding: 9px 16px;
+  border-top: 1px solid rgba(187, 161, 79, 0.12);
+  color: #806d58;
+  background: #fffaf1;
+  font: 400 10px/1.5 "Poppins", sans-serif;
+}
+
+.no-show-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 18px;
+}
+
+.no-show-field > span:first-child,
+.no-show-field > label:first-child {
+  color: #3a3128;
+  font: 600 12px/1.35 "Poppins", sans-serif;
+}
+
+.no-show-field small {
+  align-self: flex-end;
+  color: rgba(152, 117, 84, 0.72);
+  font: 400 10px/1.35 "Poppins", sans-serif;
+}
+
+.no-show-field small.increase { color: #8a5618; }
+.no-show-field small.decrease { color: #1a7741; }
+
+.no-show-modal .ant-input,
+.no-show-modal .ant-input-affix-wrapper,
+.no-show-modal .ant-select-selector {
+  border-color: rgba(152, 117, 84, 0.3) !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  font: 400 13px "Poppins", sans-serif;
+}
+
+.no-show-modal .ant-input:focus,
+.no-show-modal .ant-input-affix-wrapper-focused,
+.no-show-modal .ant-select-focused .ant-select-selector {
+  border-color: #bba14f !important;
+  box-shadow: 0 0 0 3px rgba(187, 161, 79, 0.12) !important;
+}
+
+.no-show-price-section,
+.no-show-payment-panel {
+  margin-top: 18px;
+  border: 1px solid rgba(187, 161, 79, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.no-show-option-row,
+.no-show-payment-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.no-show-option-copy,
+.no-show-payment-heading {
+  justify-content: flex-start;
+  color: #bba14f;
+}
+
+.no-show-option-copy {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.no-show-option-copy div,
+.no-show-payment-heading div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.no-show-option-copy strong,
+.no-show-payment-heading strong {
+  color: #272727;
+  font: 600 13px/1.4 "Poppins", sans-serif;
+}
+
+.no-show-option-copy span,
+.no-show-payment-heading span {
+  color: #987554;
+  font: 400 11px/1.45 "Poppins", sans-serif;
+}
+
+.no-show-permission-note {
+  color: #987554;
+  font: 600 10px/1.3 "Poppins", sans-serif;
+}
+
+.no-show-price-fields,
+.no-show-payment-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(187, 161, 79, 0.12);
+}
+
+.no-show-price-fields .no-show-field,
+.no-show-payment-fields .no-show-field {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.no-show-price-fields .no-show-field:last-child,
+.no-show-reference-field {
+  grid-column: 1 / -1;
+}
+
+.no-show-payment-panel > .ant-alert {
+  margin: 0 16px 16px;
+}
+
+.no-show-modal-actions {
+  position: sticky;
+  z-index: 3;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 22px;
+  margin-bottom: 0;
+  padding: 14px 0 16px;
+  border-top: 1px solid rgba(187, 161, 79, 0.16);
+  background: rgba(253, 250, 245, 0.97);
+  backdrop-filter: blur(8px);
+}
+
+.no-show-modal-actions .ant-btn {
+  min-height: 38px;
+  border-radius: 9px;
+  font: 600 12px "Poppins", sans-serif;
+}
+
+.no-show-modal-actions .ant-btn-primary {
+  border-color: #bba14f;
+  color: #272727;
+  background: #bba14f;
+  box-shadow: 0 4px 12px rgba(187, 161, 79, 0.24);
+}
+
+.no-show-modal-actions .ant-btn-primary:disabled {
+  border-color: #d8d0bf;
+  color: #847c6b;
+  background: #e5dfd2;
+  box-shadow: none;
+}
+
+.no-show-blocking-message {
+  margin-top: 14px;
+  margin-bottom: -14px;
+  color: #8a5618;
+  text-align: right;
+  font: 500 11px/1.45 "Poppins", sans-serif;
+}
+
+@media (max-width: 640px) {
+  .no-show-modal { max-width: calc(100vw - 20px); }
+  .no-show-modal-header { padding: 20px 48px 20px 18px; }
+  .no-show-modal .ant-alert,
+  .no-show-financial-panel,
+  .no-show-price-section,
+  .no-show-payment-panel,
+  .no-show-field,
+  .no-show-modal-actions,
+  .no-show-blocking-message { margin-right: 16px; margin-left: 16px; }
+  .no-show-price-fields,
+  .no-show-payment-fields { grid-template-columns: 1fr; }
+  .no-show-price-fields .no-show-field:last-child,
+  .no-show-reference-field { grid-column: auto; }
+  .no-show-financial-heading { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .no-show-modal * { scroll-behavior: auto !important; transition: none !important; }
+}

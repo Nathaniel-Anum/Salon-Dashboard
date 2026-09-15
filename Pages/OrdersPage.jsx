@@ -215,7 +215,7 @@ function OrderDetailDrawer({ orderId, open, onClose }) {
       open={open}
       onClose={onClose}
       placement="right"
-      width={560}
+      size={560}
       closable={false}
       title={null}
       styles={{

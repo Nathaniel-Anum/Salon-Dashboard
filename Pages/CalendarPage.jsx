@@ -6,7 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Modal, Form, Input, Select, DatePicker, message, Tooltip, Spin } from "antd";
+import { Drawer, Modal, Form, Input, Select, DatePicker, message, Tooltip, Spin } from "antd";
 import dayjs from "dayjs";
 import {
   FiChevronLeft,
@@ -21,7 +21,6 @@ import {
   FiX,
   FiSearch,
   FiCheck,
-  FiUserPlus,
   FiUsers,
   FiTag,
   FiPhone,
@@ -39,20 +38,49 @@ import {
 import _axios from "../src/api/_axios";
 import { fetchBlockedDays } from "../src/api/blockedDays";
 import { createWaitlistEntry } from "../src/api/waitlist";
-import { firstApiErrorMessage } from "../src/api/apiErrors";
+import { firstApiErrorMessage, normalizePortalIssues } from "../src/api/apiErrors";
 import {
   getStaffServiceOverride,
   moveAppointment,
 } from "../src/api/appointmentSchedule";
 import {
   buildWalkInAppointmentPayload,
+  createWalkInAppointment,
   getBookingStaffOptions,
   normalizeBookingStaffOptions,
   normalizeStaffRecommendation,
   recommendWalkInStaff,
 } from "../src/api/walkIn";
+import {
+  bookingIdentityPayload,
+  isSavedGuestSelectionMissing,
+} from "../src/api/bookingIdentity.js";
 import AppointmentCheckoutDrawer from "../Components/AppointmentCheckoutDrawer";
+import { AppointmentDetailDrawer } from "./AppointmentsPage.jsx";
+import BookingIdentityPicker from "../Components/BookingIdentityPicker";
 import PortalSelect from "../Components/PortalSelect";
+import {
+  bookingV2Keys,
+  calendarSchedulesV2,
+  calendarShiftQuery,
+  explicitOffsetStart,
+  cancelAppointmentV2,
+  createAndConfirmPortalBooking,
+  createIdempotencyKey,
+  formatBookingTime,
+  getAvailableStaffV2,
+  getAvailableTimesV2,
+  isSlotInsideSchedule,
+  listAppointmentsV2,
+  listFrom,
+  listRepeatingShifts,
+  listTimeOffs,
+  updateAppointmentStatusV2,
+} from "../src/api/bookingV2.js";
+import { useBookingV2 } from "../src/hooks/useBookingV2.js";
+import { isStaffEligibleForService } from "../src/api/providerEligibility.js";
+import { permissionState } from "../src/auth/permissions.js";
+import "./CalendarPage.css";
 
 /* ─────────────────────────────────────────────
    CONSTANTS & HELPERS
@@ -276,33 +304,6 @@ function scheduleWeekday(date) {
   return (date.getUTCDay() + 6) % 7;
 }
 
-/** A complete 15-minute cell must be inside an active schedule window. */
-function isSlotInsideSchedule(scheduleEntries, slotStartMins) {
-  const slotEndMins = slotStartMins + SLOT_MINS;
-  const parsedEntries = scheduleEntries
-    .map((entry) => ({
-      ...entry,
-      startMins: scheduleTimeToMins(entry.start_time),
-      endMins: scheduleTimeToMins(entry.end_time),
-    }))
-    .filter((entry) => entry.startMins !== null && entry.endMins !== null);
-
-  const insideActiveWindow = parsedEntries.some(
-    (entry) =>
-      entry.is_available !== false &&
-      slotStartMins >= entry.startMins &&
-      slotEndMins <= entry.endMins
-  );
-  const overlapsInactiveWindow = parsedEntries.some(
-    (entry) =>
-      entry.is_available === false &&
-      slotStartMins < entry.endMins &&
-      slotEndMins > entry.startMins
-  );
-
-  return insideActiveWindow && !overlapsInactiveWindow;
-}
-
 /**
  * Split a staff member's appointments into independent overlap clusters, then
  * assign lanes inside each cluster. A busy hour no longer narrows every card
@@ -484,13 +485,13 @@ const WZ = {
 function WizardSteps({ current }) {
   const steps = ["Client", "Services", "Options", "Date & Time", "Staff", "Confirm"];
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0, padding: "16px 24px 14px" }}>
+    <div className="calendar-wizard-steps">
       {steps.map((label, i) => {
         const done = i < current;
         const active = i === current;
         return (
           <React.Fragment key={i}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 56 }}>
+            <div className="calendar-wizard-step" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
               <div style={{
                 width: 28, height: 28, borderRadius: "50%",
                 background: done ? "#BBA14F" : active ? "linear-gradient(135deg,#BBA14F,#987554)" : "rgba(187,161,79,0.12)",
@@ -507,7 +508,7 @@ function WizardSteps({ current }) {
               <span style={{
                 fontSize: 9, fontWeight: active ? 700 : 500,
                 color: active ? "#BBA14F" : done ? "#987554" : "rgba(152,117,84,0.5)",
-                fontFamily: "'Poppins',sans-serif", whiteSpace: "nowrap",
+                fontFamily: "'Poppins',sans-serif",
               }}>{label}</span>
             </div>
             {i < steps.length - 1 && (
@@ -525,185 +526,16 @@ function WizardSteps({ current }) {
 }
 
 /* ── Step 1: Client ── */
-function StepClient({ clientMode, setClientMode, selectedClient, setSelectedClient, walkIn, setWalkIn }) {
-  const [search, setSearch] = useState("");
-
-  const { data: customersRaw, isFetching } = useQuery({
-    queryKey: ["customers-list"],
-    queryFn: () =>
-      _axios
-        .get("/api/portal/v1/accounts/customers/")
-        .then((r) => r.data),
-    staleTime: 30_000,
-    enabled: clientMode === "existing",
-  });
-  const customers = useMemo(() => {
-    if (!customersRaw) return [];
-    return Array.isArray(customersRaw) ? customersRaw : customersRaw.results ?? [];
-  }, [customersRaw]);
-
-  const nameOf = (c) =>
-    [c.first_name, c.last_name].filter(Boolean).join(" ") ||
-    c.full_name || c.name || `Client #${c.id}`;
-
-  const filteredCustomers = useMemo(() => {
-    if (!search.trim()) return customers;
-    const q = search.trim().toLowerCase();
-    return customers.filter((customer) => {
-      const name = nameOf(customer).toLowerCase();
-      const phone = String(customer.phone || customer.phone_number || "").toLowerCase();
-      const email = String(customer.email || "").toLowerCase();
-      return name.includes(q) || phone.includes(q) || email.includes(q);
-    });
-  }, [customers, search]);
-
-  const inputFocus = (e) => (e.target.style.borderColor = "#BBA14F");
-  const inputBlur = (e) => (e.target.style.borderColor = "#e8e0d0");
-
+function StepClient({ identity, setIdentity }) {
   return (
     <div style={{ padding: "0 28px 24px" }}>
-      {/* Mode tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        {[
-          { key: "existing", label: "Existing Client", icon: <FiUser size={13} /> },
-          { key: "walkin",   label: "Walk-in / New",   icon: <FiUserPlus size={13} /> },
-        ].map(({ key, label, icon }) => (
-          <button
-            key={key}
-            onClick={() => { setClientMode(key); setSelectedClient(null); }}
-            style={{
-              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-              padding: "10px 14px", borderRadius: 10, cursor: "pointer",
-              border: `1.5px solid ${clientMode === key ? "#BBA14F" : "#e0d5c5"}`,
-              background: clientMode === key ? "linear-gradient(135deg,rgba(187,161,79,0.12),rgba(152,117,84,0.08))" : "#fff",
-              color: clientMode === key ? "#BBA14F" : "#987554",
-              fontFamily: "'Poppins',sans-serif", fontSize: 12, fontWeight: clientMode === key ? 700 : 500,
-              transition: "all 0.18s",
-            }}
-          >
-            {icon}{label}
-          </button>
-        ))}
-      </div>
-
-      {clientMode === "existing" ? (
-        <div>
-          {/* Search */}
-          <div style={{ position: "relative", marginBottom: 14 }}>
-            <FiSearch size={13} style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "#BBA14F", pointerEvents: "none" }} />
-            <input
-              type="text"
-              placeholder="Search by name or phone…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ ...WZ.inputBase, paddingLeft: 36, paddingRight: search ? 36 : 14 }}
-              onFocus={inputFocus}
-              onBlur={inputBlur}
-            />
-            {search && (
-              <button onClick={() => setSearch("")} style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#aaa", fontSize: 13 }}>✕</button>
-            )}
-          </div>
-
-          {/* List */}
-          <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, paddingRight: 2 }}>
-            {isFetching && !customers.length ? (
-              <div style={{ display: "flex", justifyContent: "center", padding: "28px 0" }}>
-                <Spin size="small" />
-              </div>
-            ) : filteredCustomers.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "28px 0", color: "#aaa", fontSize: 13, fontFamily: "'Poppins',sans-serif" }}>
-                {search ? `No clients found for "${search}"` : "No clients yet"}
-              </div>
-            ) : (
-              filteredCustomers.map((c) => {
-                const name = nameOf(c);
-                const [from, to] = avatarGradient(name);
-                const isSelected = selectedClient?.id === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedClient(isSelected ? null : c)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 12,
-                      padding: "10px 14px", borderRadius: 12, cursor: "pointer",
-                      border: `1.5px solid ${isSelected ? "#BBA14F" : "#ede8de"}`,
-                      background: isSelected ? "linear-gradient(135deg,rgba(187,161,79,0.1),rgba(152,117,84,0.07))" : "#faf8f4",
-                      transition: "all 0.15s", textAlign: "left",
-                    }}
-                  >
-                    <div style={{
-                      width: 38, height: 38, borderRadius: "50%",
-                      background: `linear-gradient(135deg,${from},${to})`,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 13, fontWeight: 700, color: "#fff", flexShrink: 0,
-                      fontFamily: "'Poppins',sans-serif",
-                      boxShadow: isSelected ? `0 0 0 2.5px #BBA14F` : "none",
-                    }}>
-                      {initials(name)}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#272727", fontFamily: "'Poppins',sans-serif", lineHeight: 1.25 }}>{name}</p>
-                      {c.phone && <p style={{ margin: 0, fontSize: 11, color: "#987554", fontFamily: "'Poppins',sans-serif" }}>{c.phone}</p>}
-                    </div>
-                    {isSelected && (
-                      <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#BBA14F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <FiCheck size={12} color="#fff" />
-                      </div>
-                    )}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Walk-in form */
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div>
-            <label style={WZ.label}>Full Name <span style={{ color: "#e05050" }}>*</span></label>
-            <input
-              type="text"
-              placeholder="e.g. Nadia Osei"
-              value={walkIn.name}
-              onChange={(e) => setWalkIn((p) => ({ ...p, name: e.target.value }))}
-              style={{ ...WZ.inputBase, paddingLeft: 16 }}
-              onFocus={inputFocus}
-              onBlur={inputBlur}
-            />
-          </div>
-          <div>
-            <label style={WZ.label}>Phone Number <span style={{ color: "#e05050" }}>*</span></label>
-            <input
-              type="tel"
-              placeholder="e.g. 0244 123 456"
-              value={walkIn.phone}
-              onChange={(e) => setWalkIn((p) => ({ ...p, phone: e.target.value }))}
-              style={{ ...WZ.inputBase, paddingLeft: 16 }}
-              onFocus={inputFocus}
-              onBlur={inputBlur}
-            />
-          </div>
-          <div>
-            <label style={WZ.label}>Email <span style={{ color: "#aaa", fontSize: 10, textTransform: "none", fontWeight: 400, letterSpacing: 0 }}>optional</span></label>
-            <input
-              type="email"
-              placeholder="e.g. nadia@example.com"
-              value={walkIn.email}
-              onChange={(e) => setWalkIn((p) => ({ ...p, email: e.target.value }))}
-              style={{ ...WZ.inputBase, paddingLeft: 16 }}
-              onFocus={inputFocus}
-              onBlur={inputBlur}
-            />
-          </div>
-        </div>
-      )}
+      <BookingIdentityPicker value={identity} onChange={setIdentity} />
     </div>
   );
 }
 
 /* ── Step 2: Services ── */
-function StepServices({ servicesData, categoriesData, selectedServices, setSelectedServices }) {
+function StepServices({ servicesData, categoriesData, selectedServices, setSelectedServices, staffName }) {
   const [search, setSearch] = useState("");
   const [activeCat, setActiveCat] = useState(null);
 
@@ -767,6 +599,7 @@ function StepServices({ servicesData, categoriesData, selectedServices, setSelec
 
   return (
     <div style={{ padding: "0 28px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+      {staffName && <p style={{ margin: 0, color: "#765f28", fontSize: 12 }}>Services for {staffName}</p>}
       {/* Search */}
       <div style={{ position: "relative" }}>
         <FiSearch size={13} style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "#BBA14F", pointerEvents: "none" }} />
@@ -977,6 +810,7 @@ function StepStaff({
   recommendations,
   recommendingServiceId,
   onRecommend,
+  timezone,
 }) {
   const setStaff = (svcId, staffId) => {
     setStaffPerService((prev) => ({ ...prev, [svcId]: staffId }));
@@ -984,6 +818,7 @@ function StepStaff({
 
   const windowTime = (value) => {
     if (!value) return "—";
+    if (timezone) return formatBookingTime(value, timezone);
     const parsed = dayjs(value);
     return parsed.isValid() ? parsed.format("h:mm A") : "—";
   };
@@ -1141,18 +976,20 @@ function StepDateTime({
   checkingAvailability = false,
   availabilityError = null,
   hasAvailableStaff = null,
+  availableSlots = null,
+  loadingTimes = false,
+  timesError = null,
+  timezone,
 }) {
-  const today = dayjs().startOf("day");
+  const serverSlots = Array.isArray(availableSlots);
+  const today = (timezone ? dayjs(new Date().toLocaleDateString("en-CA", { timeZone: timezone })) : dayjs()).startOf("day");
 
   // Build bookable business-hour slots every 15 min.
-  const slots = [];
+  const fallbackSlots = [];
   for (let h = BOOKING_START_HOUR; h < BOOKING_END_HOUR; h++) {
-    for (let m = 0; m < 60; m += SLOT_MINS) {
-      const hh = String(h).padStart(2, "0");
-      const mm = String(m).padStart(2, "0");
-      slots.push(`${hh}:${mm}`);
-    }
+    for (let m = 0; m < 60; m += SLOT_MINS) fallbackSlots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
   }
+  const slots = Array.isArray(availableSlots) ? availableSlots : fallbackSlots;
 
   // Determine if the selected date is today
   const isToday = selectedDate && selectedDate.isSame(today, "day");
@@ -1166,7 +1003,7 @@ function StepDateTime({
 
   // A slot string "HH:MM" is in the past if today is selected and the slot <= now
   const isSlotPast = (slot) => {
-    if (!isToday) return false;
+    if (serverSlots || !isToday) return false;
     const [h, m] = slot.split(":").map(Number);
     const slotMins = h * 60 + m;
     // Block the slot if its start time is at or before current time
@@ -1176,14 +1013,7 @@ function StepDateTime({
   // When date changes, clear any selected time that is now in the past
   const handleDateChange = (d) => {
     setSelectedDate(d);
-    if (selectedTime) {
-      const [h, m] = selectedTime.split(":").map(Number);
-      const slotMins = h * 60 + m;
-      const isNewToday = d && d.isSame(today, "day");
-      if (isNewToday && slotMins <= nowTotalMins) {
-        setSelectedTime(null);
-      }
-    }
+    setSelectedTime(null);
   };
 
   return (
@@ -1256,8 +1086,8 @@ function StepDateTime({
       {/* Time slots */}
       <div>
         <label style={WZ.label}>
-          Available Times
-          {isToday && (
+          Scheduled Times{timezone ? ` (${timezone})` : ""}
+          {isToday && !serverSlots && (
             <span style={{
               marginLeft: 8,
               fontSize: 9,
@@ -1271,7 +1101,13 @@ function StepDateTime({
             </span>
           )}
         </label>
-        <div style={{
+        {loadingTimes ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: 16, color: "#806f59", fontSize: 12 }}><Spin size="small" /> Loading scheduled times…</div>
+        ) : timesError ? (
+          <p role="alert" style={{ fontSize: 12, color: "#7e4d3e" }}>{firstApiErrorMessage(timesError, "Scheduled times could not be loaded. Choose a date to try again.")}</p>
+        ) : slots.length === 0 && serverSlots ? (
+          <div role="status" style={{ padding: 18, borderRadius: 10, background: "#f7f1e8", color: "#7e4d3e", fontSize: 12 }}>No scheduled times.</div>
+        ) : <><div style={{
           display: "grid",
           gridTemplateColumns: "repeat(4, 1fr)",
           gap: 8,
@@ -1281,16 +1117,17 @@ function StepDateTime({
           transition: "opacity 0.2s",
         }}>
           {slots.map((slot) => {
-            const [h, m] = slot.split(":").map(Number);
+            const time = serverSlots ? slot.starts_at : slot;
+            const [h, m] = serverSlots ? [] : time.split(":").map(Number);
             const ampm = h >= 12 ? "PM" : "AM";
             const h12 = h % 12 || 12;
-            const label = `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
-            const isSel = selectedTime === slot;
-            const isPast = isSlotPast(slot);
+            const label = serverSlots ? formatBookingTime(time, timezone) : `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+            const isPast = serverSlots ? slot.is_bookable === false : isSlotPast(time);
+            const isSel = !isPast && selectedTime === time;
             return (
               <button
-                key={slot}
-                onClick={() => !isPast && setSelectedTime(isSel ? null : slot)}
+                key={time}
+                onClick={() => !isPast && setSelectedTime(isSel ? null : time)}
                 disabled={isPast || selectedIsBlocked}
                 style={{
                   padding: "8px 4px",
@@ -1304,22 +1141,23 @@ function StepDateTime({
                     : isSel
                     ? "linear-gradient(135deg,#BBA14F,#987554)"
                     : "#faf8f4",
-                  color: isPast ? "#c9bfaf" : isSel ? "#fff" : "#3d2e1e",
+                  color: isPast ? "#806f59" : isSel ? "#fff" : "#3d2e1e",
                   fontFamily: "'Poppins',sans-serif",
                   fontSize: 11,
                   fontWeight: isSel ? 700 : 500,
                   cursor: isPast ? "not-allowed" : "pointer",
                   transition: "all 0.15s",
                   boxShadow: isSel ? "0 2px 10px rgba(187,161,79,0.35)" : "none",
-                  textDecoration: isPast ? "line-through" : "none",
-                  opacity: isPast ? 0.45 : 1,
+                  textDecoration: isPast && !serverSlots ? "line-through" : "none",
+                  opacity: isPast && !serverSlots ? 0.45 : 1,
                 }}
               >
                 {label}
+                {serverSlots && isPast && <span style={{ display: "block", marginTop: 3, textDecoration: "none" }}>Unavailable</span>}
               </button>
             );
           })}
-        </div>
+        </div>{serverSlots && slots.every((slot) => slot.is_bookable === false) && <p role="status" style={{ fontSize: 12, color: "#7e4d3e" }}>No bookable times.</p>}</>}
 
         {selectedTime && !selectedIsBlocked && (
           <div
@@ -1363,7 +1201,7 @@ function StepDateTime({
 }
 
 /* ── Step 6: Confirm ── */
-function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, selectedServiceOptions, staffPerService, serviceAvailabilityMap, recommendations, bookingDate, bookingTime }) {
+function StepConfirm({ identity, selectedServices, selectedServiceOptions, staffPerService, serviceAvailabilityMap, recommendations, bookingDate, bookingTime, timezone }) {
   const selectedStaff = (svcId) => {
     const id = staffPerService[svcId];
     const availability = serviceAvailabilityMap[String(svcId)];
@@ -1374,15 +1212,14 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sel
 
   const windowLabel = (svcId) => {
     const window = serviceAvailabilityMap[String(svcId)];
-    const start = window?.scheduled_start ? dayjs(window.scheduled_start).format("h:mm A") : "—";
-    const end = window?.scheduled_end ? dayjs(window.scheduled_end).format("h:mm A") : "—";
+    const start = window?.scheduled_start ? (timezone ? formatBookingTime(window.scheduled_start, timezone) : dayjs(window.scheduled_start).format("h:mm A")) : "—";
+    const end = window?.scheduled_end ? (timezone ? formatBookingTime(window.scheduled_end, timezone) : dayjs(window.scheduled_end).format("h:mm A")) : "—";
     return `${start}–${end}`;
   };
 
-  const clientDisplay = clientMode === "existing"
-    ? [selectedClient?.first_name, selectedClient?.last_name].filter(Boolean).join(" ") ||
-      selectedClient?.full_name || "Client"
-    : walkIn.name;
+  const clientDisplay = identity?.kind === "new_guest"
+    ? identity.fullName
+    : identity?.label || "Customer";
 
   const total = selectedServices.reduce((sum, service) => sum + getServiceDisplayAmount(service, selectedServiceOptions), 0);
   const allFree = selectedServices.every((service) => getServiceDisplayAmount(service, selectedServiceOptions) === 0);
@@ -1393,6 +1230,7 @@ function StepConfirm({ clientMode, selectedClient, walkIn, selectedServices, sel
 
   const timeDisplay = (() => {
     if (!bookingTime) return "—";
+    if (timezone) return `${formatBookingTime(bookingTime, timezone)} (${timezone})`;
     const [h, m] = bookingTime.split(":").map(Number);
     const ampm = h >= 12 ? "PM" : "AM";
     return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
@@ -1833,7 +1671,7 @@ function BookingCard({ booking, isPast, isMoving, colOffset, colCount, onDragSta
 /* ─────────────────────────────────────────────
    BOOKING DETAIL MODAL
 ───────────────────────────────────────────── */
-function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
+function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorrections, canCorrect, canAdjustPrice }) {
   if (!booking) return null;
 
   const raw = booking.raw || {};
@@ -2008,6 +1846,11 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer }) {
           <div style={{ height: 1, background: "rgba(187,161,79,0.15)", marginBottom: 14 }} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {canCorrect && <button
+              onClick={() => onOpenCorrections(booking)}
+              className="calendar-booking-correct"
+              style={{ gridColumn: "1 / -1" }}
+            ><FiScissors size={14} /> {canAdjustPrice ? "Correct services and price" : "Correct services"}</button>}
             <button
               onClick={onClose}
               style={{
@@ -2569,6 +2412,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
    MAIN CALENDAR PAGE
 ───────────────────────────────────────────── */
 export default function CalendarPage() {
+  const bookingV2 = useBookingV2();
   /* ── Responsive breakpoints ── */
   const [windowW, setWindowW] = useState(() => window.innerWidth);
   useEffect(() => {
@@ -2596,6 +2440,7 @@ export default function CalendarPage() {
   const [dragOverSlot, setDragOverSlot] = useState(null); // slot index
   const [hoveredTimeSlot, setHoveredTimeSlot] = useState(null); // { staffId, slot }
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [correctionBooking, setCorrectionBooking] = useState(null);
   const [statusDrawerBooking, setStatusDrawerBooking] = useState(null);
   const [scheduleOverride, setScheduleOverride] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -2604,16 +2449,16 @@ export default function CalendarPage() {
 
   /* ── Wizard state ── */
   const [wizStep, setWizStep] = useState(0);
-  const [clientMode, setClientMode] = useState("existing");   // "existing" | "walkin"
-  const [selectedClient, setSelectedClient] = useState(null); // customer object
-  const [walkIn, setWalkIn] = useState({ name: "", phone: "", email: "" });
+  const [bookingIdentity, setBookingIdentity] = useState(null);
   const [selectedServices, setSelectedServices] = useState([]); // [{ id, name, _price, _amount, ... }]
   const [selectedServiceOptions, setSelectedServiceOptions] = useState({}); // { [serviceId]: serviceOptionId }
   const [staffPerService, setStaffPerService] = useState({});   // { [serviceId]: explicitly selected staffId }
   const [staffRecommendations, setStaffRecommendations] = useState({});
+  const [calendarBooking, setCalendarBooking] = useState(null);
   const [recommendingServiceId, setRecommendingServiceId] = useState(null);
   const [wizDate, setWizDate] = useState(() => dayjs());
   const [wizTime, setWizTime] = useState(null);
+  const [bookingIntentKey, setBookingIntentKey] = useState(() => createIdempotencyKey());
 
   /* ── Waitlist fallback state ── */
   const [waitlistPrompt, setWaitlistPrompt] = useState(null); // { payload, errorMsg } — set when booking fails with waitlist_eligible
@@ -2629,6 +2474,8 @@ export default function CalendarPage() {
   /* ── date string ── */
   const dateStr = selectedDate.toISOString().slice(0, 10);
   const isToday = dateStr === new Date().toISOString().slice(0, 10);
+  const bookingToday = new Date().toLocaleDateString("en-CA", { timeZone: bookingV2.timezone });
+  const bookingNowMins = scheduleTimeToMins(new Date().toLocaleTimeString("en-GB", { timeZone: bookingV2.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }));
 
   useEffect(() => {
     localStorage.setItem(CALENDAR_PREFERENCES_KEY, JSON.stringify({
@@ -2657,21 +2504,45 @@ export default function CalendarPage() {
     }
   }, [staffFilter, staffRaw, visibleStaff]);
 
-  /* ── Fetch weekly staff schedules ── */
+  /* ── Fetch staff working windows ── */
   const {
     data: schedulesRaw,
-    isLoading: schedulesLoading,
-    isError: schedulesError,
+    isLoading: datedSchedulesLoading,
+    isError: datedSchedulesError,
   } = useQuery({
-    queryKey: ["schedules-all"],
-    queryFn: () =>
-      _axios.get("/api/portal/v1/booking/schedules/").then((r) => r.data),
-    staleTime: 60_000,
+    ...(bookingV2.enabled ? calendarShiftQuery(dateStr) : {
+      queryKey: ["schedules-all"],
+      queryFn: () => _axios.get("/api/portal/v1/booking/schedules/").then((r) => r.data),
+      staleTime: 60_000,
+    }),
   });
+  const shiftMonth = dateStr.slice(0, 7);
+  useEffect(() => {
+    if (!bookingV2.enabled) return;
+    for (const direction of [-1, 1]) {
+      const neighboringMonth = dayjs(`${shiftMonth}-01`).add(direction, "month").format("YYYY-MM-DD");
+      queryClient.prefetchQuery(calendarShiftQuery(neighboringMonth));
+    }
+  }, [bookingV2.enabled, queryClient, shiftMonth]);
+  const repeatingSchedulesQ = useQuery({
+    queryKey: bookingV2Keys.repeatingShifts(),
+    queryFn: () => listRepeatingShifts().then(listFrom),
+    enabled: bookingV2.enabled,
+    staleTime: 30_000,
+  });
+  const timeOffsQ = useQuery({
+    queryKey: bookingV2Keys.timeOffs(),
+    queryFn: () => listTimeOffs().then(listFrom),
+    enabled: bookingV2.enabled,
+    staleTime: 30_000,
+  });
+  const schedulesLoading = datedSchedulesLoading || (bookingV2.enabled && (repeatingSchedulesQ.isLoading || timeOffsQ.isLoading));
+  const schedulesError = datedSchedulesError || (bookingV2.enabled && (repeatingSchedulesQ.isError || timeOffsQ.isError));
   const schedulesData = useMemo(() => {
-    if (!schedulesRaw) return [];
-    return Array.isArray(schedulesRaw) ? schedulesRaw : schedulesRaw.results ?? [];
-  }, [schedulesRaw]);
+    const rows = listFrom(schedulesRaw);
+    if (!bookingV2.enabled) return rows;
+    return calendarSchedulesV2(rows, repeatingSchedulesQ.data ?? [], timeOffsQ.data ?? [], dateStr, bookingV2.timezone);
+  }, [bookingV2.enabled, bookingV2.timezone, dateStr, repeatingSchedulesQ.data, schedulesRaw, timeOffsQ.data]);
   const schedulesByStaff = useMemo(() => {
     const weekday = scheduleWeekday(selectedDate);
     const map = new Map(visibleStaff.map((staff) => [String(staff.id), []]));
@@ -2680,7 +2551,9 @@ export default function CalendarPage() {
       if (Number(entry.day_of_week) !== weekday) return;
       const staffId = typeof entry.staff === "object" ? entry.staff?.id : entry.staff;
       const key = String(staffId);
-      if (map.has(key)) map.get(key).push(entry);
+      const startMins = scheduleTimeToMins(entry.start_time);
+      const endMins = scheduleTimeToMins(entry.end_time);
+      if (map.has(key) && startMins !== null && endMins !== null) map.get(key).push({ ...entry, startMins, endMins });
     });
 
     return map;
@@ -2692,8 +2565,7 @@ export default function CalendarPage() {
     return visibleStaff.filter((staff) => {
       const entries = schedulesByStaff.get(String(staff.id)) ?? [];
       return entries.some((entry) => {
-        const startMins = scheduleTimeToMins(entry.start_time);
-        const endMins = scheduleTimeToMins(entry.end_time);
+        const { startMins, endMins } = entry;
         return (
           entry.is_available !== false &&
           startMins !== null &&
@@ -2749,6 +2621,12 @@ export default function CalendarPage() {
     if (!categoriesRaw) return [];
     return Array.isArray(categoriesRaw) ? categoriesRaw : categoriesRaw.results ?? [];
   }, [categoriesRaw]);
+  const eligibleServicesByStaff = useMemo(() => new Map(visibleStaff.map((person) => [String(person.id),
+    servicesData.filter((service) => service.is_active !== false && isStaffEligibleForService(service, person, categoriesData)),
+  ])), [categoriesData, servicesData, visibleStaff]);
+  const wizardServices = calendarBooking
+    ? eligibleServicesByStaff.get(String(calendarBooking.staffId)) ?? []
+    : servicesData;
 
   /* ── Service lookup map (id → service object) ── */
   const serviceLookup = useMemo(() => {
@@ -2759,13 +2637,10 @@ export default function CalendarPage() {
 
   /* ── Fetch appointments for selected date ── */
   const { data: aptsRaw, refetch: refetchApts } = useQuery({
-    queryKey: ["appointments", dateStr],
-    queryFn: () =>
-      _axios
-        .get("/api/portal/v1/booking/appointments/", {
-          params: { appointment_date: dateStr, date: dateStr },  // send both; backend uses whichever it supports
-        })
-        .then((r) => r.data),
+    queryKey: bookingV2.enabled ? bookingV2Keys.appointments({ date: dateStr, view: "schedule" }) : ["appointments", dateStr],
+    queryFn: () => bookingV2.enabled
+      ? listAppointmentsV2({ date: dateStr, view: "schedule" })
+      : _axios.get("/api/portal/v1/booking/appointments/", { params: { appointment_date: dateStr, date: dateStr } }).then((r) => r.data),
     staleTime: 60_000,
   });
 
@@ -2803,11 +2678,54 @@ export default function CalendarPage() {
     [selectedServices, selectedServiceOptions]
   );
 
+  const requestedBookingServices = useMemo(() => selectedServices.map((service) => ({
+    service_id: service.id,
+    service_option_id: selectedServiceOptions[service.id] ?? null,
+  })), [selectedServiceOptions, selectedServices]);
+  const bookingIntentSignature = useMemo(() => JSON.stringify({
+    identity: bookingIdentity,
+    services: requestedBookingServices,
+    date: wizDate?.format("YYYY-MM-DD"),
+    time: wizTime,
+    staff: staffPerService,
+  }), [bookingIdentity, requestedBookingServices, staffPerService, wizDate, wizTime]);
+
+  useEffect(() => {
+    setBookingIntentKey(createIdempotencyKey());
+  }, [bookingIntentSignature]);
+
+  const availableTimesQ = useQuery({
+    queryKey: ["booking-v2-local-times", wizDate?.format("YYYY-MM-DD"), requestedBookingServices, SLOT_MINS, bookingV2.timezone],
+    enabled: bookingV2.enabled && selectedServices.length > 0 && Boolean(wizDate) && serviceOptionsReady,
+    queryFn: ({ signal }) => getAvailableTimesV2({
+      services: requestedBookingServices,
+      appointment_date: wizDate.format("YYYY-MM-DD"),
+      timezone: bookingV2.timezone,
+      interval_minutes: SLOT_MINS,
+    }, { signal }),
+    staleTime: 0,
+    gcTime: 0,
+    retry: 1,
+  });
+  const availableTimes = useMemo(() => bookingV2.enabled ? availableTimesQ.data?.slots ?? [] : null, [availableTimesQ.data, bookingV2.enabled]);
+  const availabilityTimezone = availableTimesQ.data?.timezone ?? bookingV2.timezone;
+  const selectedSlotBookable = !bookingV2.enabled || (!availableTimesQ.isFetching && !availableTimesQ.error
+    && availableTimes.some((slot) => slot.starts_at === wizTime && slot.is_bookable !== false));
+
+  useEffect(() => {
+    if (!bookingV2.enabled || !availableTimesQ.data || availableTimesQ.isFetching) return;
+    if (calendarBooking?.start) {
+      const slot = availableTimes.find((candidate) => candidate.is_bookable !== false && Date.parse(candidate.starts_at) === Date.parse(calendarBooking.start));
+      setWizTime(slot?.starts_at ?? null);
+      setCalendarBooking((current) => ({ ...current, start: null }));
+    } else if (wizTime && !selectedSlotBookable) setWizTime(null);
+  }, [availableTimes, availableTimesQ.data, availableTimesQ.isFetching, bookingV2.enabled, calendarBooking?.start, selectedSlotBookable, wizTime]);
+
   const shouldFetchServiceAvailability =
     selectedServices.length > 0 &&
     !!wizDate &&
     !!wizTime &&
-    serviceOptionsReady;
+    serviceOptionsReady && selectedSlotBookable;
 
   const {
     data: serviceAvailabilityMap = {},
@@ -2821,24 +2739,24 @@ export default function CalendarPage() {
       wizTime,
       selectedServices.map((service) => service.id),
       selectedServices.map((service) => [service.id, selectedServiceOptions[service.id] ?? null]),
+      bookingV2.enabled,
+      availabilityTimezone,
     ],
     enabled: shouldFetchServiceAvailability,
     queryFn: async () => {
-      const requestedServices = selectedServices.map((service) => ({
-        service_id: service.id,
-        ...(selectedServiceOptions[service.id]
-          ? { service_option_id: Number(selectedServiceOptions[service.id]) }
-          : {}),
-      }));
-      const response = await getBookingStaffOptions({
-        appointment_date: wizDate.format("YYYY-MM-DD"),
-        start_time: `${wizTime}:00`,
-        services: requestedServices,
-      });
+      const requestedServices = requestedBookingServices;
+      const response = bookingV2.enabled
+        ? await getAvailableStaffV2({
+            services: requestedServices,
+            scheduled_start: wizTime,
+            timezone: availabilityTimezone,
+          })
+        : await getBookingStaffOptions({ appointment_date: wizDate.format("YYYY-MM-DD"), start_time: `${wizTime}:00`, services: requestedServices });
       const rows = normalizeBookingStaffOptions(response, requestedServices, visibleStaff);
       return Object.fromEntries(rows.map((row) => [String(row.service_id), row]));
     },
-    staleTime: 60_000,
+    staleTime: 0,
+    gcTime: 0,
     retry: 1,
   });
 
@@ -3064,25 +2982,28 @@ export default function CalendarPage() {
   /* ── Wizard helpers ── */
   const resetWizard = useCallback(() => {
     setWizStep(0);
-    setClientMode("existing");
-    setSelectedClient(null);
-    setWalkIn({ name: "", phone: "", email: "" });
+    setBookingIdentity(null);
     setSelectedServices([]);
     setSelectedServiceOptions({});
     setStaffPerService({});
     setStaffRecommendations({});
+    setCalendarBooking(null);
     setRecommendingServiceId(null);
-    setWizDate(dayjs());
+    setWizDate((bookingV2.enabled ? dayjs(new Date().toLocaleDateString("en-CA", { timeZone: bookingV2.timezone })) : dayjs()).startOf("day"));
     setWizTime(null);
-  }, []);
+    setBookingIntentKey(createIdempotencyKey());
+  }, [bookingV2.enabled, bookingV2.timezone]);
 
-  const openWizard = useCallback(() => {
+  const openWizard = useCallback((staff, time) => {
     resetWizard();
     createAppointment.reset();
-    setWizDate(dayjs(selectedDate));
+    if (staff && bookingV2.enabled) {
+      setWizDate(dayjs(dateStr));
+      setCalendarBooking({ staffId: staff.id, start: explicitOffsetStart(dateStr, time, bookingV2.timezone) });
+    }
     setAddOpen(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetWizard, selectedDate]);
+  }, [resetWizard, bookingV2.enabled, bookingV2.timezone, dateStr]);
 
   useEffect(() => {
     const selectedIds = new Set(selectedServices.map((service) => String(service.id)));
@@ -3141,11 +3062,33 @@ export default function CalendarPage() {
       return changed ? next : prev;
     });
   }, [serviceAvailabilityMap, staffRecommendations]);
+  useEffect(() => {
+    if (!calendarBooking) return;
+    setStaffPerService((previous) => {
+      const next = { ...previous };
+      let changed = false;
+      for (const [serviceId, window] of Object.entries(serviceAvailabilityMap)) {
+        if (!next[serviceId] && window.staff.some((person) => String(person.id) === String(calendarBooking.staffId))) {
+          next[serviceId] = calendarBooking.staffId;
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+  }, [calendarBooking, serviceAvailabilityMap]);
 
   const recommendStaffForService = useCallback(async (service, availability) => {
     if (!availability?.scheduled_start) return;
     setRecommendingServiceId(service.id);
     try {
+      if (bookingV2.enabled) {
+        const firstAvailable = availability.staff?.[0];
+        if (!firstAvailable) throw new Error("No provider is available for this service window.");
+        const recommendation = { available: true, staff: firstAvailable, scheduled_start: availability.scheduled_start, scheduled_end: availability.scheduled_end };
+        setStaffRecommendations((prev) => ({ ...prev, [String(service.id)]: recommendation }));
+        setStaffPerService((prev) => ({ ...prev, [service.id]: firstAvailable.id }));
+        return;
+      }
       const selectedOptionId = selectedServiceOptions[service.id];
       const response = await recommendWalkInStaff({
         service_id: service.id,
@@ -3162,7 +3105,7 @@ export default function CalendarPage() {
     } finally {
       setRecommendingServiceId(null);
     }
-  }, [selectedServiceOptions, visibleStaff]);
+  }, [bookingV2.enabled, selectedServiceOptions, visibleStaff]);
 
   const staffSelectionsValid = useMemo(() => {
     if (!shouldFetchServiceAvailability || isFetchingServiceAvailability || serviceAvailabilityError) return false;
@@ -3209,15 +3152,19 @@ export default function CalendarPage() {
   const wizStepValid = useMemo(() => {
     switch (wizStep) {
       case 0: // Client
-        if (clientMode === "existing") return !!selectedClient;
-        return walkIn.name.trim() !== "" && walkIn.phone.trim() !== "";
+        try {
+          bookingIdentityPayload(bookingIdentity);
+          return true;
+        } catch {
+          return false;
+        }
       case 1: // Services
         return selectedServices.length > 0;
       case 2: // Service options
         return serviceOptionsReady;
       case 3: // Date & Time — also blocked if selected date is a blocked day
         if (!wizDate || !wizTime) return false;
-        if (blockedDateSet.has(wizDate.format("YYYY-MM-DD"))) return false;
+        if (!bookingV2.enabled && blockedDateSet.has(wizDate.format("YYYY-MM-DD"))) return false;
         return serviceWindowsAvailable;
       case 4: // Staff
         return staffSelectionsValid;
@@ -3228,9 +3175,7 @@ export default function CalendarPage() {
     }
   }, [
     wizStep,
-    clientMode,
-    selectedClient,
-    walkIn,
+    bookingIdentity,
     selectedServices,
     serviceOptionsReady,
     wizDate,
@@ -3238,15 +3183,15 @@ export default function CalendarPage() {
     blockedDateSet,
     serviceWindowsAvailable,
     staffSelectionsValid,
+    bookingV2.enabled,
   ]);
 
   /* ── POST mutation — create appointment ── */
   const createAppointment = useMutation({
-    mutationFn: (data) =>
-      _axios.post("/api/portal/v1/booking/appointments/", data),
+    mutationFn: (payload) => bookingV2.enabled ? createAndConfirmPortalBooking(payload) : createWalkInAppointment(payload),
     onSuccess: (_, sentPayload) => {
       // Invalidate the specific date that was booked (may differ from today)
-      const bookedDate = sentPayload?.appointment_date ?? dateStr;
+      const bookedDate = sentPayload?.appointment_date ?? sentPayload?.scheduled_start?.slice(0, 10) ?? dateStr;
       queryClient.invalidateQueries({ queryKey: ["appointments", bookedDate] });
       // Also invalidate the currently viewed date if it's different
       if (bookedDate !== dateStr) {
@@ -3260,14 +3205,22 @@ export default function CalendarPage() {
     onError: (err, sentPayload) => {
       const data = err?.response?.data ?? {};
       const msg = firstApiErrorMessage(err, "Failed to create appointment");
+      const hasStaffValidationError = normalizePortalIssues(err).some((issue) =>
+        ["staff", "staff_id", "staff_member", "staff_member_id", "provider", "provider_id"]
+          .includes(issue.field)
+      );
 
       // ── Waitlist eligible? Offer fallback ──
       const isWaitlistEligible =
         data.waitlist_eligible === true ||
-        ["waitlist_eligible", "slot_unavailable", "fully_booked", "outside_business_hours"]
+        ["waitlist_eligible", "slot_unavailable", "fully_booked", "outside_business_hours", "staff_window_unavailable", "booking_hold_unavailable"]
           .includes(data.code);
 
-      if (isWaitlistEligible) {
+      if (isSavedGuestSelectionMissing(err, sentPayload)) {
+        setBookingIdentity(null);
+        setWizStep(0);
+        message.error("That saved guest is no longer available. Search again or enter a new guest.");
+      } else if (isWaitlistEligible) {
         // Pre-fill staff from whatever was resolved in the failed payload
         const preStaff = {};
         (sentPayload?.services || []).forEach((s) => {
@@ -3277,9 +3230,11 @@ export default function CalendarPage() {
         setWaitlistPrompt({ payload: sentPayload, errorMsg: msg });
       } else {
         message.error(msg);
-        if (err?.response?.status === 409 || data.code === "conflict") {
-          setWizStep(4);
+        if (hasStaffValidationError || err?.response?.status === 409 || data.code === "conflict" || err?.code === "staff_window_unavailable") {
+          if (bookingV2.enabled) setBookingIntentKey(createIdempotencyKey());
+          setWizStep(bookingV2.enabled ? 3 : 4);
           refetchServiceAvailability();
+          if (bookingV2.enabled) availableTimesQ.refetch();
         }
       }
       createAppointment.reset();
@@ -3328,7 +3283,7 @@ export default function CalendarPage() {
 
   /* ── PATCH mutation — one schedule contract for drag/drop and drawer edits ── */
   const scheduleMutation = useMutation({
-    mutationFn: ({ id, update }) => moveAppointment(id, update),
+    mutationFn: ({ id, update }) => moveAppointment(id, update, { v2: bookingV2.enabled }),
     onMutate: async (operation) => {
       if (!operation.optimistic) return { snapshots: [] };
 
@@ -3362,6 +3317,8 @@ export default function CalendarPage() {
       if (nextDate && nextDate !== dateStr) {
         queryClient.invalidateQueries({ queryKey: ["appointments", nextDate] });
       }
+      queryClient.invalidateQueries({ queryKey: ["booking-v2", "appointments"] });
+      refetchApts();
     },
     onError: (error, operation, context) => {
       restoreAppointmentCaches(context?.snapshots);
@@ -3380,7 +3337,9 @@ export default function CalendarPage() {
   /* ── POST mutation — update status from modal ── */
   const updateStatus = useMutation({
     mutationFn: ({ id, status }) =>
-      _axios.post(`/api/portal/v1/booking/appointments/${id}/status/`, { status }),
+      bookingV2.enabled
+        ? updateAppointmentStatusV2(id, status)
+        : _axios.post(`/api/portal/v1/booking/appointments/${id}/status/`, { status }),
     onSuccess: (_, { status }) => {
       setSelectedBooking((prev) => prev ? { ...prev, status } : prev);
       setStatusDrawerBooking((prev) => prev ? { ...prev, status } : prev);
@@ -3397,8 +3356,9 @@ export default function CalendarPage() {
 
   /* ── POST mutation — cancel appointment ── */
   const cancelAppointment = useMutation({
-    mutationFn: (id) =>
-      _axios.post(`/api/portal/v1/booking/appointments/${id}/cancel/`),
+    mutationFn: ({ id, reason }) => bookingV2.enabled
+      ? cancelAppointmentV2(id, reason)
+      : _axios.post(`/api/portal/v1/booking/appointments/${id}/cancel/`, { reason }),
     onSuccess: () => {
       setSelectedBooking(null);
       setStatusDrawerBooking(null);
@@ -3833,7 +3793,7 @@ export default function CalendarPage() {
 
             {/* ── Add Appointment button — disabled on blocked days ── */}
             <button
-              onClick={!selectedDateIsBlocked ? openWizard : undefined}
+              onClick={!selectedDateIsBlocked ? () => openWizard() : undefined}
               disabled={selectedDateIsBlocked}
               title={selectedDateIsBlocked ? "Salon is closed on this day" : undefined}
               style={{
@@ -4274,6 +4234,11 @@ export default function CalendarPage() {
                       {timeLabels.map(({ s, mins }) => {
                         const isAvailable =
                           scheduleDataReady && isSlotInsideSchedule(staffSchedule, mins);
+                        const isOccupied = colBookings.some((booking) => !["cancelled", "canceled", "completed", "no-show", "no_show"].includes(booking.status)
+                          && mins < timeToMins(booking.startTime) + booking.durationMins && mins + SLOT_MINS > timeToMins(booking.startTime));
+                        const canStartBooking = bookingV2.enabled && isAvailable && !isOccupied && !selectedDateIsBlocked
+                          && (eligibleServicesByStaff.get(String(staff.id))?.length ?? 0) > 0
+                          && (dateStr > bookingToday || (dateStr === bookingToday && mins > bookingNowMins));
                         const isHovered =
                           hoveredTimeSlot?.staffId === staff.id &&
                           hoveredTimeSlot?.slot === s;
@@ -4281,16 +4246,27 @@ export default function CalendarPage() {
                           <div
                             key={s}
                             className="absolute left-0 right-0"
+                            role={canStartBooking ? "button" : undefined}
+                            tabIndex={canStartBooking ? 0 : undefined}
+                            aria-label={canStartBooking ? `Book ${staff.full_name} at ${formatDisplayTime(minsToTime(mins))}` : undefined}
+                            title={canStartBooking ? "Start a booking" : undefined}
                             style={{
                               top: s * SLOT_HEIGHT_PX,
                               height: SLOT_HEIGHT_PX,
                               background: isAvailable ? "transparent" : "rgba(126,77,62,0.105)",
-                              cursor: isAvailable ? "default" : "not-allowed",
+                              cursor: canStartBooking ? "pointer" : isAvailable ? "default" : "not-allowed",
                             }}
                             onMouseEnter={() => setHoveredTimeSlot({ staffId: staff.id, slot: s })}
                             onMouseLeave={() => setHoveredTimeSlot(null)}
                             onClick={(e) => {
                               if (!isAvailable) e.stopPropagation();
+                              if (canStartBooking && !dragging) openWizard(staff, minsToTime(mins));
+                            }}
+                            onKeyDown={(e) => {
+                              if (canStartBooking && ["Enter", " "].includes(e.key)) {
+                                e.preventDefault();
+                                openWizard(staff, minsToTime(mins));
+                              }
                             }}
                             onPointerDown={(e) => {
                               if (!isAvailable) e.stopPropagation();
@@ -4411,6 +4387,9 @@ export default function CalendarPage() {
           booking={selectedBooking}
           staff={visibleStaff.find((s) => s.id === selectedBooking.staffId)}
           onClose={() => setSelectedBooking(null)}
+          canCorrect={bookingV2.enabled && ["confirmed", "arrived"].includes(String(selectedBooking.status || "").replaceAll("_", "-").toLowerCase()) && permissionState("appointments.edit", selectedBooking.raw) !== false}
+          canAdjustPrice={permissionState("booking_price_adjustments.create", selectedBooking.raw) !== false}
+          onOpenCorrections={(booking) => { setSelectedBooking(null); setCorrectionBooking(booking); }}
           onOpenStatusDrawer={(booking) => {
             setSelectedBooking(null);
             setStatusDrawerBooking(booking);
@@ -4441,12 +4420,20 @@ export default function CalendarPage() {
           rescheduleLoading={
             scheduleMutation.isPending && scheduleMutation.variables?.source === "drawer"
           }
-          onCancel={(id) => cancelAppointment.mutate(id)}
+          onCancel={(id, reason) => cancelAppointment.mutate({ id, reason })}
           cancelLoading={cancelAppointment.isPending}
           onDelete={(id) => deleteAppointment.mutate(id)}
           deleteLoading={deleteAppointment.isPending}
         />
       )}
+
+      {correctionBooking && <AppointmentDetailDrawer
+        key={correctionBooking.appointmentId ?? correctionBooking.id}
+        appointmentId={correctionBooking.appointmentId ?? correctionBooking.id}
+        listAppointment={correctionBooking.raw}
+        enableCorrections
+        onClose={() => setCorrectionBooking(null)}
+      />}
 
       <Modal
         open={Boolean(scheduleOverride)}
@@ -4566,32 +4553,33 @@ export default function CalendarPage() {
         </div>
       </Modal>
 
-      {/* ── Add Appointment Wizard Modal ── */}
-      <Modal
+      {/* ── Appointment creation drawer ── */}
+      <Drawer
         open={addOpen}
-        onCancel={() => { setAddOpen(false); resetWizard(); createAppointment.reset(); addForm.resetFields(); }}
-        footer={null}
+        onClose={() => { if (createAppointment.isPending) return; setAddOpen(false); resetWizard(); createAppointment.reset(); addForm.resetFields(); }}
+        placement="right"
+        width="min(720px, 100vw)"
+        closable={false}
+        keyboard={!createAppointment.isPending}
+        mask={{ closable: !createAppointment.isPending }}
         title={null}
-        closeIcon={false}
-        width={640}
+        className="calendar-create-drawer"
         styles={{
           content: {
             background: "#FDFAF5",
             border: "1px solid rgba(187,161,79,0.2)",
-            borderRadius: 20,
-            padding: 0,
             overflow: "hidden",
             boxShadow: "0 24px 60px rgba(0,0,0,0.18)",
           },
+          body: { padding: 0, display: "flex", flexDirection: "column", minHeight: 0 },
           mask: { backdropFilter: "blur(5px)", background: "rgba(30,24,14,0.55)" },
         }}
-        destroyOnClose
+        destroyOnHidden
       >
         {/* Dark luxury banner header */}
-        <div style={{
+        <div className="calendar-create-header" style={{
           position: "relative",
           background: "linear-gradient(145deg, #1a1308 0%, #0d0a04 100%)",
-          padding: "22px 28px 20px",
           overflow: "hidden",
         }}>
           {/* Dot grid texture */}
@@ -4619,7 +4607,9 @@ export default function CalendarPage() {
               </div>
             </div>
             <button
-              onClick={() => { setAddOpen(false); resetWizard(); createAppointment.reset(); addForm.resetFields(); }}
+              onClick={() => { if (createAppointment.isPending) return; setAddOpen(false); resetWizard(); createAppointment.reset(); addForm.resetFields(); }}
+              disabled={createAppointment.isPending}
+              aria-label="Close appointment creation"
               style={{
                 width: 32, height: 32, borderRadius: "50%",
                 background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)",
@@ -4641,27 +4631,17 @@ export default function CalendarPage() {
         </div>
 
         {/* Step body (scrollable) */}
-        <div style={{
-          overflowY: "auto",
-          overflowX: "hidden",
-          paddingTop: 20,
-          maxHeight: wizStep >= 3
-            ? "min(72vh, calc(100vh - 230px))"
-            : "calc(100vh - 360px)",
-        }}>
+        <div className="calendar-create-body">
           {wizStep === 0 && (
             <StepClient
-              clientMode={clientMode}
-              setClientMode={setClientMode}
-              selectedClient={selectedClient}
-              setSelectedClient={setSelectedClient}
-              walkIn={walkIn}
-              setWalkIn={setWalkIn}
+              identity={bookingIdentity}
+              setIdentity={setBookingIdentity}
             />
           )}
           {wizStep === 1 && (
             <StepServices
-              servicesData={servicesData}
+              servicesData={wizardServices}
+              staffName={calendarBooking ? visibleStaff.find((person) => String(person.id) === String(calendarBooking.staffId))?.full_name : undefined}
               categoriesData={categoriesData}
               selectedServices={selectedServices}
               setSelectedServices={setSelectedServices}
@@ -4680,14 +4660,18 @@ export default function CalendarPage() {
               setSelectedDate={setWizDate}
               selectedTime={wizTime}
               setSelectedTime={setWizTime}
-              blockedDateSet={blockedDateSet}
+              blockedDateSet={bookingV2.enabled ? new Set() : blockedDateSet}
               checkingAvailability={shouldFetchServiceAvailability && isFetchingServiceAvailability}
-              availabilityError={serviceAvailabilityError}
+              availabilityError={bookingV2.enabled ? (availableTimesQ.error || serviceAvailabilityError) : serviceAvailabilityError}
               hasAvailableStaff={
                 shouldFetchServiceAvailability && !isFetchingServiceAvailability && !serviceAvailabilityError
                   ? serviceWindowsAvailable
                   : null
               }
+              availableSlots={availableTimes}
+              loadingTimes={bookingV2.enabled && availableTimesQ.isFetching}
+              timesError={bookingV2.enabled ? availableTimesQ.error : null}
+              timezone={bookingV2.enabled ? availabilityTimezone : undefined}
             />
           )}
           {wizStep === 4 && (
@@ -4703,13 +4687,12 @@ export default function CalendarPage() {
               recommendations={staffRecommendations}
               recommendingServiceId={recommendingServiceId}
               onRecommend={recommendStaffForService}
+              timezone={bookingV2.enabled ? availabilityTimezone : undefined}
             />
           )}
           {wizStep === 5 && (
             <StepConfirm
-              clientMode={clientMode}
-              selectedClient={selectedClient}
-              walkIn={walkIn}
+              identity={bookingIdentity}
               selectedServices={selectedServices}
               selectedServiceOptions={selectedServiceOptions}
               staffPerService={staffPerService}
@@ -4717,18 +4700,13 @@ export default function CalendarPage() {
               recommendations={staffRecommendations}
               bookingDate={wizDate}
               bookingTime={wizTime}
+              timezone={bookingV2.enabled ? availabilityTimezone : undefined}
             />
           )}
         </div>
 
         {/* Footer nav */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "16px 28px 22px",
-          borderTop: "1px solid rgba(187,161,79,0.12)",
-          background: "#FDFAF5",
-          gap: 10,
-        }}>
+        <div className="calendar-create-footer">
           {/* Back */}
           <button
             onClick={() => setWizStep((s) => s - 1)}
@@ -4798,17 +4776,17 @@ export default function CalendarPage() {
                       : {}),
                     staff_id: staffPerService[service.id],
                   }));
-                  const payload = buildWalkInAppointmentPayload({
-                    customerId: clientMode === "existing" ? selectedClient?.id : null,
-                    guest: {
-                      full_name: walkIn.name,
-                      phone_number: walkIn.phone,
-                      email: walkIn.email,
-                    },
-                    appointmentDate: wizDate.format("YYYY-MM-DD"),
-                    startTime: `${wizTime}:00`,
-                    services,
-                  });
+                  const payload = bookingV2.enabled
+                    ? {
+                        idempotency_key: bookingIntentKey,
+                        ...bookingIdentityPayload(bookingIdentity),
+                        services,
+                        scheduled_start: wizTime,
+                        timezone: availabilityTimezone,
+                        booking_source: "walk-in",
+                        notes: "",
+                      }
+                    : buildWalkInAppointmentPayload({ identity: bookingIdentity, appointmentDate: wizDate.format("YYYY-MM-DD"), startTime: `${wizTime}:00`, services });
                   createAppointment.mutate(payload);
                 } catch (error) {
                   message.error(error.message);
@@ -4832,11 +4810,11 @@ export default function CalendarPage() {
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
             >
               <FiCheckCircle size={15} />
-              {createAppointment.isPending ? "Booking…" : "✦ Book Walk-in"}
+              {createAppointment.isPending ? (bookingV2.enabled ? "Reserving and confirming…" : "Booking…") : (bookingV2.enabled ? "Reserve and confirm" : "Book walk-in")}
             </button>
           )}
         </div>
-      </Modal>
+      </Drawer>
 
       {/* ── Waitlist fallback prompt ── */}
       {/* Shown when createAppointment fails with a waitlist-eligible error */}
@@ -4947,6 +4925,11 @@ export default function CalendarPage() {
               onClick={() => {
                 if (!waitlistDate || !waitlistPrompt) return;
                 const base = waitlistPrompt.payload;
+                const scheduledStart = base.scheduled_start;
+                const waitlistBase = { ...base };
+                delete waitlistBase.idempotency_key;
+                delete waitlistBase.scheduled_start;
+                delete waitlistBase.timezone;
                 // Rebuild services with confirmed staff_id from waitlistStaffPerService
                 const correctedServices = (base.services || []).map((s) => ({
                   service_id: s.service_id,
@@ -4954,7 +4937,11 @@ export default function CalendarPage() {
                   staff_id:   waitlistStaffPerService[s.service_id],
                 }));
                 createWaitlist.mutate({
-                  ...base,
+                  ...waitlistBase,
+                  ...(scheduledStart ? {
+                    appointment_date: scheduledStart.slice(0, 10),
+                    start_time: scheduledStart.slice(11, 19),
+                  } : {}),
                   services:     correctedServices,
                   waitlist_date: waitlistDate.format("YYYY-MM-DD"),
                   reason:        "staff_fully_booked",

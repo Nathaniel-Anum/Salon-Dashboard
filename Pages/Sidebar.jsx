@@ -17,7 +17,7 @@ import {
   FiList,
   FiTarget,
   FiLifeBuoy,
-  FiDollarSign,
+  FiClipboard,
 } from "react-icons/fi";
 import { FaClock } from "react-icons/fa";
 import { FaUserAlt } from "react-icons/fa";
@@ -27,11 +27,12 @@ import { useMutation } from "@tanstack/react-query";
 import { LoadingOutlined } from "@ant-design/icons";
 import _axios from "../src/api/_axios";
 import { Spin, Tooltip } from "antd";
+import { clearPortalSession } from "../src/auth/permissions";
 
 const menuItems = [
   { name: "Dashboard",    icon: <FiHome />,      path: "/" },
   { name: "Calendar",     icon: <FiCalendar />,  path: "/calendar" },
-  { name: "Transactions", icon: <FiDollarSign />, path: "/transactions" },
+  { name: "Appointments", icon: <FiClipboard />, path: "/appointments" },
   { name: "Services",     icon: <FiScissors />,  path: "/services" },
   { name: "Waitlist",     icon: <FiList />,      path: "/waitlist" },
   { name: "Schedules",    icon: <FaClock size={14} />, path: "/schedules" },
@@ -83,12 +84,14 @@ const Sidebar = () => {
       localStorage.removeItem("isAuthenticated");
       localStorage.removeItem("refresh");
       localStorage.removeItem("access");
+      clearPortalSession();
       navigate("/login");
     },
     onError: () => {
       localStorage.removeItem("isAuthenticated");
       localStorage.removeItem("refresh");
       localStorage.removeItem("access");
+      clearPortalSession();
       navigate("/login");
     },
   });

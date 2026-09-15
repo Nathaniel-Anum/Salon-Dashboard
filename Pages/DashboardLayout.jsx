@@ -4,6 +4,7 @@ import { Outlet } from "react-router-dom";
 import { Header } from "./Header";
 import { useInventorySocket } from "../src/hooks/useInventorySocket";
 import { NotificationsProvider } from "../src/context/NotificationsContext";
+import BookingV2Provider from "../src/context/BookingV2Provider.jsx";
 
 function LayoutInner() {
   useInventorySocket();
@@ -23,7 +24,9 @@ function LayoutInner() {
 
 const DashboardLayout = () => (
   <NotificationsProvider>
-    <LayoutInner />
+    <BookingV2Provider>
+      <LayoutInner />
+    </BookingV2Provider>
   </NotificationsProvider>
 );
 

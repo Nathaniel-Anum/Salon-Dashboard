@@ -1056,7 +1056,7 @@ export default function Staff() {
       <Drawer
         title={null}
         placement="right"
-        width={560}
+        size={560}
         open={assignOpen}
         onClose={closeAssignDrawer}
         closable={false}

@@ -9,6 +9,7 @@
  *   PATCH  /api/portal/v1/booking/services/{id}/     → update a service
  *   DELETE /api/portal/v1/booking/services/{id}/     → delete a service
  *   GET    /api/portal/v1/booking/service-categories/ → list all categories
+ *   GET    /api/portal/v1/accounts/roles/              → active provider roles
  *   GET    /api/portal/v1/booking/service-options      → list service options
  *   POST   /api/portal/v1/booking/service-options      → create service option
  *   PATCH  /api/portal/v1/booking/service-options/{id} → update service option
@@ -53,6 +54,7 @@ import {
 } from "react-icons/fi";
 import _axios from "../src/api/_axios";
 import { firstApiErrorMessage } from "../src/api/apiErrors";
+import { getStaffReferenceId, getAssignedStaffIds, normalizeRoleIds, getCategoryRoleIds, isActiveRole } from "../src/api/providerEligibility.js";
 
 /* ─────────────────────────────────────────────
    CONSTANTS
@@ -184,32 +186,22 @@ function MiniAvatar({ name, size = 34, selected = false }) {
   );
 }
 
-function getStaffReferenceId(reference) {
-  if (reference && typeof reference === "object") {
-    return reference.id ?? reference.staff_id ?? reference.user_id ?? reference.account_id;
-  }
-  return reference;
+function firstFieldError(error, field) {
+  const data = error?.response?.data ?? {};
+  let value = data?.errors?.[field] ?? data?.[field];
+
+  while (Array.isArray(value)) value = value[0];
+  if (value && typeof value === "object") value = value.message ?? Object.values(value)[0];
+  return value == null ? null : String(value);
 }
 
-function getAssignedStaffIds(service = {}) {
-  const candidates = [
-    service.assigned_staff_ids,
-    service.staff_ids,
-    service.assigned_staff,
-  ];
-  const assignedStaff = candidates.find(
-    (candidate) => Array.isArray(candidate) && candidate.length > 0
-  );
+function applyCategoryFormErrors(form, error) {
+  const fields = ["name", "description", "eligible_role_ids"]
+    .map((name) => ({ name, error: firstFieldError(error, name) }))
+    .filter(({ error }) => Boolean(error))
+    .map(({ name, error }) => ({ name, errors: [error] }));
 
-  if (!assignedStaff) return [];
-
-  return assignedStaff
-    .map(getStaffReferenceId)
-    .filter((id) => id !== null && id !== undefined && id !== "")
-    .filter(
-      (id, index, ids) =>
-        ids.findIndex((candidate) => String(candidate) === String(id)) === index
-    );
+  if (fields.length) form.setFields(fields);
 }
 
 /* ─────────────────────────────────────────────
@@ -918,7 +910,15 @@ function ServiceOptionsManager({
 /* ─────────────────────────────────────────────
    CATEGORY FORM FIELDS
    (shared between Add and Edit category modals)
-───────────────────────────────────────────── */function CategoryFormFields() {
+───────────────────────────────────────────── */function CategoryFormFields({
+  roleOptions = [],
+  rolesLoading = false,
+  rolesError = null,
+}) {
+  const roleHelp = rolesError
+    ? firstApiErrorMessage(rolesError, "Provider roles could not be loaded. Close this window and try again.")
+    : "Unassigned staff are offered only when their active role is selected here. Direct service assignments still take precedence.";
+
   return (
     <>
       <Form.Item
@@ -936,6 +936,36 @@ function ServiceOptionsManager({
           className="rounded-xl"
         />
       </Form.Item>
+
+      <Form.Item
+        name="eligible_role_ids"
+        label="Eligible provider roles"
+        help={roleHelp}
+        validateStatus={rolesError ? "error" : undefined}
+      >
+        <Select
+          mode="multiple"
+          allowClear
+          showSearch
+          loading={rolesLoading}
+          disabled={Boolean(rolesError)}
+          optionFilterProp="label"
+          placeholder={rolesLoading ? "Loading provider roles…" : "Select one or more roles…"}
+          options={roleOptions}
+          maxTagCount="responsive"
+          className="rounded-xl"
+          aria-label="Eligible provider roles"
+        />
+      </Form.Item>
+
+      {!rolesLoading && !rolesError && roleOptions.length === 0 && (
+        <p
+          className="-mt-4 mb-0 text-xs"
+          style={{ color: "#8a6d37", fontFamily: "'Poppins', sans-serif" }}
+        >
+          No active roles are available. Create or activate a role before configuring category eligibility.
+        </p>
+      )}
     </>
   );
 }
@@ -1665,6 +1695,17 @@ export default function ServicesPage() {
       _axios.get("/api/portal/v1/booking/service-categories/").then((r) => r.data),
   });
 
+  /* Active professional roles configure category-level provider eligibility. */
+  const {
+    data: rolesRaw,
+    isLoading: rolesLoading,
+    error: rolesError,
+  } = useQuery({
+    queryKey: ["roles"],
+    queryFn: () => _axios.get("/api/portal/v1/accounts/roles/").then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
+
   /* ── Fetch staff for the team picker ── */
   const { data: staffRaw, isLoading: staffLoading } = useQuery({
     queryKey: ["staff"],
@@ -1680,6 +1721,11 @@ export default function ServicesPage() {
   const categoriesData = useMemo(
     () => (Array.isArray(categoriesRaw) ? categoriesRaw : categoriesRaw?.results || []),
     [categoriesRaw]
+  );
+
+  const rolesData = useMemo(
+    () => (Array.isArray(rolesRaw) ? rolesRaw : rolesRaw?.results || []),
+    [rolesRaw]
   );
 
   const staffData = useMemo(
@@ -1722,6 +1768,18 @@ export default function ServicesPage() {
   const categoryOptions = useMemo(
     () => categoriesData.map((c) => ({ label: c.name, value: c.id })),
     [categoriesData]
+  );
+
+  const roleOptions = useMemo(
+    () => rolesData
+      .filter(isActiveRole)
+      .map((role) => ({
+        label: role.name || role.label || role.code || `Role #${role.id}`,
+        value: Number(role.id),
+      }))
+      .filter((role) => Number.isFinite(role.value))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [rolesData]
   );
 
   /* ─────────────────────────────────────
@@ -1889,13 +1947,18 @@ export default function ServicesPage() {
   ───────────────────────────────────── */
   const createCategory = useMutation({
     mutationFn: (data) =>
-      _axios.post("/api/portal/v1/booking/service-categories/", data),
+      _axios.post("/api/portal/v1/booking/service-categories/", {
+        name: data.name,
+        description: data.description ?? "",
+        eligible_role_ids: normalizeRoleIds(data.eligible_role_ids),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries(["service-categories"]);
       setAddCatOpen(false);
       addCatForm.resetFields();
     },
     onError: (err) => {
+      applyCategoryFormErrors(addCatForm, err);
       message.error(firstApiErrorMessage(err, "Failed to create category"));
     },
   });
@@ -1906,13 +1969,18 @@ export default function ServicesPage() {
   ───────────────────────────────────── */
   const updateCategory = useMutation({
     mutationFn: (data) =>
-      _axios.patch(`/api/portal/v1/booking/service-categories/${data.id}/`, { name: data.name, description: data.description ?? "" }),
+      _axios.patch(`/api/portal/v1/booking/service-categories/${data.id}/`, {
+        name: data.name,
+        description: data.description ?? "",
+        eligible_role_ids: normalizeRoleIds(data.eligible_role_ids),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries(["service-categories"]);
       setEditCatOpen(false);
       editCatForm.resetFields();
     },
     onError: (err) => {
+      applyCategoryFormErrors(editCatForm, err);
       message.error(firstApiErrorMessage(err, "Failed to update category"));
     },
   });
@@ -1938,7 +2006,11 @@ export default function ServicesPage() {
   ───────────────────────────────────── */
   const handleEditCategory = (cat) => {
     setEditCategory(cat);
-    editCatForm.setFieldsValue({ name: cat.name, description: cat.description ?? "" });
+    editCatForm.setFieldsValue({
+      name: cat.name,
+      description: cat.description ?? "",
+      eligible_role_ids: getCategoryRoleIds(cat),
+    });
     setEditCatOpen(true);
   };
 
@@ -2095,6 +2167,9 @@ export default function ServicesPage() {
       {sidebarCategories.map((cat) => {
         const count = activeServicesData.filter((s) => String(s.category) === String(cat.id)).length;
         const isActive = String(activeCat) === String(cat.id);
+        const eligibleRoleNames = (Array.isArray(cat.eligible_roles) ? cat.eligible_roles : [])
+          .map((role) => role?.name || role?.label || role?.code)
+          .filter(Boolean);
         return (
           <div
             key={cat.id}
@@ -2111,7 +2186,7 @@ export default function ServicesPage() {
                 setActiveCat(String(cat.id));
                 if (isDrawer) setIsMobileCatsOpen(false);
               }}
-              className="flex items-center justify-between flex-1 min-w-0 px-3 py-2.5 text-sm text-left"
+              className="flex-1 min-w-0 px-3 py-2.5 text-sm text-left"
               style={{
                 fontFamily: "'Poppins', sans-serif",
                 color: isActive ? "#fff" : "#7a6030",
@@ -2120,18 +2195,34 @@ export default function ServicesPage() {
                 border: "none",
               }}
             >
-              <span className="flex items-center gap-2 min-w-0 truncate">
-                <FiTag size={12} style={{ flexShrink: 0 }} />
-                <span className="truncate">{cat.name}</span>
+              <span className="flex items-center justify-between gap-2 min-w-0">
+                <span className="flex items-center gap-2 min-w-0 truncate">
+                  <FiTag size={12} style={{ flexShrink: 0 }} />
+                  <span className="truncate">{cat.name}</span>
+                </span>
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0"
+                  style={{
+                    background: isActive ? "rgba(255,255,255,0.25)" : "rgba(187,161,79,0.15)",
+                    color: isActive ? "#fff" : "#987554",
+                  }}
+                >
+                  {count}
+                </span>
               </span>
               <span
-                className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ml-1"
+                className="flex items-center gap-1 mt-1 truncate"
+                title={eligibleRoleNames.length ? eligibleRoleNames.join(", ") : "Direct assignments only"}
                 style={{
-                  background: isActive ? "rgba(255,255,255,0.25)" : "rgba(187,161,79,0.15)",
-                  color: isActive ? "#fff" : "#987554",
+                  color: isActive ? "rgba(255,255,255,0.82)" : "#987554",
+                  fontSize: 10,
+                  fontWeight: 500,
                 }}
               >
-                {count}
+                <FiUserCheck size={10} style={{ flexShrink: 0 }} />
+                <span className="truncate">
+                  {eligibleRoleNames.length ? eligibleRoleNames.join(", ") : "Direct assignments only"}
+                </span>
               </span>
             </button>
 
@@ -2792,9 +2883,14 @@ export default function ServicesPage() {
           form={addCatForm}
           layout="vertical"
           onFinish={(values) => createCategory.mutate(values)}
+          initialValues={{ eligible_role_ids: [] }}
           className="pt-3"
         >
-          <CategoryFormFields />
+          <CategoryFormFields
+            roleOptions={roleOptions}
+            rolesLoading={rolesLoading}
+            rolesError={rolesError}
+          />
           <Form.Item className="mt-5 mb-0">
             <div className="flex justify-end gap-3">
               <Button onClick={() => { setAddCatOpen(false); addCatForm.resetFields(); }}>
@@ -2804,6 +2900,7 @@ export default function ServicesPage() {
                 type="primary"
                 htmlType="submit"
                 loading={createCategory.isPending}
+                disabled={rolesLoading || Boolean(rolesError)}
                 className={GOLD_BTN}
               >
                 Create Category
@@ -2831,7 +2928,11 @@ export default function ServicesPage() {
           onFinish={(values) => updateCategory.mutate({ id: editCategory?.id, ...values })}
           className="pt-3"
         >
-          <CategoryFormFields />
+          <CategoryFormFields
+            roleOptions={roleOptions}
+            rolesLoading={rolesLoading}
+            rolesError={rolesError}
+          />
           <Form.Item className="mt-5 mb-0">
             <div className="flex justify-end gap-3">
               <Button onClick={() => { setEditCatOpen(false); editCatForm.resetFields(); }}>
@@ -2841,6 +2942,7 @@ export default function ServicesPage() {
                 type="primary"
                 htmlType="submit"
                 loading={updateCategory.isPending}
+                disabled={rolesLoading || Boolean(rolesError)}
                 className={GOLD_BTN}
               >
                 Save Changes

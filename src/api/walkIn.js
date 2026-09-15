@@ -1,4 +1,8 @@
 import _axios from "./_axios.js";
+import {
+  appointmentGuestCustomerId,
+  bookingIdentityPayload,
+} from "./bookingIdentity.js";
 
 const STAFF_OPTIONS_URL = "/api/portal/v1/booking/services/booking-staff-options/";
 const RECOMMEND_STAFF_URL = "/api/portal/v1/booking/services/recommend-staff/";
@@ -45,6 +49,7 @@ function responseRows(raw) {
   if (Array.isArray(source)) return source;
   return listFrom(
     source.services
+    ?? source.items
     ?? source.service_windows
     ?? source.staff_options
     ?? source.results,
@@ -69,12 +74,13 @@ export function normalizeBookingStaffOptions(raw, requestedServices = [], roster
     }) ?? (!rowsHaveServiceIds ? rows[index] : null) ?? {};
     const rawStaff = listFrom(
       row.eligible_staff
+      ?? row.available_staff?.members
       ?? row.available_staff
       ?? row.staff_options
       ?? row.staff,
     );
 
-    const staff = row.available === false
+    const staff = raw?.is_bookable === false || row.available === false
       ? []
       : rawStaff.map((candidate) => normalizeStaff(candidate, roster)).filter(Boolean);
 
@@ -106,6 +112,7 @@ export function normalizeStaffRecommendation(raw, roster = []) {
 }
 
 export function buildWalkInAppointmentPayload({
+  identity,
   customerId,
   guest,
   appointmentDate,
@@ -118,19 +125,15 @@ export function buildWalkInAppointmentPayload({
     throw new Error("Every service must have an eligible staff member.");
   }
 
-  const customer = customerId
-    ? { customer_id: customerId }
+  const resolvedIdentity = identity ?? (customerId
+    ? { kind: "registered", id: customerId }
     : {
-        guest: {
-          full_name: String(guest?.full_name ?? "").trim(),
-          phone_number: String(guest?.phone_number ?? "").trim(),
-          ...(String(guest?.email ?? "").trim() ? { email: String(guest.email).trim() } : {}),
-        },
-      };
-
-  if (!customerId && (!customer.guest.full_name || !customer.guest.phone_number)) {
-    throw new Error("Guest name and phone number are required.");
-  }
+        kind: "new_guest",
+        fullName: guest?.full_name,
+        email: guest?.email,
+        phoneNumber: guest?.phone_number,
+      });
+  const customer = bookingIdentityPayload(resolvedIdentity);
 
   return {
     ...customer,
@@ -144,6 +147,15 @@ export function buildWalkInAppointmentPayload({
     })),
   };
 }
+
+export const createWalkInAppointment = (payload) =>
+  _axios
+    .post("/api/portal/v1/booking/appointments/", payload)
+    .then((response) => {
+      const data = response.data;
+      const guestCustomerId = appointmentGuestCustomerId(data);
+      return guestCustomerId ? { ...data, guest_customer_id: guestCustomerId } : data;
+    });
 
 export const getBookingStaffOptions = (payload) =>
   _axios.post(STAFF_OPTIONS_URL, payload, { portalMessage: false }).then((response) => response.data);

@@ -1,10 +1,11 @@
 import _axios from "./_axios";
+import { correctNoShowV2, getAppointmentV2, updateAppointmentStatusV2 } from "./bookingV2.js";
 
 const base = (appointmentId) =>
   `/api/portal/v1/booking/appointments/${appointmentId}`;
 
-export const getCheckoutAppointment = (appointmentId) =>
-  _axios.get(`${base(appointmentId)}/`).then((response) => response.data);
+export const getCheckoutAppointment = (appointmentId, { v2 = false } = {}) =>
+  v2 ? getAppointmentV2(appointmentId) : _axios.get(`${base(appointmentId)}/`).then((response) => response.data);
 
 export const getAppointmentAddons = (appointmentId) =>
   _axios.get(`${base(appointmentId)}/addons/`).then((response) => response.data);
@@ -17,10 +18,8 @@ export const getAppointmentFinancialSummary = (appointmentId) =>
 export const getAppointmentReceipts = (appointmentId) =>
   _axios.get(`${base(appointmentId)}/receipts/`).then((response) => response.data);
 
-export const updateCheckoutStatus = (appointmentId, status) =>
-  _axios
-    .post(`${base(appointmentId)}/status/`, { status })
-    .then((response) => response.data);
+export const updateCheckoutStatus = (appointmentId, status, { v2 = false } = {}) =>
+  v2 ? updateAppointmentStatusV2(appointmentId, status) : _axios.post(`${base(appointmentId)}/status/`, { status }).then((response) => response.data);
 
 export const createAppointmentAddon = (appointmentId, payload) =>
   _axios
@@ -46,3 +45,6 @@ export const finalizeAppointmentSettlement = (appointmentId, payload) =>
   _axios
     .post(`${base(appointmentId)}/settlement/finalize/`, payload)
     .then((response) => response.data);
+
+export const correctAppointmentNoShow = (appointmentId, payload, { v2 = false } = {}) =>
+  v2 ? correctNoShowV2(appointmentId, payload) : _axios.post(`${base(appointmentId)}/correct-no-show/`, payload).then((response) => response.data);

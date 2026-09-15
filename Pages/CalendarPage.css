@@ -1,0 +1,101 @@
+.calendar-booking-correct {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid rgba(187, 161, 79, .4);
+  border-radius: 12px;
+  color: #6c5225;
+  background: #fff9ec;
+  cursor: pointer;
+  font: 700 12px "Poppins", sans-serif;
+}
+
+.calendar-booking-correct:hover,
+.calendar-booking-correct:focus-visible {
+  border-color: #987554;
+  outline: 2px solid transparent;
+  background: #f4eacb;
+}
+
+.calendar-create-header {
+  flex: none;
+  padding: 22px 28px 20px;
+}
+
+.calendar-wizard-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 24px 14px;
+}
+
+.calendar-wizard-step {
+  flex: 0 1 56px;
+  min-width: 0;
+}
+
+.calendar-wizard-step > span {
+  text-align: center;
+  line-height: 1.2;
+}
+
+.calendar-create-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 20px;
+  scrollbar-gutter: stable;
+}
+
+.calendar-create-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid rgba(187, 161, 79, .16);
+  padding: 16px 28px max(20px, env(safe-area-inset-bottom));
+  background: #fdfaf5;
+}
+
+@media (max-width: 640px) {
+  .calendar-create-header {
+    padding: 18px 18px 14px;
+  }
+
+  .calendar-wizard-steps {
+    padding: 14px 0 12px;
+  }
+
+  .calendar-wizard-step {
+    flex-basis: 44px;
+  }
+
+  .calendar-create-body {
+    padding-top: 16px;
+    scrollbar-gutter: auto;
+  }
+
+  .calendar-create-footer {
+    padding: 12px 18px max(14px, env(safe-area-inset-bottom));
+  }
+
+  .calendar-create-footer > span {
+    display: none;
+  }
+
+  .calendar-create-footer button {
+    justify-content: center !important;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calendar-create-drawer *,
+  .calendar-booking-correct {
+    transition: none !important;
+    animation: none !important;
+  }
+}

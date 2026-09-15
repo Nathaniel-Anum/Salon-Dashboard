@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { loginUser } from "../src/api/auth";
 import { firstApiErrorMessage } from "../src/api/apiErrors";
+import { storePortalSession } from "../src/auth/permissions";
 
 /* ── decorative helpers ────────────────────────────── */
 const GoldDivider = () => (
@@ -34,7 +35,7 @@ const CornerBracket = ({ position }) => {
 };
 /* ─────────────────────────────────────────────────── */
 
-const SalonLogin = ({ setIsAuthenticated }) => {
+const SalonLogin = () => {
   const navigate = useNavigate();
 
   const { mutate, isPending } = useMutation({
@@ -43,6 +44,7 @@ const SalonLogin = ({ setIsAuthenticated }) => {
       localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("access", data.access);
       localStorage.setItem("refresh", data.refresh);
+      storePortalSession(data);
       navigate("/");
     },
     onError: (err) => {

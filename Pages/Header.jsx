@@ -7,6 +7,7 @@ import { useNotifications } from "../src/context/NotificationsContext";
 const ALL_PAGES = [
   { label: "Dashboard",            path: "/" },
   { label: "Calendar",             path: "/calendar" },
+  { label: "Appointments",         path: "/appointments" },
   { label: "Clients",              path: "/clients" },
   { label: "Services",             path: "/services" },
   { label: "Analytics",            path: "/analytics" },

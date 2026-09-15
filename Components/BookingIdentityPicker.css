@@ -1,0 +1,239 @@
+.booking-identity-picker {
+  color: #272727;
+  font-family: "Poppins", sans-serif;
+}
+
+.identity-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.identity-mode-tabs button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e0d5c5;
+  border-radius: 9px;
+  color: #987554;
+  cursor: pointer;
+  display: flex;
+  font: 500 11px "Poppins", sans-serif;
+  gap: 6px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.identity-mode-tabs button.is-active {
+  background: rgba(187, 161, 79, 0.1);
+  border-color: #bba14f;
+  color: #8a7030;
+  font-weight: 700;
+}
+
+.identity-mode-tabs button:focus-visible,
+.identity-result:focus-visible,
+.identity-search-field input:focus-visible,
+.new-guest-fields input:focus-visible,
+.identity-feedback button:focus-visible {
+  outline: 3px solid rgba(187, 161, 79, 0.28);
+  outline-offset: 2px;
+}
+
+.identity-search-field {
+  display: block;
+  position: relative;
+}
+
+.identity-search-field > svg {
+  color: #bba14f;
+  left: 12px;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.identity-search-field input,
+.new-guest-fields input {
+  background: #fff;
+  border: 1px solid #e8e0d0;
+  border-radius: 9px;
+  box-sizing: border-box;
+  color: #272727;
+  font: 12px "Poppins", sans-serif;
+  min-height: 40px;
+  padding: 9px 12px;
+  width: 100%;
+}
+
+.identity-search-field input {
+  padding-left: 35px;
+}
+
+.identity-search-field input:focus,
+.new-guest-fields input:focus {
+  border-color: #bba14f;
+}
+
+.identity-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 9px;
+  max-height: 248px;
+  overflow-y: auto;
+  padding: 1px 2px 1px 1px;
+}
+
+.identity-result {
+  align-items: center;
+  background: #faf8f4;
+  border: 1px solid #ede8de;
+  border-radius: 10px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 9px 11px;
+  text-align: left;
+  width: 100%;
+}
+
+.identity-result:hover,
+.identity-result.is-selected {
+  background: rgba(187, 161, 79, 0.09);
+  border-color: #bba14f;
+}
+
+.identity-result-avatar {
+  align-items: center;
+  background: #987554;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  flex: 0 0 34px;
+  font-size: 12px;
+  font-weight: 700;
+  height: 34px;
+  justify-content: center;
+}
+
+.identity-result-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.identity-result-name {
+  align-items: center;
+  display: flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 7px;
+  line-height: 1.4;
+}
+
+.identity-kind-badge {
+  background: rgba(152, 117, 84, 0.11);
+  border: 1px solid rgba(152, 117, 84, 0.2);
+  border-radius: 999px;
+  color: #7d5d37;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+}
+
+.identity-result-contact,
+.identity-result-meta {
+  color: #987554;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity-result-meta {
+  color: #8a8176;
+}
+
+.identity-result-check {
+  color: #8a7030;
+  flex: 0 0 auto;
+}
+
+.identity-feedback {
+  align-items: center;
+  color: #8a8176;
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  gap: 7px;
+  justify-content: center;
+  min-height: 78px;
+  padding: 12px;
+  text-align: center;
+}
+
+.identity-feedback.is-error {
+  color: #a23a3a;
+}
+
+.identity-feedback button {
+  background: transparent;
+  border: 0;
+  color: #8a7030;
+  cursor: pointer;
+  font: 700 11px "Poppins", sans-serif;
+  padding: 2px 5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.new-guest-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.new-guest-fields label > span {
+  align-items: center;
+  color: #7d5d37;
+  display: flex;
+  font-size: 10px;
+  font-weight: 700;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.new-guest-fields label strong {
+  color: #c43232;
+}
+
+.new-guest-contact-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.identity-contact-hint {
+  color: #8a8176;
+  font-size: 10px;
+  line-height: 1.5;
+  margin: -3px 0 0;
+}
+
+@media (max-width: 560px) {
+  .identity-mode-tabs,
+  .new-guest-contact-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .booking-identity-picker * {
+    scroll-behavior: auto !important;
+  }
+}

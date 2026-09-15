@@ -37,3 +37,14 @@ export const getAnalyticsPayments = (filters = {}) =>
   _axios
     .get("/api/portal/v1/analytics/payments/", { params: buildParams(filters) })
     .then((r) => r.data);
+
+// Insight endpoints resolve their own UTC reporting periods and reject query params.
+export const getMoneyReceivedInsight = ({ signal } = {}) =>
+  _axios
+    .get("/api/portal/v1/insights/money-received/", { signal })
+    .then((r) => r.data);
+
+export const getAppointmentsCreatedInsight = ({ signal } = {}) =>
+  _axios
+    .get("/api/portal/v1/insights/appointments-created/", { signal })
+    .then((r) => r.data);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
-import { Spin, message } from "antd";
+import { Input, Modal, Spin, message } from "antd";
 import {
   FiAlertCircle,
   FiArrowRight,
@@ -38,6 +38,8 @@ import {
 } from "../src/api/apiErrors";
 import "./AppointmentCheckoutDrawer.css";
 import PortalSelect from "./PortalSelect";
+import { useBookingV2 } from "../src/hooks/useBookingV2.js";
+import { bookingV2Keys } from "../src/api/bookingV2.js";
 
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
@@ -253,6 +255,7 @@ export default function AppointmentCheckoutDrawer({
   onCancel,
   cancelLoading,
 }) {
+  const bookingV2 = useBookingV2();
   const bookingId = booking?.id;
   const queryClient = useQueryClient();
   const addonPanelRef = useRef(null);
@@ -291,8 +294,8 @@ export default function AppointmentCheckoutDrawer({
   });
 
   const appointmentQ = useQuery({
-    queryKey: ["checkout-appointment", bookingId],
-    queryFn: () => getCheckoutAppointment(bookingId),
+    queryKey: bookingV2.enabled ? bookingV2Keys.appointment(bookingId) : ["checkout-appointment", bookingId],
+    queryFn: () => getCheckoutAppointment(bookingId, { v2: bookingV2.enabled }),
     enabled: Boolean(bookingId),
     staleTime: 10_000,
   });
@@ -411,13 +414,36 @@ export default function AppointmentCheckoutDrawer({
   };
 
   const checkInMutation = useMutation({
-    mutationFn: () => updateCheckoutStatus(bookingId, "arrived"),
+    mutationFn: () => updateCheckoutStatus(bookingId, "arrived", { v2: bookingV2.enabled }),
     onSuccess: async () => {
       setStatusOverride("arrived");
       await refreshCheckout();
     },
     onError: (error) => message.error(firstError(error, "Could not check in this customer.")),
   });
+
+  function requestCancellation() {
+    let reason = "";
+    Modal.confirm({
+      title: "Cancel this appointment?",
+      content: (
+        <div style={{ marginTop: 12 }}>
+          <p style={{ margin: "0 0 8px", color: "#6f604d", fontSize: 12 }}>Add a reason so the appointment history is clear.</p>
+          <Input.TextArea rows={3} placeholder="Customer requested cancellation" onChange={(event) => { reason = event.target.value; }} />
+        </div>
+      ),
+      okText: "Cancel appointment",
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: () => {
+        if (reason.trim().length < 3) {
+          message.error("Enter a short cancellation reason.");
+          return Promise.reject(new Error("Cancellation reason required"));
+        }
+        return onCancel?.(bookingId, reason.trim());
+      },
+    });
+  }
 
   const addonMutation = useMutation({
     mutationFn: (operation) => createAppointmentAddon(bookingId, operation.payload),
@@ -528,7 +554,7 @@ export default function AppointmentCheckoutDrawer({
       if (!fresh.is_finalized) {
         await finalizeAppointmentSettlement(bookingId, { idempotency_key: idempotencyKey });
       }
-      return updateCheckoutStatus(bookingId, "completed");
+      return updateCheckoutStatus(bookingId, "completed", { v2: bookingV2.enabled });
     },
     onSuccess: async () => {
       setPendingFinalizeKey(null);
@@ -913,7 +939,7 @@ export default function AppointmentCheckoutDrawer({
                   <div className="checkout-secondary-buttons">
                     <button onClick={() => onReschedule?.(bookingId, rescheduleForm.date, rescheduleForm.time, Number(rescheduleForm.staffId), rescheduleForm.reason)} disabled={rescheduleLoading || !rescheduleForm.staffId}><FiClock /> {rescheduleLoading ? "Rescheduling…" : "Reschedule"}</button>
                     <button onClick={() => { setStatusOverride("no_show"); onStatusChange?.(bookingId, "no_show"); }}><FiUser /> Mark no-show</button>
-                    <button className="danger" onClick={() => { if (window.confirm("Cancel this appointment?")) onCancel?.(bookingId); }} disabled={cancelLoading}><FiTrash2 /> {cancelLoading ? "Cancelling…" : "Cancel appointment"}</button>
+                    <button className="danger" onClick={requestCancellation} disabled={cancelLoading}><FiTrash2 /> {cancelLoading ? "Cancelling…" : "Cancel appointment"}</button>
                   </div>
                 </div>
               </details>}

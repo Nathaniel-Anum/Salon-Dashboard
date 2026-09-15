@@ -2,7 +2,9 @@ import { useEffect, useRef } from "react";
 import { notification } from "antd";
 import { useNotifications } from "../context/NotificationsContext";
 
-const WS_URL = "wss://api.cbkbeauty.expertech.dev/ws/portal/inventory/";
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || "https://api.cbkbeauty.expertech.dev";
+const WS_BASE_URL = import.meta.env?.VITE_WS_BASE_URL || API_BASE_URL.replace(/^http/, "ws");
+const WS_URL = `${WS_BASE_URL.replace(/\/$/, "")}/ws/portal/inventory/`;
 
 const MAX_BACKOFF_MS = 30_000;
 const MAX_ATTEMPTS = 5;

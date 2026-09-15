@@ -51,10 +51,15 @@ import { LoadingOutlined } from "@ant-design/icons";
 import {
   getWaitlist,
   getWaitlistEntry,
+  buildWaitlistPayload,
   createWaitlistEntry,
   cancelWaitlistEntry,
+  waitlistCustomerName,
 } from "../src/api/waitlist";
 import _axios from "../src/api/_axios";
+import { firstApiErrorMessage } from "../src/api/apiErrors.js";
+import { isSavedGuestSelectionMissing } from "../src/api/bookingIdentity.js";
+import BookingIdentityPicker from "../Components/BookingIdentityPicker";
 
 dayjs.extend(relativeTime);
 
@@ -162,11 +167,7 @@ function Skeleton({ width = "100%", height = 16, radius = 8, style = {} }) {
    TABLE ROW
 ───────────────────────────────────────────── */
 function WaitlistRow({ entry, index, onView, onCancel, cancelling }) {
-  const customerName =
-    entry.customer_name ||
-    entry.customer?.full_name ||
-    entry.guest?.full_name ||
-    "Guest";
+  const customerName = waitlistCustomerName(entry);
 
   const servicesSummary =
     (entry.services || entry.items || [])
@@ -424,6 +425,19 @@ function WaitlistCard({ entry, onView, onCancel, cancelling }) {
 /* ─────────────────────────────────────────────
    ENTRY DETAIL DRAWER
 ───────────────────────────────────────────── */
+function DetailField({ label, value }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif", marginBottom: 3 }}>
+        {label}
+      </p>
+      <p style={{ margin: 0, fontSize: 13, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
+        {value || "—"}
+      </p>
+    </div>
+  );
+}
+
 function EntryDrawer({ entryId, onClose, onCancel }) {
   const { data: entry, isLoading } = useQuery({
     queryKey: ["waitlist-entry", entryId],
@@ -436,17 +450,6 @@ function EntryDrawer({ entryId, onClose, onCancel }) {
     (entry.status === "pending" ||
      (entry.status === "booked" && entry.payment_due_at && dayjs(entry.payment_due_at).isAfter(dayjs())));
 
-  const Field = ({ label, value }) => (
-    <div style={{ marginBottom: 14 }}>
-      <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: MID, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'Poppins', sans-serif", marginBottom: 3 }}>
-        {label}
-      </p>
-      <p style={{ margin: 0, fontSize: 13, color: DARK, fontFamily: "'Poppins', sans-serif" }}>
-        {value || "—"}
-      </p>
-    </div>
-  );
-
   return (
     <Drawer
       open={!!entryId}
@@ -456,7 +459,7 @@ function EntryDrawer({ entryId, onClose, onCancel }) {
           Waitlist Entry
         </span>
       }
-      width={400}
+      size={400}
       styles={{ body: { background: CREAM, padding: 24 } }}
       headerStyle={{ background: CREAM, borderBottom: `1px solid ${BORDER}` }}
     >
@@ -478,19 +481,16 @@ function EntryDrawer({ entryId, onClose, onCancel }) {
             <StatusBadge status={entry.status} />
           </div>
 
-          <Field
+          <DetailField
             label="Customer"
             value={
-              entry.customer_name ||
-              entry.customer?.full_name ||
-              entry.guest?.full_name ||
-              "Guest"
+              waitlistCustomerName(entry)
             }
           />
 
-          {entry.guest?.email && <Field label="Guest Email" value={entry.guest.email} />}
+          {entry.guest?.email && <DetailField label="Guest Email" value={entry.guest.email} />}
 
-          <Field
+          <DetailField
             label="Requested Date / Time"
             value={
               entry.requested_start
@@ -501,18 +501,18 @@ function EntryDrawer({ entryId, onClose, onCancel }) {
             }
           />
 
-          <Field
+          <DetailField
             label="Requested End"
             value={entry.requested_end ? dayjs(entry.requested_end).format("h:mm A") : "—"}
           />
 
-          <Field
+          <DetailField
             label="Waitlist Date"
             value={entry.waitlist_date ? dayjs(entry.waitlist_date).format("ddd, D MMM YYYY") : "—"}
           />
 
-          <Field label="Reason" value={entry.reason || "—"} />
-          <Field label="Notes" value={entry.notes || "—"} />
+          <DetailField label="Reason" value={entry.reason || "—"} />
+          <DetailField label="Notes" value={entry.notes || "—"} />
 
           {/* Services */}
           <div style={{ marginBottom: 14 }}>
@@ -601,20 +601,7 @@ function EntryDrawer({ entryId, onClose, onCancel }) {
 ═══════════════════════════════════════════════ */
 function CreateWaitlistModal({ open, onClose, onSuccess }) {
   const [form] = Form.useForm();
-  const [clientSearch, setClientSearch] = useState("");
-  const [selectedClient, setSelectedClient] = useState(null);
-
-  /* Fetch customers for search */
-  const { data: customersData = [] } = useQuery({
-    queryKey: ["customers-search", clientSearch],
-    queryFn: () =>
-      _axios
-        .get("/api/portal/v1/accounts/customers/", {
-          params: clientSearch ? { search: clientSearch } : {},
-        })
-        .then((r) => (Array.isArray(r.data) ? r.data : (r.data?.results ?? []))),
-    staleTime: 30_000,
-  });
+  const [identity, setIdentity] = useState(null);
 
   /* Fetch services */
   const { data: servicesData = [] } = useQuery({
@@ -640,43 +627,48 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
     mutationFn: createWaitlistEntry,
     onSuccess: () => {
       form.resetFields();
-      setSelectedClient(null);
+      setIdentity(null);
       onSuccess();
     },
-    onError: (err) => {
-      const msg =
-        err?.response?.data?.detail ||
-        err?.response?.data?.non_field_errors?.[0] ||
-        Object.values(err?.response?.data ?? {})?.[0]?.[0] ||
-        "Failed to create waitlist entry";
-      message.error(msg);
+    onError: (err, sentPayload) => {
+      if (isSavedGuestSelectionMissing(err, sentPayload)) {
+        setIdentity(null);
+        message.error("That saved guest is no longer available. Search again or enter a new guest.");
+        return;
+      }
+      message.error(firstApiErrorMessage(err, "Failed to create waitlist entry"));
     },
   });
 
   const handleSubmit = () => {
     form.validateFields().then((vals) => {
-      const services = (vals.services || []).map((item) => ({
-        service_id: item.service_id,
-        staff_id:   item.staff_id,
-      }));
-
-      const payload = {
-        customer_id:   selectedClient?.id,
-        appointment_date: vals.appointment_date.format("YYYY-MM-DD"),
-        start_time:    vals.start_time.format("HH:mm:ss"),
-        waitlist_date: vals.waitlist_date.format("YYYY-MM-DD"),
-        services,
-        reason:        vals.reason || "staff_fully_booked",
-      };
-
-      createMutation.mutate(payload);
+      try {
+        const payload = buildWaitlistPayload({
+          identity,
+          appointmentDate: vals.appointment_date.format("YYYY-MM-DD"),
+          startTime: vals.start_time.format("HH:mm:ss"),
+          waitlistDate: vals.waitlist_date.format("YYYY-MM-DD"),
+          services: vals.services || [],
+          reason: vals.reason || "staff_fully_booked",
+          notes: vals.notes,
+        });
+        createMutation.mutate(payload);
+      } catch (error) {
+        message.error(error.message);
+      }
     });
+  };
+
+  const handleClose = () => {
+    form.resetFields();
+    setIdentity(null);
+    onClose();
   };
 
   return (
     <Modal
       open={open}
-      onCancel={onClose}
+      onCancel={handleClose}
       title={
         <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, color: DARK }}>
           Add to Waitlist
@@ -688,29 +680,8 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
       style={{ top: 40 }}
     >
       <Form form={form} layout="vertical">
-        {/* Customer search */}
         <Form.Item label="Customer" required>
-          <Select
-            showSearch
-            placeholder="Search by name or email…"
-            filterOption={false}
-            onSearch={(v) => setClientSearch(v)}
-            onSelect={(_, opt) => setSelectedClient(opt.data)}
-            value={selectedClient ? `${selectedClient.full_name || selectedClient.first_name}` : undefined}
-            style={{ width: "100%" }}
-            notFoundContent={<span style={{ fontSize: 11, color: MID, fontFamily: "'Poppins', sans-serif" }}>No customers found</span>}
-          >
-            {customersData.map((c) => {
-              const name = c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ");
-              return (
-                <Select.Option key={c.id} value={c.id} data={c}>
-                  <span style={{ fontFamily: "'Poppins', sans-serif", fontSize: 12 }}>
-                    {name}
-                  </span>
-                </Select.Option>
-              );
-            })}
-          </Select>
+          <BookingIdentityPicker value={identity} onChange={setIdentity} />
         </Form.Item>
 
         {/* Services + Staff per service */}
@@ -890,10 +861,18 @@ function CreateWaitlistModal({ open, onClose, onSuccess }) {
           />
         </Form.Item>
 
+        <Form.Item name="notes" label="Notes">
+          <Input.TextArea
+            rows={2}
+            maxLength={500}
+            placeholder="Contact preferences or useful context for staff"
+          />
+        </Form.Item>
+
         {/* Footer buttons */}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             style={{
               padding: "9px 22px", borderRadius: 9, border: `1px solid ${BORDER}`,
               background: CREAM, color: MID, fontSize: 12, fontWeight: 600,
@@ -995,12 +974,7 @@ export default function WaitlistPage() {
     if (!search.trim()) return list;
     const q = search.toLowerCase();
     return list.filter((e) => {
-      const name = (
-        e.customer_name ||
-        e.customer?.full_name ||
-        e.guest?.full_name ||
-        ""
-      ).toLowerCase();
+      const name = waitlistCustomerName(e).toLowerCase();
       const ref  = (e.reference_code || "").toLowerCase();
       const svcs = (e.services || e.items || [])
         .map((s) => s.service_name || s.name || "")
