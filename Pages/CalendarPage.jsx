@@ -1133,27 +1133,24 @@ function StepDateTime({
                   padding: "8px 4px",
                   borderRadius: 9,
                   border: `1.5px solid ${
-                    isPast ? "#ede8de" :
+                    isPast ? "#d4d4d4" :
                     isSel ? "#BBA14F" : "#e0d5c5"
                   }`,
                   background: isPast
-                    ? "#f5f2ed"
+                    ? "#ececec"
                     : isSel
                     ? "linear-gradient(135deg,#BBA14F,#987554)"
                     : "#faf8f4",
-                  color: isPast ? "#806f59" : isSel ? "#fff" : "#3d2e1e",
+                  color: isPast ? "#666" : isSel ? "#fff" : "#3d2e1e",
                   fontFamily: "'Poppins',sans-serif",
                   fontSize: 11,
                   fontWeight: isSel ? 700 : 500,
                   cursor: isPast ? "not-allowed" : "pointer",
                   transition: "all 0.15s",
                   boxShadow: isSel ? "0 2px 10px rgba(187,161,79,0.35)" : "none",
-                  textDecoration: isPast && !serverSlots ? "line-through" : "none",
-                  opacity: isPast && !serverSlots ? 0.45 : 1,
                 }}
               >
                 {label}
-                {serverSlots && isPast && <span style={{ display: "block", marginTop: 3, textDecoration: "none" }}>Unavailable</span>}
               </button>
             );
           })}
@@ -2496,14 +2493,6 @@ export default function CalendarPage() {
     return Array.isArray(staffRaw) ? staffRaw : staffRaw.results ?? [];
   }, [staffRaw]);
 
-  useEffect(() => {
-    if (!staffRaw || !staffFilter.startsWith("staff:")) return;
-    const savedStaffId = staffFilter.slice("staff:".length);
-    if (!visibleStaff.some((staff) => String(staff.id) === savedStaffId)) {
-      setStaffFilter("scheduled");
-    }
-  }, [staffFilter, staffRaw, visibleStaff]);
-
   /* ── Fetch staff working windows ── */
   const {
     data: schedulesRaw,
@@ -2559,46 +2548,6 @@ export default function CalendarPage() {
     return map;
   }, [schedulesData, selectedDate, visibleStaff]);
   const scheduleDataReady = !schedulesLoading && !schedulesError;
-  const scheduledStaff = useMemo(() => {
-    if (!scheduleDataReady) return [];
-
-    return visibleStaff.filter((staff) => {
-      const entries = schedulesByStaff.get(String(staff.id)) ?? [];
-      return entries.some((entry) => {
-        const { startMins, endMins } = entry;
-        return (
-          entry.is_available !== false &&
-          startMins !== null &&
-          endMins !== null &&
-          endMins > startMins
-        );
-      });
-    });
-  }, [scheduleDataReady, schedulesByStaff, visibleStaff]);
-  const calendarStaff = useMemo(() => {
-    if (staffFilter === "all") return visibleStaff;
-    if (staffFilter.startsWith("staff:")) {
-      const selectedStaffId = staffFilter.slice("staff:".length);
-      return visibleStaff.filter((staff) => String(staff.id) === selectedStaffId);
-    }
-    return scheduledStaff;
-  }, [scheduledStaff, staffFilter, visibleStaff]);
-  const staffFilterOptions = useMemo(() => [
-    {
-      label: "Roster views",
-      options: [
-        { value: "scheduled", label: `Scheduled staff (${scheduledStaff.length})` },
-        { value: "all", label: `All staff (${visibleStaff.length})` },
-      ],
-    },
-    {
-      label: "Individual staff",
-      options: visibleStaff.map((staff) => ({
-        value: `staff:${staff.id}`,
-        label: staff.full_name,
-      })),
-    },
-  ], [scheduledStaff.length, visibleStaff]);
 
   /* ── Fetch services (for Add form dropdown) ── */
   const { data: servicesRaw } = useQuery({
@@ -2624,9 +2573,46 @@ export default function CalendarPage() {
   const eligibleServicesByStaff = useMemo(() => new Map(visibleStaff.map((person) => [String(person.id),
     servicesData.filter((service) => service.is_active !== false && isStaffEligibleForService(service, person, categoriesData)),
   ])), [categoriesData, servicesData, visibleStaff]);
-  const wizardServices = calendarBooking
-    ? eligibleServicesByStaff.get(String(calendarBooking.staffId)) ?? []
-    : servicesData;
+  const providerEligibilityReady = Boolean(servicesRaw && categoriesRaw);
+  const providerStaff = useMemo(() => providerEligibilityReady
+    ? visibleStaff.filter((staff) => eligibleServicesByStaff.get(String(staff.id))?.length)
+    : visibleStaff, [eligibleServicesByStaff, providerEligibilityReady, visibleStaff]);
+  useEffect(() => {
+    if (!staffRaw || !providerEligibilityReady || !staffFilter.startsWith("staff:")) return;
+    const savedStaffId = staffFilter.slice("staff:".length);
+    if (!providerStaff.some((staff) => String(staff.id) === savedStaffId)) setStaffFilter("scheduled");
+  }, [providerEligibilityReady, providerStaff, staffFilter, staffRaw]);
+  const scheduledStaff = useMemo(() => {
+    if (!scheduleDataReady) return [];
+    return providerStaff.filter((staff) => (schedulesByStaff.get(String(staff.id)) ?? []).some((entry) =>
+      entry.is_available !== false && entry.endMins > entry.startMins));
+  }, [providerStaff, scheduleDataReady, schedulesByStaff]);
+  const calendarStaff = useMemo(() => {
+    if (staffFilter === "all") return providerStaff;
+    if (staffFilter.startsWith("staff:")) {
+      const selectedStaffId = staffFilter.slice("staff:".length);
+      return providerStaff.filter((staff) => String(staff.id) === selectedStaffId);
+    }
+    return scheduledStaff;
+  }, [providerStaff, scheduledStaff, staffFilter]);
+  const staffFilterOptions = useMemo(() => [
+    {
+      label: "Roster views",
+      options: [
+        { value: "scheduled", label: `Scheduled staff (${scheduledStaff.length})` },
+        { value: "all", label: `${providerEligibilityReady ? "Eligible staff" : "All staff"} (${providerStaff.length})` },
+      ],
+    },
+    {
+      label: "Individual staff",
+      options: providerStaff.map((staff) => ({
+        value: `staff:${staff.id}`,
+        label: staff.full_name,
+      })),
+    },
+  ], [providerEligibilityReady, providerStaff, scheduledStaff.length]);
+  const staffServices = calendarBooking && eligibleServicesByStaff.get(String(calendarBooking.staffId));
+  const wizardServices = staffServices?.length ? staffServices : servicesData;
 
   /* ── Service lookup map (id → service object) ── */
   const serviceLookup = useMemo(() => {
@@ -2997,9 +2983,10 @@ export default function CalendarPage() {
   const openWizard = useCallback((staff, time) => {
     resetWizard();
     createAppointment.reset();
-    if (staff && bookingV2.enabled) {
+    if (staff) {
       setWizDate(dayjs(dateStr));
-      setCalendarBooking({ staffId: staff.id, start: explicitOffsetStart(dateStr, time, bookingV2.timezone) });
+      if (bookingV2.enabled) setCalendarBooking({ staffId: staff.id, start: explicitOffsetStart(dateStr, time, bookingV2.timezone) });
+      else setWizTime(time);
     }
     setAddOpen(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3404,7 +3391,7 @@ export default function CalendarPage() {
     const slot = yToSlot(y);
     const staffSchedule = schedulesByStaff.get(String(staffId)) ?? [];
     const isAvailable =
-      scheduleDataReady && isSlotInsideSchedule(staffSchedule, slot * SLOT_MINS);
+      scheduleDataReady && isSlotInsideSchedule(staffSchedule, CALENDAR_START_HOUR * 60 + slot * SLOT_MINS);
     e.dataTransfer.dropEffect = isAvailable ? "move" : "none";
     if (!isAvailable) {
       setDragOverCol(null);
@@ -3424,7 +3411,7 @@ export default function CalendarPage() {
     const slot = yToSlot(y);
     const staffSchedule = schedulesByStaff.get(String(staffId)) ?? [];
     const isAvailable =
-      scheduleDataReady && isSlotInsideSchedule(staffSchedule, slot * SLOT_MINS);
+      scheduleDataReady && isSlotInsideSchedule(staffSchedule, CALENDAR_START_HOUR * 60 + slot * SLOT_MINS);
     if (!isAvailable) {
       setDragOverCol(null);
       setDragOverSlot(null);
@@ -3942,7 +3929,7 @@ export default function CalendarPage() {
           >
             <div
               className="flex"
-              style={{ minWidth: calendarStaff.length ? calendarStaff.length * colW : "100%" }}
+              style={{ width: "max-content", minWidth: "100%" }}
             >
               {calendarStaff.length === 0 && (
                 <div
@@ -3965,7 +3952,7 @@ export default function CalendarPage() {
                     : schedulesError && staffFilter === "scheduled"
                     ? "Staff schedules could not be loaded."
                     : staffFilter === "scheduled"
-                    ? "No staff scheduled for this day."
+                    ? "No eligible staff scheduled for this day."
                     : "No staff match this filter."}
                 </div>
               )}
@@ -3980,6 +3967,7 @@ export default function CalendarPage() {
                     key={staff.id}
                     style={{
                       width: colW,
+                      flexGrow: 1,
                       flexShrink: 0,
                       display: "flex",
                       alignItems: "center",
@@ -4116,29 +4104,11 @@ export default function CalendarPage() {
             <div
               className="flex relative"
               style={{
-                minWidth: calendarStaff.length ? calendarStaff.length * colW : "100%",
+                width: "max-content",
+                minWidth: "100%",
                 height: TOTAL_SLOTS * SLOT_HEIGHT_PX,
               }}
             >
-              {/* Horizontal slot lines (shared background) */}
-              <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 6 }}>
-                {timeLabels.map(({ s, isHour, isHalfHour }) => (
-                  <div
-                    key={s}
-                    className="absolute left-0 right-0"
-                    style={{
-                      top: s * SLOT_HEIGHT_PX,
-                      height: 1,
-                      background: isHour
-                        ? "rgba(124,100,64,0.16)"
-                        : isHalfHour
-                        ? "rgba(124,100,64,0.07)"
-                        : "rgba(124,100,64,0.035)",
-                    }}
-                  />
-                ))}
-              </div>
-
               {/* Current time line */}
               {isToday && nowMins >= 0 && nowMins <= (CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60 && (
                 <div
@@ -4212,6 +4182,7 @@ export default function CalendarPage() {
                     className="relative shrink-0"
                     style={{
                       width: colW,
+                      flexGrow: 1,
                       height: TOTAL_SLOTS * SLOT_HEIGHT_PX,
                       borderRight:
                         i < calendarStaff.length - 1
@@ -4229,16 +4200,15 @@ export default function CalendarPage() {
                       if (dragOverCol === staff.id) setDragOverCol(null);
                     }}
                   >
-                    {/* Quarter-hour hit areas reveal exact time only on hover. */}
+                    {/* Empty future intervals start a booking; the wizard checks availability. */}
                     <div className="absolute inset-0" style={{ zIndex: 6 }}>
-                      {timeLabels.map(({ s, mins }) => {
+                      {timeLabels.map(({ s, mins, isHour, isHalfHour }) => {
                         const isAvailable =
-                          scheduleDataReady && isSlotInsideSchedule(staffSchedule, mins);
+                          scheduleDataReady && isSlotInsideSchedule(staffSchedule, CALENDAR_START_HOUR * 60 + mins);
                         const isOccupied = colBookings.some((booking) => !["cancelled", "canceled", "completed", "no-show", "no_show"].includes(booking.status)
                           && mins < timeToMins(booking.startTime) + booking.durationMins && mins + SLOT_MINS > timeToMins(booking.startTime));
-                        const canStartBooking = bookingV2.enabled && isAvailable && !isOccupied && !selectedDateIsBlocked
-                          && (eligibleServicesByStaff.get(String(staff.id))?.length ?? 0) > 0
-                          && (dateStr > bookingToday || (dateStr === bookingToday && mins > bookingNowMins));
+                        const canStartBooking = isAvailable && !isOccupied && !selectedDateIsBlocked
+                          && (dateStr > bookingToday || (dateStr === bookingToday && CALENDAR_START_HOUR * 60 + mins > bookingNowMins));
                         const isHovered =
                           hoveredTimeSlot?.staffId === staff.id &&
                           hoveredTimeSlot?.slot === s;
@@ -4249,10 +4219,16 @@ export default function CalendarPage() {
                             role={canStartBooking ? "button" : undefined}
                             tabIndex={canStartBooking ? 0 : undefined}
                             aria-label={canStartBooking ? `Book ${staff.full_name} at ${formatDisplayTime(minsToTime(mins))}` : undefined}
-                            title={canStartBooking ? "Start a booking" : undefined}
+                            title={canStartBooking ? "Start a booking; availability is checked in the drawer" : undefined}
                             style={{
                               top: s * SLOT_HEIGHT_PX,
                               height: SLOT_HEIGHT_PX,
+                              boxSizing: "border-box",
+                              borderTop: isHour
+                                ? "2px solid rgba(92,74,52,0.32)"
+                                : isHalfHour
+                                ? "1px solid rgba(92,74,52,0.08)"
+                                : "1px solid rgba(92,74,52,0.04)",
                               background: isAvailable ? "transparent" : "rgba(126,77,62,0.105)",
                               cursor: canStartBooking ? "pointer" : isAvailable ? "default" : "not-allowed",
                             }}
