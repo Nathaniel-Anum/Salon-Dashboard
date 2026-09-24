@@ -41,6 +41,8 @@ export function calendarShiftQuery(date) {
 }
 export const createDatedShift = (payload) =>
   data(_axios.post(`${BOOKING_V2_BASE}/shifts/`, payload));
+export const updateDatedShift = (id, payload) =>
+  data(_axios.patch(`${BOOKING_V2_BASE}/shifts/${id}/`, payload));
 export const deleteDatedShift = (id) =>
   data(_axios.delete(`${BOOKING_V2_BASE}/shifts/${id}/`));
 
@@ -74,6 +76,14 @@ export function repeatingShiftDay(rule, date) {
   const weekday = targetDate.getUTCDay() === 0 ? 6 : targetDate.getUTCDay() - 1;
   const day = (rule.days || []).find((row) => Number(row.day_of_week) === weekday);
   return day?.is_available ? day : null;
+}
+
+export function applyShiftHoursForward(days = [], sourceDay = 0) {
+  const source = days[sourceDay];
+  if (!source?.is_available || !source.start_time || !source.end_time) return days;
+  return days.map((day, index) => index >= sourceDay && day?.is_available
+    ? { ...day, start_time: source.start_time, end_time: source.end_time }
+    : day);
 }
 
 export function timeOffCoversDate(timeOff, date) {

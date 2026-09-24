@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import _axios from "./_axios.js";
 import { QueryClient } from "@tanstack/react-query";
 import {
+  applyShiftHoursForward,
   calendarSchedulesV2,
   calendarShiftQuery,
   createAndConfirmPortalBooking,
@@ -14,8 +15,40 @@ import {
   listFrom,
   repeatingShiftDay,
   timeOffCoversDate,
+  updateDatedShift,
 } from "./bookingV2.js";
 import { normalizeBookingStaffOptions } from "./walkIn.js";
+
+test("applies weekday hours forward to enabled shifts only", () => {
+  const days = [
+    { is_available: true, start_time: "09:00", end_time: "17:00" },
+    { is_available: true, start_time: "10:00", end_time: "18:00" },
+    { is_available: true, start_time: "11:00", end_time: "19:00" },
+    { is_available: false, start_time: null, end_time: null },
+    { is_available: true, start_time: "08:00", end_time: "16:00" },
+  ];
+
+  assert.deepEqual(applyShiftHoursForward(days, 2), [
+    days[0],
+    days[1],
+    days[2],
+    days[3],
+    { ...days[4], start_time: "11:00", end_time: "19:00" },
+  ]);
+});
+
+test("updates a dated shift through its detail endpoint", async () => {
+  const payload = { staff_id: 7, date: "2026-09-16", start_time: "10:00", end_time: "18:00" };
+  const patch = mock.method(_axios, "patch", async (url, body) => ({ data: { url, body } }));
+  try {
+    assert.deepEqual(await updateDatedShift(42, payload), {
+      url: "/api/portal/v2/booking/shifts/42/",
+      body: payload,
+    });
+  } finally {
+    patch.mock.restore();
+  }
+});
 
 test("reuses prefetched monthly shifts across days and refreshes after schedule edits", async () => {
   const client = new QueryClient();

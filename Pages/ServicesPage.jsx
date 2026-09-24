@@ -27,6 +27,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  Drawer,
   Modal,
   Form,
   Input,
@@ -50,11 +51,13 @@ import {
   FiCheck,
   FiUserCheck,
   FiMenu,
+  FiCopy,
   FiX,
 } from "react-icons/fi";
 import _axios from "../src/api/_axios";
 import { firstApiErrorMessage } from "../src/api/apiErrors";
 import { getStaffReferenceId, getAssignedStaffIds, normalizeRoleIds, getCategoryRoleIds, isActiveRole } from "../src/api/providerEligibility.js";
+import { serviceFormValues } from "../src/services/serviceForm.js";
 
 /* ─────────────────────────────────────────────
    CONSTANTS
@@ -1398,7 +1401,7 @@ function ServiceFormFields({
  * A single luxurious card for one service.
  * Shows name, description, duration, price, active status, and action buttons.
  */
-function ServiceCard({ service, onEdit, onDelete, deleting, staffData = [] }) {
+function ServiceCard({ service, onEdit, onDuplicate, onDelete, deleting, staffData = [] }) {
   /* Resolve assigned staff IDs/objects → names */
   const assignedIds = getAssignedStaffIds(service);
   const assignedStaffFromService = Array.isArray(service.assigned_staff)
@@ -1606,8 +1609,22 @@ function ServiceCard({ service, onEdit, onDelete, deleting, staffData = [] }) {
       <div className="h-px mb-3" style={{ background: "rgba(187,161,79,0.15)" }} />
 
       {/* Action buttons */}
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button
+          type="button"
+          onClick={() => onDuplicate(service)}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
+          style={{
+            color: "#7a6030",
+            background: "rgba(187,161,79,0.12)",
+            fontFamily: "'Poppins', sans-serif",
+          }}
+        >
+          <FiCopy size={12} />
+          Duplicate
+        </button>
+        <button
+          type="button"
           onClick={() => onEdit(service)}
           className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
           style={{
@@ -1620,6 +1637,7 @@ function ServiceCard({ service, onEdit, onDelete, deleting, staffData = [] }) {
           Edit
         </button>
         <button
+          type="button"
           onClick={() => onDelete(service.id)}
           disabled={deleting}
           className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80 disabled:opacity-50"
@@ -1654,8 +1672,8 @@ export default function ServicesPage() {
   const queryClient = useQueryClient();
 
   /* ── Local UI state ── */
-  const [addOpen, setAddOpen]         = useState(false);
-  const [editOpen, setEditOpen]       = useState(false);
+  const [serviceDrawerOpen, setServiceDrawerOpen] = useState(false);
+  const [serviceDrawerMode, setServiceDrawerMode] = useState("create");
   const [editService, setEditService] = useState(null);
   const [search, setSearch]           = useState("");
   const [activeCat, setActiveCat]     = useState("all");
@@ -1670,8 +1688,7 @@ export default function ServicesPage() {
   const [editCategory, setEditCategory] = useState(null);
 
   /* ── Ant Design form instances ── */
-  const [addForm]    = Form.useForm();
-  const [editForm]   = Form.useForm();
+  const [serviceForm] = Form.useForm();
   const [addCatForm] = Form.useForm();
   const [editCatForm] = Form.useForm();
 
@@ -1881,8 +1898,8 @@ export default function ServicesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["services"]);
-      setAddOpen(false);
-      addForm.resetFields();
+      setServiceDrawerOpen(false);
+      serviceForm.resetFields();
     },
     onError: (err) => {
       message.error(firstApiErrorMessage(err, "Failed to create service"));
@@ -1907,8 +1924,8 @@ export default function ServicesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["services"]);
-      setEditOpen(false);
-      editForm.resetFields();
+      setServiceDrawerOpen(false);
+      serviceForm.resetFields();
     },
     onError: (err) => {
       message.error(firstApiErrorMessage(err, "Failed to update service"));
@@ -2033,40 +2050,22 @@ export default function ServicesPage() {
   };
 
   /* ─────────────────────────────────────
-     OPEN EDIT MODAL
+     SERVICE DRAWER CONTROLS
   ───────────────────────────────────── */
-  const handleEdit = (service) => {
-    setEditService(service);
-    const priceVal = parseFloat(service.price);
-    const priceType = service.price_type || (priceVal === 0 ? "free" : "fixed");
-    const serviceOptions = Array.isArray(service.service_options)
-      ? service.service_options
-      : Array.isArray(service.options)
-      ? service.options
-      : Array.isArray(service.service_option_details)
-      ? service.service_option_details
-      : [];
+  const closeServiceDrawer = () => {
+    setServiceDrawerOpen(false);
+    setEditService(null);
+    serviceForm.resetFields();
+  };
 
-    editForm.setFieldsValue({
-      name:        service.name,
-      description: service.description,
-      duration:    service.duration,
-      price:       priceType === "free" ? undefined : priceVal,
-      price_type:  priceType,
-      is_active:   service.is_active,
-      category:    service.category ?? undefined,
-      // Pre-populate assigned staff from the API response field
-      staff_ids:   getAssignedStaffIds(service),
-      service_options: serviceOptions.map((opt) => ({
-        id: opt?.id,
-        name: opt?.name ?? "",
-        price: String(opt?.price ?? ""),
-        duration: Number(opt?.duration ?? service.duration ?? 15),
-        description: opt?.description ?? "",
-        is_active: opt?.is_active !== false,
-      })),
-    });
-    setEditOpen(true);
+  const openServiceDrawer = (mode, service = null) => {
+    setServiceDrawerMode(mode);
+    setEditService(mode === "edit" ? service : null);
+    serviceForm.resetFields();
+    serviceForm.setFieldsValue(service
+      ? serviceFormValues(service, mode === "duplicate")
+      : { is_active: true, price_type: "from", staff_ids: [], service_options: [] });
+    setServiceDrawerOpen(true);
   };
 
   /* ─────────────────────────────────────
@@ -2326,7 +2325,7 @@ export default function ServicesPage() {
             </div>
 
             <button
-              onClick={() => setAddOpen(true)}
+              onClick={() => openServiceDrawer("create")}
               className="flex cursor-pointer items-center justify-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-200 hover:opacity-90 hover:shadow-lg"
               style={{
                 background: "linear-gradient(135deg, #BBA14F, #987554)",
@@ -2356,7 +2355,7 @@ export default function ServicesPage() {
               </button>
 
               <button
-                onClick={() => setAddOpen(true)}
+                onClick={() => openServiceDrawer("create")}
                 className="flex cursor-pointer items-center justify-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-200 hover:opacity-90 hover:shadow-lg"
                 style={{
                   background: "linear-gradient(135deg, #BBA14F, #987554)",
@@ -2500,7 +2499,8 @@ export default function ServicesPage() {
                       <ServiceCard
                         key={service.id}
                         service={service}
-                        onEdit={handleEdit}
+                        onEdit={(service) => openServiceDrawer("edit", service)}
+                        onDuplicate={(service) => openServiceDrawer("duplicate", service)}
                         onDelete={handleDelete}
                         deleting={deleteService.isPending}
                         staffData={staffData}
@@ -2574,17 +2574,16 @@ export default function ServicesPage() {
       )}
 
       {/* ──────────────────────────────────
-          ADD SERVICE MODAL
+          SERVICE DRAWER
       ────────────────────────────────── */}
-      <Modal
-        open={addOpen}
-        onCancel={() => { setAddOpen(false); addForm.resetFields(); }}
-        footer={null}
-        centered
-        width={580}
+      <Drawer
+        open={serviceDrawerOpen}
+        onClose={closeServiceDrawer}
+        placement="right"
+        width="min(620px, 100vw)"
         closable={false}
         styles={{
-          content: { padding: 0, borderRadius: 20, overflow: "hidden" },
+          body: { padding: 0, background: "#FDFAF5" },
           mask: { backdropFilter: "blur(4px)", background: "rgba(39,39,39,0.45)" },
         }}
       >
@@ -2628,20 +2627,22 @@ export default function ServicesPage() {
                   className="text-[10px] uppercase tracking-[0.2em] mb-0.5"
                   style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
                 >
-                  New Service
+                  {serviceDrawerMode === "edit" ? "Edit Service" : serviceDrawerMode === "duplicate" ? "Duplicate Service" : "New Service"}
                 </p>
                 <h3
                   className="text-lg font-bold text-white leading-none"
                   style={{ fontFamily: "'Playfair Display', serif" }}
                 >
-                  Add Service
+                  {serviceDrawerMode === "edit" ? editService?.name || "Edit Service" : serviceDrawerMode === "duplicate" ? "Create a Copy" : "Add Service"}
                 </h3>
               </div>
             </div>
 
             {/* Close button */}
             <button
-              onClick={() => { setAddOpen(false); addForm.resetFields(); }}
+              type="button"
+              aria-label="Close service drawer"
+              onClick={closeServiceDrawer}
               className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 hover:opacity-70"
               style={{
                 background: "rgba(255,255,255,0.1)",
@@ -2660,9 +2661,11 @@ export default function ServicesPage() {
         {/* ── Form body ── */}
         <div className="px-7 py-6" style={{ background: "#FDFAF5" }}>
           <Form
-            form={addForm}
+            form={serviceForm}
             layout="vertical"
-            onFinish={(values) => createService.mutate(values)}
+            onFinish={(values) => serviceDrawerMode === "edit"
+              ? updateService.mutate({ id: editService?.id, ...values })
+              : createService.mutate(values)}
             initialValues={{ is_active: true, price_type: "from", staff_ids: [], service_options: [] }}
           >
             <ServiceFormFields
@@ -2670,7 +2673,7 @@ export default function ServicesPage() {
               categoriesLoading={categoriesLoading}
               staffList={staffData}
               staffLoading={staffLoading}
-              onDeleteServiceOption={deleteServiceOptionFromForm}
+              onDeleteServiceOption={serviceDrawerMode === "edit" ? deleteServiceOptionFromForm : undefined}
               showServiceOptions={true}
               serviceOptionDeleting={deleteServiceOption.isPending}
             />
@@ -2689,7 +2692,7 @@ export default function ServicesPage() {
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => { setAddOpen(false); addForm.resetFields(); }}
+                  onClick={closeServiceDrawer}
                   className="px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 hover:opacity-80"
                   style={{
                     background: "rgba(187,161,79,0.1)",
@@ -2704,7 +2707,7 @@ export default function ServicesPage() {
                 <Button
                   type="primary"
                   htmlType="submit"
-                  loading={createService.isPending}
+                  loading={serviceDrawerMode === "edit" ? updateService.isPending : createService.isPending}
                   className="rounded-full! px-6! font-medium! text-sm!"
                   style={{
                     background: "linear-gradient(135deg, #BBA14F, #987554)",
@@ -2714,158 +2717,13 @@ export default function ServicesPage() {
                     height: 36,
                   }}
                 >
-                  ✦ Create Service
+                  {serviceDrawerMode === "edit" ? "Save Changes" : serviceDrawerMode === "duplicate" ? "Save as New Service" : "Create Service"}
                 </Button>
               </div>
             </div>
           </Form>
         </div>
-      </Modal>
-
-      {/* ──────────────────────────────────
-          EDIT SERVICE MODAL
-      ────────────────────────────────── */}
-      <Modal
-        open={editOpen}
-        onCancel={() => { setEditOpen(false); editForm.resetFields(); }}
-        footer={null}
-        centered
-        width={580}
-        closable={false}
-        styles={{
-          content: { padding: 0, borderRadius: 20, overflow: "hidden" },
-          mask: { backdropFilter: "blur(4px)", background: "rgba(39,39,39,0.45)" },
-        }}
-      >
-        {/* ── Luxury banner header ── */}
-        <div
-          className="relative overflow-hidden px-7 pt-7 pb-6"
-          style={{
-            background: "linear-gradient(120deg, #272727 0%, #3a2e1e 60%, #4a3a22 100%)",
-          }}
-        >
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              backgroundImage: "radial-gradient(circle, rgba(187,161,79,0.18) 1px, transparent 1px)",
-              backgroundSize: "20px 20px",
-            }}
-          />
-          <div
-            className="absolute right-0 top-0 h-full w-1/2 pointer-events-none"
-            style={{
-              background: "radial-gradient(circle at 80% 50%, rgba(187,161,79,0.15), transparent 70%)",
-            }}
-          />
-
-          <div className="relative z-10 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div
-                className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
-                style={{
-                  background: "linear-gradient(135deg, #987554, #6b4f30)",
-                  boxShadow: "0 4px 14px rgba(152,117,84,0.4)",
-                }}
-              >
-                <FiScissors size={20} color="#fff" />
-              </div>
-              <div>
-                <p
-                  className="text-[10px] uppercase tracking-[0.2em] mb-0.5"
-                  style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
-                >
-                  Edit Service
-                </p>
-                <h3
-                  className="text-lg font-bold text-white leading-none"
-                  style={{ fontFamily: "'Playfair Display', serif" }}
-                >
-                  {editService?.name || "Edit Service"}
-                </h3>
-              </div>
-            </div>
-
-            <button
-              onClick={() => { setEditOpen(false); editForm.resetFields(); }}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 hover:opacity-70"
-              style={{
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.15)",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: 16,
-                lineHeight: 1,
-              }}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-
-        {/* ── Form body ── */}
-        <div className="px-7 py-6" style={{ background: "#FDFAF5" }}>
-          <Form
-            form={editForm}
-            layout="vertical"
-            onFinish={(values) => updateService.mutate({ id: editService?.id, ...values })}
-            initialValues={{ service_options: [] }}
-          >
-            <ServiceFormFields
-              categoryOptions={categoryOptions}
-              categoriesLoading={categoriesLoading}
-              staffList={staffData}
-              staffLoading={staffLoading}
-              onDeleteServiceOption={deleteServiceOptionFromForm}
-              showServiceOptions={true}
-              serviceOptionDeleting={deleteServiceOption.isPending}
-            />
-
-            {/* ── Footer ── */}
-            <div
-              className="flex items-center justify-between mt-6 pt-5"
-              style={{ borderTop: "1px solid rgba(187,161,79,0.18)" }}
-            >
-              <p
-                className="text-[11px] text-[#b5a47a]"
-                style={{ fontFamily: "'Poppins', sans-serif" }}
-              >
-                Fields marked <span style={{ color: "#c43232" }}>*</span> are required
-              </p>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setEditOpen(false); editForm.resetFields(); }}
-                  className="px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 hover:opacity-80"
-                  style={{
-                    background: "rgba(187,161,79,0.1)",
-                    color: "#987554",
-                    border: "1px solid rgba(187,161,79,0.25)",
-                    fontFamily: "'Poppins', sans-serif",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={updateService.isPending}
-                  className="rounded-full! px-6! font-medium! text-sm!"
-                  style={{
-                    background: "linear-gradient(135deg, #BBA14F, #987554)",
-                    border: "none",
-                    fontFamily: "'Poppins', sans-serif",
-                    boxShadow: "0 4px 14px rgba(187,161,79,0.35)",
-                    height: 36,
-                  }}
-                >
-                  ✦ Save Changes
-                </Button>
-              </div>
-            </div>
-          </Form>
-        </div>
-      </Modal>
+      </Drawer>
 
       {/* ──────────────────────────────────
           ADD CATEGORY MODAL

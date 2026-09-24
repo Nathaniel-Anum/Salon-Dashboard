@@ -3710,26 +3710,24 @@ export default function CalendarPage() {
                 <FiChevronLeft size={15} />
               </button>
 
-              <span
+              <DatePicker
+                aria-label="Jump to date"
+                allowClear={false}
+                inputReadOnly
+                value={dayjs(dateStr)}
+                format={isToday
+                  ? isMobile ? "[Today ·] D MMM" : "[Today ·] D MMM YYYY"
+                  : isMobile ? "D MMM" : "D MMM YYYY"}
+                onChange={(date) => date && setSelectedDate(new Date(`${date.format("YYYY-MM-DD")}T12:00:00Z`))}
+                suffixIcon={<FiCalendar size={13} />}
+                variant="borderless"
+                className="calendar-jump-date"
                 style={{
-                  fontSize: isMobile ? 11 : 12,
-                  fontWeight: 600,
-                  color: "#272727",
-                  fontFamily: "'Poppins', sans-serif",
-                  minWidth: isMobile ? 0 : 150,
+                  width: isMobile ? 112 : 176,
                   flex: isMobile ? 1 : "unset",
-                  textAlign: "center",
                   padding: "0 6px",
-                  whiteSpace: "nowrap",
                 }}
-              >
-                {isToday ? "Today · " : ""}
-                {selectedDate.toLocaleDateString("en-GB", {
-                  day: "numeric",
-                  month: "short",
-                  year: isMobile ? undefined : "numeric",
-                })}
-              </span>
+              />
 
               <button
                 onClick={nextDay}

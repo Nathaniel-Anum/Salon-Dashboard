@@ -99,3 +99,17 @@
     animation: none !important;
   }
 }
+.calendar-jump-date.ant-picker .ant-picker-input > input {
+  color: #272727;
+  cursor: pointer;
+  font: 600 12px "Poppins", sans-serif;
+  text-align: center;
+}
+
+.calendar-jump-date.ant-picker .ant-picker-suffix { color: #987554; }
+.calendar-jump-date.ant-picker:hover,
+.calendar-jump-date.ant-picker:focus-within { background: rgba(187, 161, 79, 0.12); }
+
+@media (max-width: 639px) {
+  .calendar-jump-date.ant-picker .ant-picker-input > input { font-size: 11px; }
+}
