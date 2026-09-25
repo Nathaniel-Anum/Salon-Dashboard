@@ -1,407 +1,249 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
-  FiHome,
-  FiCalendar,
-  FiUsers,
-  FiScissors,
-  FiBarChart2,
-  FiSettings,
-  FiLogOut,
-  FiChevronLeft,
-  FiChevronRight,
-  FiChevronDown,
-  FiX,
-  FiMenu,
-  FiSlash,
-  FiList,
-  FiTarget,
-  FiLifeBuoy,
-  FiClipboard,
+  FiHome, FiCalendar, FiUsers, FiScissors, FiBarChart2, FiSettings,
+  FiLogOut, FiChevronLeft, FiChevronRight, FiX, FiMenu, FiSlash,
+  FiList, FiTarget, FiLifeBuoy, FiClipboard, FiShoppingCart,
+  FiPackage, FiGrid, FiBox,
 } from "react-icons/fi";
-import { FaClock } from "react-icons/fa";
-import { FaUserAlt } from "react-icons/fa";
+import { FaClock, FaUserAlt } from "react-icons/fa";
 import { MdManageAccounts } from "react-icons/md";
-import { FiShoppingCart, FiPackage, FiGrid, FiBox } from "react-icons/fi";
 import { useMutation } from "@tanstack/react-query";
 import { LoadingOutlined } from "@ant-design/icons";
+import { ConfigProvider, Drawer, Grid, Menu, Spin, Tooltip } from "antd";
 import _axios from "../src/api/_axios";
-import { Spin, Tooltip } from "antd";
 import { clearPortalSession } from "../src/auth/permissions";
+import "./Sidebar.css";
 
 const menuItems = [
-  { name: "Dashboard",    icon: <FiHome />,      path: "/" },
-  { name: "Calendar",     icon: <FiCalendar />,  path: "/calendar" },
+  { name: "Dashboard", icon: <FiHome />, path: "/" },
+  { name: "Calendar", icon: <FiCalendar />, path: "/calendar" },
   { name: "Appointments", icon: <FiClipboard />, path: "/appointments" },
-  { name: "Services",     icon: <FiScissors />,  path: "/services" },
-  { name: "Waitlist",     icon: <FiList />,      path: "/waitlist" },
-  { name: "Schedules",    icon: <FaClock size={14} />, path: "/schedules" },
-  { name: "Analytics",    icon: <FiBarChart2 />, path: "/analytics" },
-  { name: "Blocked Days", icon: <FiSlash />,     path: "/blocked-days" },
-  { name: "Settings",     icon: <FiSettings />,  path: "/settings" },
+  { name: "Services", icon: <FiScissors />, path: "/services" },
+  {
+    name: "Commerce", icon: <FiShoppingCart />,
+    children: [
+      { name: "Categories", icon: <FiGrid />, path: "/commerce/categories" },
+      { name: "Products", icon: <FiPackage />, path: "/commerce/products" },
+      { name: "Orders", icon: <FiShoppingCart />, path: "/commerce/orders" },
+      { name: "Inventory", icon: <FiBox />, path: "/commerce/inventory" },
+    ],
+  },
+  {
+    name: "User Management", icon: <FiUsers />,
+    children: [
+      { name: "Staff", icon: <FaUserAlt />, path: "/staff" },
+      { name: "Role Management", icon: <MdManageAccounts />, path: "/role-management" },
+      { name: "Clients", icon: <FiUsers />, path: "/clients" },
+    ],
+  },
+  { name: "Waitlist", icon: <FiList />, path: "/waitlist" },
+  { name: "Schedules", icon: <FaClock />, path: "/schedules" },
+  { name: "Analytics", icon: <FiBarChart2 />, path: "/analytics" },
+  { name: "Blocked Days", icon: <FiSlash />, path: "/blocked-days" },
+  {
+    name: "Settings", icon: <FiSettings />,
+    children: [
+      { name: "Deposit Rules", icon: <FiSettings />, path: "/settings" },
+      { name: "Campaigns", icon: <FiTarget />, path: "/settings/campaigns" },
+      { name: "Support", icon: <FiLifeBuoy />, path: "/settings/support" },
+    ],
+  },
 ];
 
-const USER_MGMT_PATHS = ["/staff", "/role-management", "/clients"];
-const COMMERCE_PATHS = ["/commerce/categories", "/commerce/products", "/commerce/orders", "/commerce/inventory"];
-const SETTINGS_PATHS = ["/settings", "/settings/campaign", "/settings/campaigns", "/settings/support"];
-
-const userMgmtItems = [
-  { name: "Staff",           icon: <FaUserAlt size={14} />,        path: "/staff" },
-  { name: "Role Management", icon: <MdManageAccounts size={16} />, path: "/role-management" },
-  { name: "Clients",         icon: <FiUsers size={14} />,          path: "/clients" },
-];
-
-const commerceItems = [
-  { name: "Categories", icon: <FiGrid size={14} />,        path: "/commerce/categories" },
-  { name: "Products",   icon: <FiPackage size={14} />,     path: "/commerce/products" },
-  { name: "Orders",     icon: <FiShoppingCart size={14} />, path: "/commerce/orders" },
-  { name: "Inventory",  icon: <FiBox size={14} />,          path: "/commerce/inventory" },
-];
-
-const settingsItems = [
-  { name: "Deposit Rules", icon: <FiSettings size={14} />, path: "/settings" },
-  { name: "Campaigns", icon: <FiTarget size={14} />, path: "/settings/campaigns" },
-  { name: "Support", icon: <FiLifeBuoy size={14} />, path: "/settings/support" },
-];
+const sidebarTheme = {
+  token: { fontFamily: "'Poppins', sans-serif", colorPrimary: "#BBA14F" },
+  components: {
+    Menu: {
+      collapsedWidth: 64,
+      dropdownWidth: 224,
+      collapsedIconSize: 18,
+      iconSize: 17,
+      itemHeight: 44,
+      itemMarginInline: 10,
+      itemMarginBlock: 4,
+      itemBorderRadius: 10,
+      darkItemBg: "transparent",
+      darkSubMenuItemBg: "transparent",
+      darkPopupBg: "#27241e",
+      darkItemColor: "rgba(255,255,255,0.78)",
+      darkItemHoverColor: "#fff",
+      darkItemHoverBg: "rgba(187,161,79,0.12)",
+      darkItemSelectedBg: "#BBA14F",
+      darkItemSelectedColor: "#272727",
+      darkGroupTitleColor: "#c9ae5e",
+    },
+  },
+};
 
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [userMgmtOpen, setUserMgmtOpen] = useState(false);
-  const [commerceOpen, setCommerceOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [touchNavigation, setTouchNavigation] = useState(false);
+  const screens = Grid.useBreakpoint();
+  const railCollapsed = !screens.xl || collapsed;
   const navigate = useNavigate();
-  const location = useLocation();
+  const { pathname } = useLocation();
+  const currentPath = pathname === "/settings/campaign" ? "/settings/campaigns" : pathname;
+  const selectedItem = menuItems.flatMap((item) => item.children || [item])
+    .find((item) => currentPath === item.path || (item.path !== "/" && item.path !== "/settings" && currentPath.startsWith(`${item.path}/`)));
+  const activeGroup = menuItems.find((item) => item.children?.includes(selectedItem));
 
-  const isUserMgmtActive = USER_MGMT_PATHS.some((p) => location.pathname === p);
-  const isCommerceActive = COMMERCE_PATHS.some((p) => location.pathname === p);
-  const isSettingsActive = SETTINGS_PATHS.some((p) => location.pathname === p);
-
+  const endSession = () => {
+    localStorage.removeItem("isAuthenticated");
+    localStorage.removeItem("refresh");
+    localStorage.removeItem("access");
+    clearPortalSession();
+    navigate("/login");
+  };
   const logoutMutation = useMutation({
-    mutationFn: (refresh) =>
-      _axios.post("/api/portal/v1/accounts/logout/", { refresh }),
-    onSuccess: () => {
-      localStorage.removeItem("isAuthenticated");
-      localStorage.removeItem("refresh");
-      localStorage.removeItem("access");
-      clearPortalSession();
-      navigate("/login");
-    },
-    onError: () => {
-      localStorage.removeItem("isAuthenticated");
-      localStorage.removeItem("refresh");
-      localStorage.removeItem("access");
-      clearPortalSession();
-      navigate("/login");
-    },
+    mutationFn: (refresh) => _axios.post("/api/portal/v1/accounts/logout/", { refresh }),
+    onSuccess: endSession,
+    onError: endSession,
   });
 
-  const handleLogout = () => logoutMutation.mutate(localStorage.getItem("refresh"));
+  const renderSidebarContent = (isMobile = false) => {
+    const isRail = railCollapsed && !isMobile;
+    const makeLink = (item) => ({
+      key: item.path,
+      icon: item.icon,
+      title: item.name,
+      "aria-label": item.name,
+      label: <NavLink to={item.path} end={item.path === "/settings"}>{item.name}</NavLink>,
+    });
+    const items = menuItems.map((item) => {
+      if (!item.children) return makeLink(item);
+      const children = item.children.map(makeLink);
+      return {
+        key: item.name,
+        icon: item.icon,
+        label: item.name,
+        children: isRail ? [{ type: "group", label: item.name, children }] : children,
+      };
+    });
 
-  const renderNavLink = (item, isMobile, isCollapsed) => (
-    <Tooltip key={item.name} title={isCollapsed && !isMobile ? item.name : ""} placement="right">
-      <NavLink
-        to={item.path}
-        onClick={() => isMobile && setMobileOpen(false)}
-        className={`group relative flex items-center rounded-xl transition-all duration-200 no-underline ${isCollapsed && !isMobile ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"}`}
-        style={({ isActive }) =>
-          isActive
-            ? { background: "linear-gradient(90deg,#BBA14F 0%,#c9ae5e 100%)", boxShadow: "0 4px 14px rgba(187,161,79,0.35)", fontWeight: 600, color: "#272727" }
-            : { background: "transparent", color: "rgba(255,255,255,0.78)" }
-        }
-      >
-        {({ isActive }) => (
-          <>
-            {isActive && (
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full" style={{ background: "#272727", opacity: 0.4 }} />
-            )}
-            <span className={`text-[17px] shrink-0 transition-transform duration-200 ${!isActive ? "group-hover:scale-110" : ""}`}>
-              {item.icon}
-            </span>
-            {(!isCollapsed || isMobile) && (
-              <span className="text-sm tracking-wide" style={{ fontFamily: "'Poppins',sans-serif" }}>{item.name}</span>
-            )}
-          </>
-        )}
-      </NavLink>
-    </Tooltip>
-  );
-
-  const renderSidebarContent = (isMobile = false) => (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-5 py-6 border-b" style={{ borderColor: "rgba(187,161,79,0.2)" }}>
-        {(!collapsed || isMobile) && (
-          <div className="overflow-hidden">
-            <h1 className="text-base font-semibold leading-none text-white" style={{ fontFamily: "'Playfair Display',serif", letterSpacing: "0.03em" }}>CBK Beauty</h1>
-            <p className="text-[10px] mt-0.5 tracking-[0.28em] uppercase" style={{ color: "#BBA14F", fontFamily: "'Poppins',sans-serif" }}>Dashboard</p>
-          </div>
-        )}
-        {isMobile && (
-          <button className="ml-auto text-white/60 hover:text-white" onClick={() => setMobileOpen(false)}>
-            <FiX size={18} />
-          </button>
-        )}
-      </div>
-
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
-        <div className="flex flex-col gap-1">
-
-          {menuItems.slice(0, 4).map((item) => renderNavLink(item, isMobile, collapsed))}
-
-          {/* ── Commerce ── */}
-          <div>
-            <Tooltip title={collapsed && !isMobile ? "Commerce" : ""} placement="right">
-              <button
-                onClick={() => {
-                  if (collapsed && !isMobile) { setCollapsed(false); setCommerceOpen(true); }
-                  else { setCommerceOpen((v) => !v); }
-                }}
-                className={`w-full group flex items-center rounded-xl transition-all duration-200 ${collapsed && !isMobile ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"}`}
-                style={{
-                  background: isCommerceActive ? "rgba(187,161,79,0.12)" : "transparent",
-                  color: isCommerceActive ? "#BBA14F" : "rgba(255,255,255,0.78)",
-                  border: isCommerceActive ? "1px solid rgba(187,161,79,0.25)" : "1px solid transparent",
-                  fontFamily: "'Poppins',sans-serif",
-                  cursor: "pointer",
-                }}
-              >
-                <span className={`text-[17px] shrink-0 transition-transform duration-200 ${!isCommerceActive ? "group-hover:scale-110" : ""}`}>
-                  <FiShoppingCart />
-                </span>
-                {(!collapsed || isMobile) && (
-                  <>
-                    <span className="text-sm tracking-wide flex-1 text-left">Commerce</span>
-                    <FiChevronDown
-                      size={14}
-                      style={{
-                        transition: "transform 0.2s ease",
-                        transform: commerceOpen || isCommerceActive ? "rotate(180deg)" : "rotate(0deg)",
-                        color: isCommerceActive ? "#BBA14F" : "rgba(255,255,255,0.45)",
-                      }}
-                    />
-                  </>
-                )}
-              </button>
-            </Tooltip>
-
-            {(!collapsed || isMobile) && (commerceOpen || isCommerceActive) && (
-              <div style={{ marginLeft: 14, paddingLeft: 14, borderLeft: "1.5px solid rgba(187,161,79,0.25)", marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-                {commerceItems.map((item) => (
-                  <NavLink
-                    key={item.name}
-                    to={item.path}
-                    onClick={() => isMobile && setMobileOpen(false)}
-                    className="group relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 no-underline"
-                    style={({ isActive }) =>
-                      isActive
-                        ? { background: "linear-gradient(90deg,#BBA14F 0%,#c9ae5e 100%)", boxShadow: "0 4px 14px rgba(187,161,79,0.3)", fontWeight: 600, color: "#272727" }
-                        : { background: "transparent", color: "rgba(255,255,255,0.72)" }
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <span className={`text-[15px] shrink-0 transition-transform duration-200 ${!isActive ? "group-hover:scale-110" : ""}`}>
-                          {item.icon}
-                        </span>
-                        <span className="text-sm tracking-wide" style={{ fontFamily: "'Poppins',sans-serif" }}>{item.name}</span>
-                      </>
-                    )}
-                  </NavLink>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* ── User Management ── */}
-          <div>
-            <Tooltip title={collapsed && !isMobile ? "User Management" : ""} placement="right">
-              <button
-                onClick={() => {
-                  if (collapsed && !isMobile) { setCollapsed(false); setUserMgmtOpen(true); }
-                  else { setUserMgmtOpen((v) => !v); }
-                }}
-                className={`w-full group flex items-center rounded-xl transition-all duration-200 ${collapsed && !isMobile ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"}`}
-                style={{
-                  background: isUserMgmtActive ? "rgba(187,161,79,0.12)" : "transparent",
-                  color: isUserMgmtActive ? "#BBA14F" : "rgba(255,255,255,0.78)",
-                  border: isUserMgmtActive ? "1px solid rgba(187,161,79,0.25)" : "1px solid transparent",
-                  fontFamily: "'Poppins',sans-serif",
-                  cursor: "pointer",
-                }}
-              >
-                <span className={`text-[17px] shrink-0 transition-transform duration-200 ${!isUserMgmtActive ? "group-hover:scale-110" : ""}`}>
-                  <FiUsers />
-                </span>
-                {(!collapsed || isMobile) && (
-                  <>
-                    <span className="text-sm tracking-wide flex-1 text-left">User Management</span>
-                    <FiChevronDown
-                      size={14}
-                      style={{
-                        transition: "transform 0.2s ease",
-                        transform: userMgmtOpen || isUserMgmtActive ? "rotate(180deg)" : "rotate(0deg)",
-                        color: isUserMgmtActive ? "#BBA14F" : "rgba(255,255,255,0.45)",
-                      }}
-                    />
-                  </>
-                )}
-              </button>
-            </Tooltip>
-
-            {(!collapsed || isMobile) && (userMgmtOpen || isUserMgmtActive) && (
-              <div style={{ marginLeft: 14, paddingLeft: 14, borderLeft: "1.5px solid rgba(187,161,79,0.25)", marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-                {userMgmtItems.map((item) => (
-                  <NavLink
-                    key={item.name}
-                    to={item.path}
-                    onClick={() => isMobile && setMobileOpen(false)}
-                    className="group relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 no-underline"
-                    style={({ isActive }) =>
-                      isActive
-                        ? { background: "linear-gradient(90deg,#BBA14F 0%,#c9ae5e 100%)", boxShadow: "0 4px 14px rgba(187,161,79,0.3)", fontWeight: 600, color: "#272727" }
-                        : { background: "transparent", color: "rgba(255,255,255,0.72)" }
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <span className={`text-[15px] shrink-0 transition-transform duration-200 ${!isActive ? "group-hover:scale-110" : ""}`}>
-                          {item.icon}
-                        </span>
-                        <span className="text-sm tracking-wide" style={{ fontFamily: "'Poppins',sans-serif" }}>{item.name}</span>
-                      </>
-                    )}
-                  </NavLink>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {menuItems.slice(4, 8).map((item) => renderNavLink(item, isMobile, collapsed))}
-
-          {/* ── Settings ── */}
-          <div>
-            <Tooltip title={collapsed && !isMobile ? "Settings" : ""} placement="right">
-              <button
-                onClick={() => {
-                  if (collapsed && !isMobile) { setCollapsed(false); setSettingsOpen(true); }
-                  else { setSettingsOpen((v) => !v); }
-                }}
-                className={`w-full group flex items-center rounded-xl transition-all duration-200 ${collapsed && !isMobile ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5"}`}
-                style={{
-                  background: isSettingsActive ? "rgba(187,161,79,0.12)" : "transparent",
-                  color: isSettingsActive ? "#BBA14F" : "rgba(255,255,255,0.78)",
-                  border: isSettingsActive ? "1px solid rgba(187,161,79,0.25)" : "1px solid transparent",
-                  fontFamily: "'Poppins',sans-serif",
-                  cursor: "pointer",
-                }}
-              >
-                <span className={`text-[17px] shrink-0 transition-transform duration-200 ${!isSettingsActive ? "group-hover:scale-110" : ""}`}>
-                  <FiSettings />
-                </span>
-                {(!collapsed || isMobile) && (
-                  <>
-                    <span className="text-sm tracking-wide flex-1 text-left">Settings</span>
-                    <FiChevronDown
-                      size={14}
-                      style={{
-                        transition: "transform 0.2s ease",
-                        transform: settingsOpen || isSettingsActive ? "rotate(180deg)" : "rotate(0deg)",
-                        color: isSettingsActive ? "#BBA14F" : "rgba(255,255,255,0.45)",
-                      }}
-                    />
-                  </>
-                )}
-              </button>
-            </Tooltip>
-
-            {(!collapsed || isMobile) && (settingsOpen || isSettingsActive) && (
-              <div style={{ marginLeft: 14, paddingLeft: 14, borderLeft: "1.5px solid rgba(187,161,79,0.25)", marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-                {settingsItems.map((item) => (
-                  <NavLink
-                    key={item.name}
-                    to={item.path}
-                    end={item.path === "/settings"}
-                    onClick={() => isMobile && setMobileOpen(false)}
-                    className="group relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 no-underline"
-                    style={({ isActive }) =>
-                      isActive
-                        ? { background: "linear-gradient(90deg,#BBA14F 0%,#c9ae5e 100%)", boxShadow: "0 4px 14px rgba(187,161,79,0.3)", fontWeight: 600, color: "#272727" }
-                        : { background: "transparent", color: "rgba(255,255,255,0.72)" }
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <span className={`text-[15px] shrink-0 transition-transform duration-200 ${!isActive ? "group-hover:scale-110" : ""}`}>
-                          {item.icon}
-                        </span>
-                        <span className="text-sm tracking-wide" style={{ fontFamily: "'Poppins',sans-serif" }}>{item.name}</span>
-                      </>
-                    )}
-                  </NavLink>
-                ))}
-              </div>
-            )}
-          </div>
-
-        </div>
-      </nav>
-
-      <div className="px-3 py-5 border-t" style={{ borderColor: "rgba(187,161,79,0.2)" }}>
-        <button
-          onClick={handleLogout}
-          className={`w-full cursor-pointer flex items-center rounded-xl transition-all duration-200 hover:bg-white/10 px-4 py-2.5 gap-3 ${collapsed && !isMobile ? "justify-center px-0" : ""}`}
-          style={{ color: "rgba(255,255,255,0.7)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-        >
-          {logoutMutation.isPending ? (
-            <Spin indicator={<LoadingOutlined spin style={{ color: "#BBA14F" }} />} size="small" />
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className={`sidebar-brand flex items-center shrink-0 ${isRail ? "justify-center" : "gap-3 px-5"}`}>
+          {isRail ? (
+            <span className="sidebar-monogram" aria-label="CBK Beauty">C</span>
           ) : (
-            <FiLogOut size={17} />
+            <div>
+              <h1 className="text-base font-semibold leading-none text-white" style={{ fontFamily: "'Playfair Display',serif" }}>CBK Beauty</h1>
+              <p className="text-[10px] mt-1 tracking-[0.28em] uppercase text-[#BBA14F]">Dashboard</p>
+            </div>
           )}
-          {(!collapsed || isMobile) && (
-            <span className="text-sm" style={{ fontFamily: "'Poppins',sans-serif" }}>Logout</span>
+          {isMobile && (
+            <button aria-label="Close navigation" className="sidebar-control ml-auto flex items-center justify-center w-11 h-11 shrink-0" onClick={() => setMobileOpen(false)}>
+              <FiX size={18} />
+            </button>
           )}
-        </button>
+        </div>
+
+        <nav
+          aria-label="Main navigation"
+          className="sidebar-scroll flex-1 min-h-0 overflow-y-auto py-3"
+          onPointerEnter={(event) => setTouchNavigation(event.pointerType !== "mouse")}
+          onPointerDown={(event) => setTouchNavigation(event.pointerType !== "mouse")}
+        >
+          <Menu
+            id={isMobile ? "mobile-sidebar-menu" : "desktop-sidebar-menu"}
+            key={isRail ? "rail" : "expanded"}
+            className="sidebar-menu"
+            classNames={{ popup: { root: "sidebar-flyout" } }}
+            mode="inline"
+            theme="dark"
+            inlineCollapsed={isRail}
+            inlineIndent={18}
+            selectedKeys={selectedItem ? [selectedItem.path] : []}
+            defaultOpenKeys={!isRail && activeGroup ? [activeGroup.name] : []}
+            subMenuOpenDelay={0.1}
+            subMenuCloseDelay={0.25}
+            triggerSubMenuAction={touchNavigation ? "click" : "hover"}
+            tooltip={{ placement: "right", trigger: ["hover", "focus"], color: "#27241e" }}
+            items={items}
+            onClick={({ key, domEvent }) => {
+              // Links retain native modifier-click behavior; the rest of the row also navigates.
+              if (!domEvent.target.closest("a")) navigate(key);
+              if (isMobile) setMobileOpen(false);
+            }}
+          />
+        </nav>
+
+        <div className={`sidebar-footer shrink-0 py-4 ${isRail ? "px-2.5" : "px-3"}`}>
+          <Tooltip title={isRail ? "Logout" : ""} placement="right" trigger={["hover", "focus"]} color="#27241e">
+            <button
+              aria-label="Logout"
+              disabled={logoutMutation.isPending}
+              onClick={() => logoutMutation.mutate(localStorage.getItem("refresh"))}
+              className={`sidebar-control flex items-center w-full h-11 rounded-xl hover:bg-white/10 ${isRail ? "justify-center" : "px-4 gap-3"}`}
+            >
+              {logoutMutation.isPending ? (
+                <Spin indicator={<LoadingOutlined spin style={{ color: "#BBA14F" }} />} size="small" />
+              ) : <FiLogOut size={18} />}
+              {!isRail && <span className="text-sm">Logout</span>}
+            </button>
+          </Tooltip>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <>
-      <button
-        className="fixed top-4 left-4 z-50 lg:hidden flex items-center justify-center w-9 h-9 rounded-full shadow-lg cursor-pointer"
-        style={{ background: "#272727", border: "1px solid rgba(187,161,79,0.4)" }}
+    <ConfigProvider theme={sidebarTheme}>
+      {!screens.md && <button
+        aria-label="Open navigation"
+        aria-expanded={mobileOpen}
+        aria-controls="mobile-navigation"
+        className="sidebar-mobile-toggle fixed z-40 flex items-center justify-center w-11 h-11 rounded-full shadow-lg cursor-pointer"
         onClick={() => setMobileOpen(true)}
       >
-        <FiMenu size={16} style={{ color: "#BBA14F" }} />
-      </button>
-
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden" style={{ background: "rgba(0,0,0,0.55)" }} onClick={() => setMobileOpen(false)} />
-      )}
-
-      <div
-        className="fixed top-0 left-0 h-full z-50 lg:hidden transition-transform duration-300"
-        style={{ width: 270, background: "linear-gradient(180deg,#1c1a15 0%,#272727 60%,#2e2318 100%)", transform: mobileOpen ? "translateX(0)" : "translateX(-100%)" }}
+        <FiMenu size={16} />
+      </button>}
+      <Drawer
+        id="mobile-navigation"
+        aria-label="Navigation"
+        placement="left"
+        size="min(320px, calc(100vw - 24px))"
+        open={mobileOpen && !screens.xl}
+        onClose={() => setMobileOpen(false)}
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          // Wrap at the portal boundaries before Tab can move into browser chrome.
+          const controls = [...event.currentTarget.querySelectorAll("button, a[href], [tabindex]")]
+            .filter((element) => element.tabIndex >= 0 && !element.disabled && element.getClientRects().length);
+          const first = controls[0];
+          const last = controls.at(-1);
+          if ((event.shiftKey && event.target === first) || (!event.shiftKey && event.target === last)) {
+            event.preventDefault();
+            (event.shiftKey ? last : first)?.focus();
+          }
+        }}
+        afterOpenChange={(open) => { if (!open) setMobileOpen(false); }}
+        closeIcon={false}
+        destroyOnHidden
+        classNames={{ root: "sidebar-drawer" }}
+        styles={{ body: { padding: 0, overflow: "hidden" } }}
       >
-        {renderSidebarContent(true)}
-      </div>
-
-      <div
-        className="hidden lg:flex flex-col relative transition-all duration-300"
-        style={{ width: collapsed ? 80 : 260, height: "100vh", position: "sticky", top: 0, flexShrink: 0, background: "linear-gradient(180deg,#1c1a15 0%,#272727 60%,#2e2318 100%)", borderRight: "1px solid rgba(187,161,79,0.15)", zIndex: 40 }}
+        <div className="salon-sidebar h-full">{renderSidebarContent(true)}</div>
+      </Drawer>
+      {screens.md && <aside
+        aria-label="Sidebar"
+        className="salon-sidebar flex flex-col sticky top-0 h-dvh shrink-0 z-40 transition-[width] duration-200 motion-reduce:transition-none"
+        style={{ width: railCollapsed ? 64 : 260 }}
       >
-        {renderSidebarContent(false)}
+        {renderSidebarContent()}
         <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="absolute -right-3.5 top-16 w-7 h-7 cursor-pointer rounded-full flex items-center justify-center shadow-lg z-50 transition-all duration-200 hover:scale-110"
-          style={{ background: "linear-gradient(135deg,#BBA14F,#a08340)", border: "2px solid #1c1a15" }}
+          aria-label={screens.xl ? (collapsed ? "Expand sidebar" : "Collapse sidebar") : "Open navigation"}
+          aria-expanded={screens.xl ? !collapsed : mobileOpen}
+          aria-controls={screens.xl ? "desktop-sidebar-menu" : "mobile-navigation"}
+          onClick={() => screens.xl ? setCollapsed((value) => !value) : setMobileOpen(true)}
+          className="sidebar-toggle absolute -right-3.5 top-[66px] w-7 h-7 cursor-pointer rounded-full flex items-center justify-center shadow-lg z-50"
         >
-          {collapsed ? <FiChevronRight size={12} color="#fff" /> : <FiChevronLeft size={12} color="#fff" />}
+          {railCollapsed ? <FiChevronRight size={13} /> : <FiChevronLeft size={13} />}
         </button>
-      </div>
-    </>
+      </aside>}
+    </ConfigProvider>
   );
 };
 

@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { Drawer } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { FiAlertCircle, FiCalendar, FiCheckCircle, FiClock, FiCreditCard, FiSlash } from "react-icons/fi";
+import { FiAlertCircle, FiCalendar, FiClock, FiCreditCard } from "react-icons/fi";
 import EChart from "./EChart";
-import { getAnalyticsBookings } from "../src/api/analytics";
+import { getAnalyticsBookings, getAnalyticsRevenue } from "../src/api/analytics";
+import { APPOINTMENT_METRICS, PORTAL_METRICS, REVENUE_METRICS, reportPeriod, reportPeriodLabel } from "../src/analytics/portalReports";
+import { permissionState } from "../src/auth/permissions";
 import { isoDate, reportingRange, subtractDays } from "../src/analytics/dateRanges";
 import {
   PALETTE,
@@ -25,25 +27,18 @@ import {
 } from "../src/analytics/insightUtils";
 
 const PERIODS = [
+  { key: "today", label: "Today" },
   { key: "week", label: "This week" },
+  { key: "previous_week", label: "Previous week" },
   { key: "30", label: "Last 30 days" },
-  { key: "90", label: "Last 3 months" },
+  { key: "90", label: "Last 90 days" },
   { key: "custom", label: "Custom" },
 ];
 
 const METRICS = {
   money: { title: "Money received", description: "Payments recorded by the salon", icon: FiCreditCard, accent: "gold" },
   created: { title: "Appointments created", description: "New appointment records", icon: FiCalendar, accent: "sage" },
-  completed: { title: "Completed appointments", description: "Appointments marked as completed", icon: FiCheckCircle, accent: "sage" },
-  cancelled: { title: "Cancelled appointments", description: "Appointments marked as cancelled", icon: FiSlash, accent: "rose" },
 };
-
-function percentComparison(current, previous) {
-  const currentValue = Number(current) || 0;
-  const previousValue = Number(previous) || 0;
-  if (!previousValue) return { percentage_change: null, reason: "NO_PREVIOUS_BASE" };
-  return { percentage_change: (((currentValue - previousValue) / previousValue) * 100).toFixed(2), reason: null };
-}
 
 function ChangeBadge({ comparison, lowerIsBetter = false }) {
   const direction = comparisonDirection(comparison);
@@ -51,8 +46,8 @@ function ChangeBadge({ comparison, lowerIsBetter = false }) {
   return <span className={`drawer-change drawer-change--${sentiment}`}><b>{direction === "up" ? "↗" : direction === "down" ? "↘" : "→"}</b>{comparisonLabel(comparison)}</span>;
 }
 
-function DrawerError({ message = "This report is unavailable right now." }) {
-  return <div className="drawer-error" role="alert"><FiAlertCircle /><span>{message}</span></div>;
+function DrawerError({ message = "This report is unavailable right now.", retry }) {
+  return <div className="drawer-error" role="alert"><FiAlertCircle /><span>{message}</span>{retry && <button type="button" onClick={retry}>Retry</button>}</div>;
 }
 
 function DrawerLoading() {
@@ -101,21 +96,17 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
   const today = isoDate(new Date());
   const [customStart, setCustomStart] = useState(isoDate(subtractDays(new Date(), 6)));
   const [customEnd, setCustomEnd] = useState(today);
-  const config = METRICS[metric];
-  const lifecycleMetric = metric === "completed" || metric === "cancelled";
+  const portalMetric = PORTAL_METRICS.find(({ key }) => key === metric);
+  const config = portalMetric || METRICS[metric];
+  const [filters, setFilters] = useState({});
+  const validDates = period !== "custom" || Boolean(customStart && customEnd && customStart <= customEnd && customEnd <= today);
+  const params = { ...filters, ...(period === "custom" && validDates ? { date_from: customStart, date_to: customEnd } : {}) };
   const range = useMemo(() => reportingRange(period, customStart, customEnd), [period, customStart, customEnd]);
 
-  const currentQuery = useQuery({
-    queryKey: ["analytics-bookings", metric, "current", range.current],
-    queryFn: () => getAnalyticsBookings(range.current),
-    enabled: lifecycleMetric,
-    staleTime: 60_000,
-    retry: 1,
-  });
-  const previousQuery = useQuery({
-    queryKey: ["analytics-bookings", metric, "previous", range.previous],
-    queryFn: () => getAnalyticsBookings(range.previous),
-    enabled: lifecycleMetric,
+  const reportQuery = useQuery({
+    queryKey: [portalMetric?.revenue ? "analytics-revenue" : "analytics-bookings", params],
+    queryFn: () => portalMetric?.revenue ? getAnalyticsRevenue(params) : getAnalyticsBookings(params),
+    enabled: Boolean(portalMetric) && validDates && permissionState("reports.view") !== false,
     staleTime: 60_000,
     retry: 1,
   });
@@ -129,23 +120,21 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
   const selectedAppointmentPoints = period === "30" ? appointments?.series?.last_30_days?.points ?? [] : appointments?.series?.last_90_days?.points ?? [];
   const selectedAppointmentTotal = period === "week" ? appointments?.summary?.appointments_created ?? 0 : selectedAppointmentPoints.reduce((total, point) => total + Number(point.appointments_created || 0), 0);
 
-  const lifecycleField = metric === "completed" ? "appointments_completed" : "appointments_cancelled";
-  const lifecycleRateField = metric === "completed" ? "completion_rate" : "cancellation_rate";
-  const lifecycleCurrent = currentQuery.data?.[lifecycleField] ?? 0;
-  const lifecyclePrevious = previousQuery.data?.[lifecycleField] ?? 0;
-  const lifecycleCurrentTotal = currentQuery.data?.bookings_created ?? 0;
-  const lifecyclePreviousTotal = previousQuery.data?.bookings_created ?? 0;
-  const lifecycleComparison = percentComparison(lifecycleCurrent, lifecyclePrevious);
+  const selectedReport = reportPeriod(reportQuery.data, period);
+  const previousReport = reportPeriod(reportQuery.data, "previous_week");
+  const reportValue = selectedReport?.[portalMetric?.field];
+  const previousValue = previousReport?.[portalMetric?.field];
+  const reportComparison = reportQuery.data?.week_comparison?.changes?.[portalMetric?.field];
+  const formatReportValue = (value) => portalMetric?.revenue ? formatCurrency(value) : formatNumber(value);
+  const selectedLabel = portalMetric ? PERIODS.find(({ key }) => key === period)?.label : range.currentLabel;
 
   const trendOption = (() => {
     if (metric === "money") return buildMoneyTrendOption(money, effectiveCurrency, period);
     if (metric === "created") return buildAppointmentsTrendOption(appointments, period);
-    return buildMetricComparisonOption(lifecycleCurrent, lifecyclePrevious, [range.currentLabel, range.previousLabel], {
-      currentTotal: lifecycleCurrentTotal,
-      previousTotal: lifecyclePreviousTotal,
+    return buildMetricComparisonOption(reportValue, previousValue, ["This week", "Same days last week"], {
       seriesName: config.title,
-      remainderName: metric === "cancelled" ? "Confirmed appointments" : "Remaining appointments",
-      accent: metric === "cancelled" ? "#c97b63" : "#6f7d66",
+      valueFormatter: formatReportValue,
+      revenue: portalMetric?.revenue,
     });
   })();
 
@@ -182,21 +171,21 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
       return { headers: ["Period", "Appointments created"], rows: selectedAppointmentPoints.map((point) => [formatDate(point.date_from, { year: period === "90" }), formatNumber(point.appointments_created)]) };
     }
     return {
-      headers: ["Period", config.title, metric === "cancelled" ? "Confirmed appointments" : "Remaining appointments"],
+      headers: ["Period", config.title],
       rows: [
-        [range.previousLabel, formatNumber(lifecyclePrevious), formatNumber(Math.max(lifecyclePreviousTotal - lifecyclePrevious, 0))],
-        [range.currentLabel, formatNumber(lifecycleCurrent), formatNumber(Math.max(lifecycleCurrentTotal - lifecycleCurrent, 0))],
+        [reportPeriodLabel(previousReport), formatReportValue(previousValue)],
+        [reportPeriodLabel(selectedReport), formatReportValue(reportValue)],
       ],
     };
   })();
 
-  const loading = lifecycleMetric ? currentQuery.isLoading || previousQuery.isLoading : metric === "money" ? moneyLoading : appointmentsLoading;
-  const failed = lifecycleMetric ? currentQuery.isError || previousQuery.isError : metric === "money" ? Boolean(moneyError) : Boolean(appointmentsError);
-  const headline = metric === "money" ? formatCurrency(selectedMoneyTotal, effectiveCurrency) : metric === "created" ? formatNumber(selectedAppointmentTotal) : formatNumber(lifecycleCurrent);
-  const comparison = metric === "money" ? moneyComparison : metric === "created" ? appointments?.comparison?.appointments_created : lifecycleComparison;
-  const showComparison = period === "week" || lifecycleMetric;
-  const Icon = config.icon;
-  const customAllowed = lifecycleMetric;
+  const loading = portalMetric ? reportQuery.isLoading : metric === "money" ? moneyLoading : appointmentsLoading;
+  const failed = portalMetric ? reportQuery.isError : metric === "money" ? Boolean(moneyError) : Boolean(appointmentsError);
+  const headline = metric === "money" ? formatCurrency(selectedMoneyTotal, effectiveCurrency) : metric === "created" ? formatNumber(selectedAppointmentTotal) : formatReportValue(reportValue);
+  const comparison = metric === "money" ? moneyComparison : metric === "created" ? appointments?.comparison?.appointments_created : reportComparison;
+  const showComparison = period === "week";
+  const Icon = config.icon || (portalMetric?.revenue ? FiCreditCard : FiCalendar);
+  const customAllowed = Boolean(portalMetric);
 
   return <Drawer
     open
@@ -209,26 +198,36 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
     title={<div className="drawer-title"><span className={`drawer-title__icon drawer-title__icon--${config.accent}`}><Icon /></span><span><b>{config.title}</b><small>{config.description}</small></span></div>}
   >
     <div className="drawer-periods" role="group" aria-label={`${config.title} period`}>
-      {PERIODS.map((item) => <button key={item.key} type="button" className={period === item.key ? "active" : ""} disabled={item.key === "custom" && !customAllowed} title={item.key === "custom" && !customAllowed ? "Custom dates are not supported by this report" : undefined} onClick={() => setPeriod(item.key)}>{item.label}</button>)}
+      {PERIODS.filter((item) => portalMetric || !["today", "previous_week"].includes(item.key)).map((item) => <button key={item.key} type="button" aria-pressed={period === item.key} className={period === item.key ? "active" : ""} disabled={item.key === "custom" && !customAllowed} title={item.key === "custom" && !customAllowed ? "Custom dates are not supported by this report" : item.key === "previous_week" ? "Same elapsed weekdays from the previous week" : undefined} onClick={() => setPeriod(item.key)}>{item.label}</button>)}
     </div>
 
     {metric === "money" && currencies.length > 1 && <div className="drawer-currency" role="group" aria-label="Currency"><span>Currency</span>{currencies.map((code) => <button type="button" key={code} className={effectiveCurrency === code ? "active" : ""} onClick={() => setSelectedCurrency(code)}>{code}</button>)}</div>}
     {!customAllowed && <p className="drawer-endpoint-note">This report provides fixed weekly, 30-day and 90-day periods. Custom dates are not available yet.</p>}
     {period === "custom" && customAllowed && <div className="drawer-custom-range"><label>From<input type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} /></label><label>To<input type="date" value={customEnd} min={customStart} max={today} onChange={(event) => setCustomEnd(event.target.value)} /></label></div>}
+    {portalMetric && <details className="drawer-filters"><summary>Drilldown filters{Object.keys(filters).length ? ` (${Object.keys(filters).length} applied)` : ""}</summary><form onSubmit={(event) => {
+      event.preventDefault();
+      setFilters(Object.fromEntries([...new FormData(event.currentTarget)].map(([key, value]) => [key, value.trim()]).filter(([, value]) => value)));
+    }} onReset={() => setFilters({})}>
+      <label>Source<select name="source" defaultValue=""><option value="">All sources</option>{["app", "portal", "public", "webhook", "system"].map((source) => <option key={source} value={source}>{source}</option>)}</select></label>
+      {[["service_id", "Service ID"], ["staff_id", "Staff ID"], ["product_id", "Product ID"], ["payment_channel", "Payment channel"], ["purpose", "Payment purpose"]].map(([name, label]) => <label key={name}>{label}<input name={name} type="text" /></label>)}
+      <div className="drawer-filter-actions"><button type="submit">Apply filters</button><button type="reset">Clear filters</button></div>
+    </form><p>Filters apply to every period. Custom dates affect only the custom period.</p></details>}
 
-    {failed ? <DrawerError /> : loading ? <DrawerLoading /> : <>
+    {!validDates ? <DrawerError message="Choose a valid start and end date, ending no later than today." /> : failed ? <DrawerError message={portalMetric && reportQuery.error?.response?.status === 403 ? "You do not have permission to view this report." : undefined} retry={portalMetric && reportQuery.error?.response?.status !== 403 ? reportQuery.refetch : undefined} /> : loading ? <DrawerLoading /> : <>
       <section className="drawer-portfolio">
-        <p>{range.currentLabel}</p>
+        <p>{selectedLabel}</p>
         <strong>{headline}</strong>
-        {showComparison && <ChangeBadge comparison={comparison} lowerIsBetter={metric === "cancelled"} />}
-        <small>{metric === "money" && period === "week" ? periodLabel(money?.summary?.period) : metric === "created" && period === "week" ? periodLabel(appointments?.summary?.period) : `${range.current.date_from} to ${range.current.date_to}`}</small>
+        {showComparison && <ChangeBadge comparison={comparison} lowerIsBetter={portalMetric?.lowerIsBetter} />}
+        <small>{portalMetric ? reportPeriodLabel(selectedReport) : metric === "money" && period === "week" ? periodLabel(money?.summary?.period) : metric === "created" && period === "week" ? periodLabel(appointments?.summary?.period) : `${range.current.date_from} to ${range.current.date_to}`}</small>
+        {portalMetric && period === "previous_week" && <small>Same elapsed weekdays from the previous week.</small>}
+        {portalMetric && showComparison && <small>Change: {formatReportValue(comparison?.absolute_change)} · Previous: {formatReportValue(previousValue)}</small>}
       </section>
 
-      <section className="drawer-chart-card">
-        <div><h3>{lifecycleMetric ? "Period comparison" : `${config.title} over time`}</h3><p>{lifecycleMetric ? metric === "cancelled" ? "Cancelled appointments compared with confirmed appointments, which exclude cancellations." : "Completed appointments compared with remaining appointments." : period === "week" ? "Compared with the same elapsed days last week." : "Rolling history supplied by the report."}</p></div>
-        <EChart option={trendOption} height={260} ariaLabel={`${config.title} for ${range.currentLabel}`} />
+      {(!portalMetric || period === "week") && <section className="drawer-chart-card">
+        <div><h3>{portalMetric ? "Weekly comparison" : `${config.title} over time`}</h3><p>{period === "week" ? "Compared with the same elapsed days last week." : "Rolling history supplied by the report."}</p></div>
+        <EChart option={trendOption} height={260} ariaLabel={`${config.title} for ${selectedLabel}`} />
         <ChartDataTable caption={`${config.title} chart values`} headers={trendTable.headers} rows={trendTable.rows} />
-      </section>
+      </section>}
 
       {metric === "money" && <>
         <section className="drawer-breakdown"><h3>This week’s payment activity</h3><p>Recorded payments, reversals, and the amount retained after reversals.</p><div className="drawer-supporting-metrics drawer-supporting-metrics--four"><div><span>Payments recorded</span><b>{formatNumber(moneySummary?.received_transaction_count)}</b></div><div><span>Payments reversed</span><b>{formatNumber(moneySummary?.reversed_transaction_count)}</b></div><div><span>Recorded reversals</span><b>{formatCurrency(moneySummary?.reversed_amount, effectiveCurrency)}</b></div><div><span>After reversals</span><b>{formatCurrency(moneySummary?.received_after_reversals_amount, effectiveCurrency)}</b></div></div></section>
@@ -244,9 +243,9 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
         <DataQuality meta={appointments?.meta} />
       </>}
 
-      {lifecycleMetric && <>
-        <section className="drawer-breakdown"><h3>Selected period summary</h3><div className="drawer-supporting-metrics drawer-supporting-metrics--four"><div><span>Appointments created</span><b>{formatNumber(currentQuery.data?.bookings_created)}</b></div><div><span>{metric === "completed" ? "Completion rate" : "Cancellation rate"}</span><b>{currentQuery.data?.[lifecycleRateField] == null ? "—" : `${currentQuery.data[lifecycleRateField]}%`}</b></div><div><span>No-shows</span><b>{formatNumber(currentQuery.data?.appointments_no_show)}</b></div><div><span>Rescheduled</span><b>{formatNumber(currentQuery.data?.appointments_rescheduled)}</b></div></div></section>
-        <section className="drawer-breakdown"><h3>Waitlist activity</h3><div className="drawer-supporting-metrics drawer-supporting-metrics--three"><div><span>Joined waitlist</span><b>{formatNumber(currentQuery.data?.waitlist_created)}</b></div><div><span>Moved into schedule</span><b>{formatNumber(currentQuery.data?.waitlist_promoted)}</b></div><div><span>Offers expired</span><b>{formatNumber(currentQuery.data?.waitlist_hold_expired)}</b></div></div></section>
+      {portalMetric && <>
+        <section className="drawer-breakdown"><h3>Selected period summary</h3><div className="drawer-supporting-metrics drawer-supporting-metrics--four">{(portalMetric.revenue ? REVENUE_METRICS : APPOINTMENT_METRICS).map((item) => <div key={item.key}><span>{item.title}</span><b>{formatReportValue(selectedReport?.[item.field])}</b></div>)}</div></section>
+        {!portalMetric.revenue && <p className="drawer-endpoint-note">Arrival counts include transitions recorded since tracking began. Historical arrivals are not backfilled. These activities can overlap and are not a completion rate.</p>}
       </>}
     </>}
   </Drawer>;

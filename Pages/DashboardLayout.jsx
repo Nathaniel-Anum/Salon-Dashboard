@@ -10,11 +10,11 @@ function LayoutInner() {
   useInventorySocket();
 
   return (
-    <div className="flex min-h-screen" style={{ background: "#F5EFE6", overflow: "hidden" }}>
+    <div className="flex h-dvh min-h-0" style={{ background: "#F5EFE6", overflow: "hidden" }}>
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         <Header />
-        <div className="flex-1 p-5 lg:p-8 overflow-auto flex flex-col min-h-0">
+        <div className="flex-1 p-3 sm:p-5 lg:p-8 overflow-auto flex flex-col min-h-0">
           <Outlet />
         </div>
       </div>
