@@ -44,7 +44,7 @@ function relativeTime(date) {
 
 function NotificationsPopover({ alerts, removeAlert, clearAll }) {
   return (
-    <div style={{ width: 320, fontFamily: "'Poppins', sans-serif" }}>
+    <div style={{ width: "min(320px, calc(100vw - 32px))", fontFamily: "'Poppins', sans-serif" }}>
       {/* header row */}
       <div
         style={{
@@ -91,7 +91,7 @@ function NotificationsPopover({ alerts, removeAlert, clearAll }) {
       </div>
 
       {/* list */}
-      <div style={{ maxHeight: 340, overflowY: "auto" }}>
+      <div style={{ maxHeight: "min(340px, calc(100dvh - 120px))", overflowY: "auto" }}>
         {alerts.length === 0 ? (
           <div
             style={{
@@ -220,9 +220,8 @@ export function Header() {
 
   return (
     <div
-      className="sticky top-0 z-30 flex items-center justify-between px-6 lg:px-8 py-0"
+      className="portal-header sticky top-0 z-30 flex shrink-0 min-w-0 items-center justify-between gap-3 px-3 md:px-6 xl:px-8"
       style={{
-        height: 70,
         background: "rgba(252,249,245,0.88)",
         backdropFilter: "blur(12px)",
         borderBottom: "1px solid rgba(187,161,79,0.18)",
@@ -230,15 +229,15 @@ export function Header() {
       }}
     >
       {/* left — page title (with left offset on mobile for hamburger) */}
-      <div className="pl-10 lg:pl-0">
+      <div className="min-w-0 flex-1">
         <h1
-          className="text-xl font-semibold text-[#272727] leading-none"
+          className="truncate text-lg sm:text-xl font-semibold text-[#272727] leading-tight"
           style={{ fontFamily: "'Playfair Display', serif" }}
         >
           {pageTitle}
         </h1>
         <p
-          className="text-[11px] mt-0.5 tracking-[0.2em] uppercase"
+          className="truncate text-[11px] mt-0.5 tracking-[0.2em] uppercase"
           style={{ color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}
         >
           CBK Beauty
@@ -246,9 +245,9 @@ export function Header() {
       </div>
 
       {/* right */}
-      <div className="flex items-center gap-3 sm:gap-4">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         {/* search — hidden on very small screens */}
-        <div className="hidden sm:block relative" ref={searchRef}>
+        <div className="hidden md:block relative" ref={searchRef}>
           <div
             className="flex items-center gap-2 px-4 py-2 rounded-full"
             style={{
@@ -353,7 +352,8 @@ export function Header() {
           overlayStyle={{ zIndex: 1100 }}
         >
           <button
-            className="relative flex items-center justify-center w-9 h-9 rounded-full transition-all duration-200 hover:scale-105"
+            aria-label="Notifications"
+            className="relative flex items-center justify-center w-11 h-11 rounded-full transition-all duration-200 hover:scale-105"
             style={{
               background: bellOpen ? "#EDE3D5" : "#F5EFE6",
               border: "1px solid rgba(187,161,79,0.25)",
@@ -391,7 +391,7 @@ export function Header() {
           >
             A
           </div>
-          <div className="hidden md:block">
+          <div className="hidden lg:block">
             <p
               className="text-sm font-medium text-[#272727] leading-none"
               style={{ fontFamily: "'Poppins', sans-serif" }}

@@ -4,11 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { FiArrowRight, FiCalendar, FiClock, FiCreditCard, FiRefreshCw } from "react-icons/fi";
 import EChart from "../Components/EChart";
 import { getAnalyticsBookings, getAnalyticsRevenue, getAppointmentsCreatedInsight, getMoneyReceivedInsight } from "../src/api/analytics";
-import { reportingRange } from "../src/analytics/dateRanges";
+import { APPOINTMENT_METRICS, REVENUE_METRICS, reportPeriodLabel } from "../src/analytics/portalReports";
 import { permissionState } from "../src/auth/permissions";
 import {
   PALETTE, aggregatePaymentMethods, buildAppointmentsTrendOption, buildDonutOption,
-  buildMoneyTrendOption, buildRevenueTrendOption, comparisonDirection, comparisonLabel, formatCurrency,
+  buildMoneyTrendOption, buildRevenueComparisonOption, comparisonDirection, comparisonLabel, comparisonSentiment, formatCurrency,
   formatNumber, periodLabel,
 } from "../src/analytics/insightUtils";
 import "./Insights.css";
@@ -25,20 +25,20 @@ function ErrorState({ error, retry }) {
   return <div className="insight-error" role="alert"><span>{message}</span>{status !== 403 && <button type="button" onClick={retry}><FiRefreshCw /> Retry</button>}</div>;
 }
 
-function ChangePill({ comparison }) {
+function ChangePill({ comparison, lowerIsBetter = false }) {
   const direction = comparisonDirection(comparison);
+  const sentiment = comparisonSentiment(comparison, lowerIsBetter);
   const symbol = direction === "up" ? "↗" : direction === "down" ? "↘" : "→";
-  return <span className={`change-pill change-pill--${direction}`}><span aria-hidden="true">{symbol}</span> {comparisonLabel(comparison)}</span>;
+  return <span className={`change-pill change-pill--${sentiment}`}><span aria-hidden="true">{symbol}</span> {comparisonLabel(comparison)}</span>;
 }
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const canViewReports = permissionState("reports.view") !== false;
-  const weekRange = useMemo(() => reportingRange("week"), []);
   const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date());
 
-  const revenueQuery = useQuery({ queryKey: ["analytics-revenue", "dashboard", weekRange.current], queryFn: () => getAnalyticsRevenue(weekRange.current), enabled: canViewReports, ...querySettings });
-  const bookingsQuery = useQuery({ queryKey: ["analytics-bookings", "dashboard", weekRange.current], queryFn: () => getAnalyticsBookings(weekRange.current), enabled: canViewReports, ...querySettings });
+  const revenueQuery = useQuery({ queryKey: ["analytics-revenue", {}], queryFn: () => getAnalyticsRevenue(), enabled: canViewReports, ...querySettings });
+  const bookingsQuery = useQuery({ queryKey: ["analytics-bookings", {}], queryFn: () => getAnalyticsBookings(), enabled: canViewReports, ...querySettings });
   const moneyQuery = useQuery({ queryKey: ["portal-insights", "money-received"], queryFn: getMoneyReceivedInsight, enabled: canViewReports, ...querySettings });
   const appointmentsQuery = useQuery({ queryKey: ["portal-insights", "appointments-created"], queryFn: getAppointmentsCreatedInsight, enabled: canViewReports, ...querySettings });
 
@@ -53,7 +53,7 @@ export default function DashboardPage() {
   const appointmentsOption = useMemo(() => buildAppointmentsTrendOption(appointments, "week"), [appointments]);
   const methods = useMemo(() => aggregatePaymentMethods(money, currency).slice(0, 6), [money, currency]);
   const methodsOption = useMemo(() => buildDonutOption(methods, { valueFormatter: (value) => formatCurrency(value, currency, true), centerLabel: "Received" }), [methods, currency]);
-  const revenueOption = useMemo(() => buildRevenueTrendOption(revenue, currency || "GHS"), [revenue, currency]);
+  const revenueOption = useMemo(() => buildRevenueComparisonOption(revenue), [revenue]);
   const salesMix = useMemo(() => (money?.breakdowns?.by_domain ?? [])
     .filter((row) => row.currency === currency && ["booking", "commerce"].includes(row.domain))
     .map((row, index) => ({
@@ -93,23 +93,24 @@ export default function DashboardPage() {
           </article>
         </section>
 
-        <section className="dashboard-report-heading"><div><h2>Business performance</h2><p>Operational totals from the portal’s weekly reports.</p></div><span>{weekRange.current.date_from} to {weekRange.current.date_to}</span></section>
+        <section className="dashboard-report-heading"><div><h2>Business performance</h2><p>Week to date, compared with the same weekdays last week.</p></div><span>{reportPeriodLabel(revenue?.week_comparison?.current_week || bookings?.week_comparison?.current_week)}</span></section>
         <section className="dashboard-business-grid">
           <article className="insight-panel dashboard-revenue-trend">
-            <div className="panel-heading"><div><h2>Revenue trend</h2><p>Successful payments recorded each day this week</p></div>{currency && <span className="panel-chip">{currency}</span>}</div>
-            {revenueQuery.isLoading ? <LoadingBlock tall /> : revenueQuery.isError ? <ErrorState error={revenueQuery.error} retry={revenueQuery.refetch} /> : (revenue?.revenue_by_day ?? []).length ? <><EChart option={revenueOption} height={270} ariaLabel="Daily revenue trend for this week" /><p className="dashboard-chart-total"><span>Week total</span><b>{formatCurrency(revenue.total_revenue, currency || "GHS")}</b></p></> : <div className="chart-empty">Revenue will appear after successful payments are recorded.</div>}
+            <div className="panel-heading"><div><h2>Revenue this week</h2><p>Successful booking and commerce payments</p></div><span className="panel-chip">GHS</span></div>
+            {revenueQuery.isLoading ? <LoadingBlock tall /> : revenueQuery.isError ? <ErrorState error={revenueQuery.error} retry={revenueQuery.refetch} /> : <>
+              <EChart option={revenueOption} height={230} ariaLabel="Booking and commerce revenue, this week and the same days last week" />
+              <div className="portal-revenue-summary">{REVENUE_METRICS.map((metric) => <div key={metric.key}><span>{metric.title}</span><b>{formatCurrency(revenue?.week_comparison?.current_week?.[metric.field])}</b><ChangePill comparison={revenue?.week_comparison?.changes?.[metric.field]} /></div>)}</div>
+            </>}
+            <button type="button" className="portal-report-link" onClick={() => navigate("/analytics#booking_revenue")}>Explore revenue <FiArrowRight aria-hidden="true" /></button>
           </article>
 
           <article className="insight-panel dashboard-booking-performance">
-            <div className="panel-heading"><div><h2>Booking performance</h2><p>How this week’s appointments are progressing</p></div></div>
+            <div className="panel-heading"><div><h2>Appointment activity</h2><p>Status changes recorded this week</p></div></div>
             {bookingsQuery.isLoading ? <LoadingBlock tall /> : bookingsQuery.isError ? <ErrorState error={bookingsQuery.error} retry={bookingsQuery.refetch} /> : <div className="booking-performance-grid">
-              <div><span>Bookings created</span><b>{formatNumber(bookings?.bookings_created)}</b></div>
-              <div><span>Completed</span><b>{formatNumber(bookings?.appointments_completed)}</b></div>
-              <div><span>Cancelled</span><b>{formatNumber(bookings?.appointments_cancelled)}</b></div>
-              <div><span>No-shows</span><b>{formatNumber(bookings?.appointments_no_show)}</b></div>
-              <div><span>Rescheduled</span><b>{formatNumber(bookings?.appointments_rescheduled)}</b></div>
-              <div className="booking-performance-grid__rate"><span>Completion rate</span><b>{bookings?.completion_rate == null ? "—" : `${bookings.completion_rate}%`}</b></div>
+              {APPOINTMENT_METRICS.map((metric) => <div key={metric.key}><span>{metric.title}</span><b>{formatNumber(bookings?.week_comparison?.current_week?.[metric.field])}</b><ChangePill comparison={bookings?.week_comparison?.changes?.[metric.field]} lowerIsBetter={metric.lowerIsBetter} /></div>)}
             </div>}
+            <p className="summary-footnote">Arrival counts include transitions recorded since tracking began; historical arrivals are not backfilled.</p>
+            <button type="button" className="portal-report-link" onClick={() => navigate("/analytics#arrived")}>Explore appointment activity <FiArrowRight aria-hidden="true" /></button>
           </article>
         </section>
 

@@ -195,16 +195,20 @@ export function buildAppointmentsTrendOption(data, periodKey = "week") {
   };
 }
 
-export function buildRevenueTrendOption(data, currency = "GHS") {
-  const points = [...(data?.revenue_by_day ?? [])].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+export function buildRevenueComparisonOption(data, currency = "GHS") {
+  const fields = ["booking_revenue", "commerce_revenue"];
   return {
     animationDuration: 550,
-    color: ["#b99a45"],
+    color: ["#b99a45", "#b7ada0"],
     tooltip: baseTooltip((value) => formatCurrency(value, currency)),
-    grid: { left: 8, right: 12, top: 20, bottom: 8, containLabel: true },
-    xAxis: { type: "category", boundaryGap: false, data: points.map((point) => formatDate(point.date)), axisLabel: { ...axisLabel, hideOverlap: true }, axisTick: { show: false }, axisLine: { lineStyle: { color: "#ddd3c6" } } },
+    legend: { top: 0, left: 0, textStyle: axisLabel },
+    grid: { left: 8, right: 12, top: 44, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: ["Booking revenue", "Commerce revenue"], axisLabel, axisTick: { show: false }, axisLine: { lineStyle: { color: "#ddd3c6" } } },
     yAxis: { type: "value", axisLabel: { ...axisLabel, formatter: (value) => formatCurrency(value, currency, true) }, axisLine: { show: false }, axisTick: { show: false }, splitLine },
-    series: [{ name: "Money received", type: "line", smooth: 0.32, symbol: "circle", symbolSize: 7, lineStyle: { width: 3 }, data: points.map((point) => Number(point.revenue ?? 0)), areaStyle: { color: "rgba(185,154,69,.12)" } }],
+    series: [["current_week", "This week"], ["previous_week", "Same days last week"]].map(([key, name]) => ({
+      name, type: "bar", barMaxWidth: 48,
+      data: fields.map((field) => data?.week_comparison?.[key]?.[field] == null ? null : Number(data.week_comparison[key][field])),
+    })),
   };
 }
 
@@ -259,45 +263,16 @@ export function buildMetricComparisonOption(
   current,
   previous,
   labels = ["Selected period", "Previous period"],
-  { currentTotal = current, previousTotal = previous, seriesName = "Selected outcome", remainderName = "Confirmed appointments", accent = "#6f7d66" } = {},
+  { seriesName = "Appointments", valueFormatter = formatNumber, revenue = false } = {},
 ) {
-  const currentValue = Number(current) || 0;
-  const previousValue = Number(previous) || 0;
-  const otherCurrent = Math.max((Number(currentTotal) || 0) - currentValue, 0);
-  const otherPrevious = Math.max((Number(previousTotal) || 0) - previousValue, 0);
-
   return {
     animationDuration: 500,
-    color: [accent, "#d4ccc1"],
-    tooltip: baseTooltip((value) => `${formatNumber(value)} appointments`),
-    legend: { top: 0, left: 0, itemWidth: 18, itemHeight: 8, textStyle: axisLabel },
-    grid: { left: 8, right: 12, top: 44, bottom: 8, containLabel: true },
-    xAxis: { type: "category", boundaryGap: false, data: [labels[1], labels[0]], axisLabel: { ...axisLabel, color: "#554c42", hideOverlap: true }, axisTick: { show: false }, axisLine: { lineStyle: { color: "#ddd3c6" } } },
-    yAxis: { type: "value", minInterval: 1, axisLabel, axisLine: { show: false }, axisTick: { show: false }, splitLine },
-    series: [
-      {
-        name: seriesName,
-        type: "line",
-        stack: "appointments",
-        smooth: 0.25,
-        symbol: "circle",
-        symbolSize: 8,
-        lineStyle: { width: 3 },
-        areaStyle: { opacity: 0.28 },
-        data: [previousValue, currentValue],
-      },
-      {
-        name: remainderName,
-        type: "line",
-        stack: "appointments",
-        smooth: 0.25,
-        symbol: "circle",
-        symbolSize: 7,
-        lineStyle: { width: 2 },
-        areaStyle: { opacity: 0.2 },
-        data: [otherPrevious, otherCurrent],
-      },
-    ],
+    color: [revenue ? "#b99a45" : "#6f7d66"],
+    tooltip: baseTooltip(valueFormatter),
+    grid: { left: 8, right: 12, top: 20, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: [labels[1], labels[0]], axisLabel, axisTick: { show: false }, axisLine: { lineStyle: { color: "#ddd3c6" } } },
+    yAxis: { type: "value", minInterval: revenue ? undefined : 1, axisLabel, splitLine },
+    series: [{ name: seriesName, type: "bar", barMaxWidth: 64, data: [previous, current].map((value) => value == null ? null : Number(value)) }],
   };
 }
 
