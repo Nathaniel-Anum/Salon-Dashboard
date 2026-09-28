@@ -55,11 +55,14 @@
 .shift-repeat-day__name b { display: none; }
 .shift-repeat-day__name strong { color: #9b8a76; font-size: 10px; font-weight: 600; }
 .is-enabled .shift-repeat-day__name strong { color: #3f5f56; font-weight: 700; }
-.shift-repeat-day__times { display: grid; grid-template-columns: 1fr 18px 1fr auto; align-items: center; gap: 5px; }
+.shift-repeat-day__controls { min-width: 0; }
+.shift-repeat-day__times { display: grid; grid-template-columns: 1fr 18px 1fr; align-items: center; gap: 5px; }
 .shift-repeat-day__times > span { color: #9a8975; text-align: center; font-size: 9px; }
 .repeat-modal .shift-repeat-day__times .ant-picker { height: 34px; }
-.shift-repeat-day__copy { display: flex; height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 0 7px; border: 1px solid rgba(187,161,79,.3); border-radius: 8px; color: #80691f; background: #fff9e8; cursor: pointer; font: 700 9px "Poppins",sans-serif; }
-.shift-repeat-day__copy:hover { border-color: var(--repeat-gold); background: #f5e9bd; }
+.shift-repeat-day__copy { display: flex; min-height: 34px; align-items: center; gap: 8px; margin-top: 6px; padding: 4px 5px 4px 9px; border: 1px solid rgba(187,161,79,.3); border-radius: 8px; color: #80691f; background: #fff9e8; font-size: 9px; font-weight: 600; }
+.shift-repeat-day__copy > span { flex: 1; }
+.shift-repeat-day__copy > button { height: 25px; padding: 0 9px; border: 1px solid rgba(187,161,79,.38); border-radius: 7px; color: #675414; background: #fff; cursor: pointer; font: 700 9px "Poppins",sans-serif; }
+.shift-repeat-day__copy > button:hover { border-color: var(--repeat-gold); background: #f5e9bd; }
 
 .shift-nav__date.ant-picker { width: 210px; padding: 4px 7px; border-radius: 8px; background: transparent; }
 .shift-nav__date.ant-picker:hover,.shift-nav__date.ant-picker:focus-within { background: rgba(187,161,79,.1); }
@@ -96,5 +99,5 @@ button.shift-block.repeating:hover,button.shift-block.repeating:focus-visible { 
   .repeat-modal__dates { grid-template-columns: 1fr; }
   .repeat-modal .shift-repeat-day { grid-template-columns: 32px 34px 1fr; padding-right: 7px; padding-left: 7px; }
   .shift-repeat-day__name { gap: 0; }
-  .shift-repeat-day__times { grid-template-columns: 1fr 12px 1fr auto; gap: 2px; }
+  .shift-repeat-day__times { grid-template-columns: 1fr 12px 1fr; gap: 2px; }
 }
