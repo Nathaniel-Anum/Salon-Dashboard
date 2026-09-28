@@ -2782,7 +2782,15 @@ export default function CalendarPage() {
     return raw.flatMap((apt) => {
       const services = apt.services ?? apt.booking_services ?? [];
       const firstService = services[0];
-      const client = calendarCustomerName(apt);
+      const client =
+        apt.customer_name ||
+        apt.customer_full_name ||
+        apt.guest_name ||
+        apt.guest?.full_name ||
+        (apt.customer_details
+          ? `${apt.customer_details.first_name ?? ""} ${apt.customer_details.last_name ?? ""}`.trim()
+          : null) ||
+        (apt.customer ? `Client #${apt.customer}` : "Walk-in");
       const phone =
         apt.guest_customer?.phone_number ||
         apt.phone_number ||
@@ -2826,12 +2834,14 @@ export default function CalendarPage() {
 
       const aptDate = apt.scheduled_start
         ? apt.scheduled_start.slice(0, 10)
-        : apt.appointment_date ?? dateStr;
+        : apt.appointment_date ?? apt.date ?? dateStr;
       const startTime = apt.scheduled_start?.length >= 16
         ? apt.scheduled_start.slice(11, 16)
         : apt.start_time?.slice(0, 5) || "09:00";
       let staffId =
-        appointmentStaffId(apt) ??
+        (typeof apt.staff === "object" && apt.staff !== null
+          ? apt.staff.id
+          : apt.staff_details?.id ?? (apt.staff != null ? apt.staff : undefined)) ??
         firstService?.staff_id ??
         (typeof firstService?.staff === "object" ? firstService.staff?.id : firstService?.staff) ??
         null;
@@ -2858,6 +2868,7 @@ export default function CalendarPage() {
         firstService?.service_name ||
         firstService?.name ||
         serviceLookup[apt.service]?.name ||
+        (typeof apt.service === "string" ? apt.service : apt.service?.name) ||
         "Service";
       const durationMins =
         apt.total_duration_minutes ??
