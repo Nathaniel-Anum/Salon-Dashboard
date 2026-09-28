@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, DatePicker, Dropdown, Empty, Form, Input, Modal, Select, Skeleton, Switch, TimePicker, Tooltip, message } from "antd";
+import { Alert, Button, DatePicker, Dropdown, Empty, Form, Input, Modal, Select, Skeleton, Switch, TimePicker, message } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { FiCalendar, FiChevronDown, FiChevronLeft, FiChevronRight, FiClock, FiCopy, FiEdit3, FiPlus, FiRepeat, FiTrash2, FiUmbrella } from "react-icons/fi";
@@ -106,19 +106,21 @@ function ShiftDialog({ open, onClose, onSaved, onPartial, staff, staffId, date, 
 
 function RepeatingDialog({ open, onClose, onSaved, staff, staffId, date, timezone, editing, sourceShift }) {
   const [form] = Form.useForm();
+  const [changedDay, setChangedDay] = useState(null);
   const selectedStaffId = editing ? staffIdOf(editing) : staffId ?? staff[0]?.id;
   const sourceDay = sourceShift && date ? (date.day() + 6) % 7 : null;
   const initial = useMemo(() => ({ staff_id: selectedStaffId, frequency_weeks: 1, start_date: date || dayjs(), no_end: true, timezone, is_active: true, notes: sourceShift?.notes || "", days: DAYS.map((_, day) => { const isSourceDay = day === sourceDay; const isAvailable = sourceShift ? isSourceDay : day < 5; return { day_of_week: day, is_available: isAvailable, start_time: isAvailable ? dayjs(`2000-01-01T${isSourceDay ? timePart(sourceShift.start_time || sourceShift.starts_at) : "09:00"}`) : null, end_time: isAvailable ? dayjs(`2000-01-01T${isSourceDay ? timePart(sourceShift.end_time || sourceShift.ends_at) : "17:00"}`) : null }; }) }), [date, selectedStaffId, sourceDay, sourceShift, timezone]);
   const values = useMemo(() => editing ? { ...editing, staff_id: staffIdOf(editing), start_date: dayjs(editing.start_date), end_date: editing.end_date ? dayjs(editing.end_date) : null, no_end: !editing.end_date, days: DAYS.map((_, day) => { const row = editing.days?.find((item) => Number(item.day_of_week) === day); return { day_of_week: day, is_available: Boolean(row?.is_available), start_time: row?.start_time ? dayjs(`2000-01-01T${row.start_time}`) : null, end_time: row?.end_time ? dayjs(`2000-01-01T${row.end_time}`) : null }; }) } : initial, [editing, initial]);
   useEffect(() => { if (open) { form.resetFields(); form.setFieldsValue(values); } }, [form, open, values]);
-  const mutation = useMutation({ mutationFn: (payload) => editing ? updateRepeatingShift(editing.id, payload) : createRepeatingShift(payload), onSuccess: () => { message.success(editing ? "Repeating shift updated." : "Repeating shift added."); onSaved(); }, onError: (error) => message.error(apiMessage(error, "The repeating shift could not be saved.")) });
+  const mutation = useMutation({ mutationFn: (payload) => editing ? updateRepeatingShift(editing.id, payload) : createRepeatingShift(payload), onSuccess: () => { setChangedDay(null); message.success(editing ? "Repeating shift updated." : "Repeating shift added."); onSaved(); }, onError: (error) => message.error(apiMessage(error, "The repeating shift could not be saved.")) });
+  const close = () => { setChangedDay(null); onClose(); };
   const submit = (value) => {
     if (!value.days.some((day) => day.is_available)) return message.error("Enable at least one weekday.");
     if (value.days.some((day) => day.is_available && (!day.start_time || !day.end_time || !day.end_time.isAfter(day.start_time)))) return message.error("Each enabled day needs an end time after its start time.");
     mutation.mutate({ staff_id: value.staff_id, frequency_weeks: value.frequency_weeks, start_date: value.start_date.format("YYYY-MM-DD"), end_date: value.no_end ? null : value.end_date?.format("YYYY-MM-DD"), timezone: value.timezone, is_active: value.is_active, notes: value.notes || "", days: value.days.map((row, day) => ({ day_of_week: day, is_available: Boolean(row.is_available), start_time: row.is_available ? row.start_time?.format("HH:mm") : null, end_time: row.is_available ? row.end_time?.format("HH:mm") : null })) });
   };
   const title = <div className="repeat-modal__header"><span className="repeat-modal__icon"><FiRepeat /></span><div><h2>{editing ? "Edit repeating shift" : "Create a repeating shift"}</h2><p>Set the working pattern once and it will appear on the schedule automatically.</p></div></div>;
-  return <Modal className="repeat-modal" title={title} open={open} onCancel={onClose} footer={null} width={820} destroyOnHidden><Form form={form} layout="vertical" initialValues={values} onFinish={submit} clearOnDestroy>
+  return <Modal className="repeat-modal" title={title} open={open} onCancel={close} footer={null} width={820} destroyOnHidden><Form form={form} layout="vertical" initialValues={values} onFinish={submit} clearOnDestroy>
     <div className="repeat-modal__layout">
       <section className="repeat-modal__details" aria-labelledby="repeat-details-title">
         <div className="repeat-modal__section-heading"><FiCalendar /><div><h3 id="repeat-details-title">Schedule details</h3><p>Who this pattern belongs to and how long it runs.</p></div></div>
@@ -133,11 +135,11 @@ function RepeatingDialog({ open, onClose, onSaved, staff, staffId, date, timezon
         <div className="shift-repeat-days"><Form.List name="days">{(fields) => fields.map((field, day) => <Form.Item noStyle shouldUpdate={(before, after) => before.days !== after.days} key={field.key}>{({ getFieldValue }) => {
           const enabled = getFieldValue(["days", day, "is_available"]);
           const hasLaterAvailableDay = getFieldValue("days")?.slice(day + 1).some((row) => row?.is_available);
-          return <div className={`shift-repeat-day${enabled ? " is-enabled" : ""}`}><Form.Item name={[field.name, "is_available"]} valuePropName="checked"><Switch size="small" aria-label={`Enable ${DAYS[day]}`} /></Form.Item><span className="shift-repeat-day__name"><b>{DAYS[day].slice(0, 3)}</b><strong>{DAYS[day]}</strong></span>{enabled ? <div className="shift-repeat-day__times"><Form.Item name={[field.name, "start_time"]} rules={[{ required: true }]}><TimePicker aria-label={`${DAYS[day]} start time`} format="HH:mm" minuteStep={15} /></Form.Item><span>to</span><Form.Item name={[field.name, "end_time"]} rules={[{ required: true }]}><TimePicker aria-label={`${DAYS[day]} end time`} format="HH:mm" minuteStep={15} /></Form.Item>{hasLaterAvailableDay && <Tooltip title={`Apply ${DAYS[day]}'s hours to later available days`}><button type="button" className="shift-repeat-day__copy" aria-label={`Apply ${DAYS[day]}'s hours to later available days`} onClick={() => form.setFieldValue("days", applyShiftHoursForward(form.getFieldValue("days"), day))}><FiCopy /><span>Apply</span></button></Tooltip>}</div> : <span className="shift-repeat-day__off">Not working</span>}</div>;
+          return <div className={`shift-repeat-day${enabled ? " is-enabled" : ""}`}><Form.Item name={[field.name, "is_available"]} valuePropName="checked"><Switch size="small" aria-label={`Enable ${DAYS[day]}`} /></Form.Item><span className="shift-repeat-day__name"><b>{DAYS[day].slice(0, 3)}</b><strong>{DAYS[day]}</strong></span>{enabled ? <div className="shift-repeat-day__controls"><div className="shift-repeat-day__times"><Form.Item name={[field.name, "start_time"]} rules={[{ required: true }]}><TimePicker aria-label={`${DAYS[day]} start time`} format="HH:mm" minuteStep={15} onChange={() => setChangedDay(day)} /></Form.Item><span>to</span><Form.Item name={[field.name, "end_time"]} rules={[{ required: true }]}><TimePicker aria-label={`${DAYS[day]} end time`} format="HH:mm" minuteStep={15} onChange={() => setChangedDay(day)} /></Form.Item></div>{changedDay === day && hasLaterAvailableDay && <div className="shift-repeat-day__copy"><FiCopy /><span>Copy to all available days?</span><button type="button" onClick={() => { form.setFieldValue("days", applyShiftHoursForward(form.getFieldValue("days"), day)); setChangedDay(null); }}>Copy</button></div>}</div> : <span className="shift-repeat-day__off">Not working</span>}</div>;
         } }</Form.Item>)}</Form.List></div>
       </section>
     </div>
-    <Form.Item name="timezone" hidden><Input /></Form.Item><div className="shift-modal-actions repeat-modal__actions"><Button onClick={onClose}>Cancel</Button><Button type="primary" htmlType="submit" loading={mutation.isPending}>{editing ? "Save changes" : "Create repeating shift"}</Button></div>
+    <Form.Item name="timezone" hidden><Input /></Form.Item><div className="shift-modal-actions repeat-modal__actions"><Button onClick={close}>Cancel</Button><Button type="primary" htmlType="submit" loading={mutation.isPending}>{editing ? "Save changes" : "Create repeating shift"}</Button></div>
   </Form></Modal>;
 }
 
