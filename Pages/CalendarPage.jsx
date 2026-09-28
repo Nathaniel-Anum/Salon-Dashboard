@@ -2753,6 +2753,7 @@ export default function CalendarPage() {
       const services = apt.services ?? apt.booking_services ?? [];
       const firstService = services[0];
       const client =
+        (typeof apt.client === "string" ? apt.client : apt.client?.full_name || apt.client?.name) ||
         apt.customer_name ||
         apt.customer_full_name ||
         apt.guest_name ||
@@ -2851,11 +2852,12 @@ export default function CalendarPage() {
 
       const aptDate = apt.scheduled_start
         ? apt.scheduled_start.slice(0, 10)
-        : apt.appointment_date ?? dateStr;
+        : apt.appointment_date ?? apt.date ?? dateStr;
       const startTime = apt.scheduled_start?.length >= 16
         ? apt.scheduled_start.slice(11, 16)
         : apt.start_time?.slice(0, 5) || "09:00";
       let staffId =
+        (typeof apt.staff_id === "object" ? apt.staff_id?.id : apt.staff_id) ??
         (typeof apt.staff === "object" && apt.staff !== null
           ? apt.staff.id
           : apt.staff_details?.id ?? (apt.staff != null ? apt.staff : undefined)) ??
@@ -2885,6 +2887,7 @@ export default function CalendarPage() {
         firstService?.service_name ||
         firstService?.name ||
         serviceLookup[apt.service]?.name ||
+        (typeof apt.service === "string" ? apt.service : apt.service?.name) ||
         "Service";
       const durationMins =
         apt.total_duration_minutes ??
