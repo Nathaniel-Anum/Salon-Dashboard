@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Empty, Input, Modal, Select, Tabs, Tag, message } from "antd";
+import { Button, Input, Modal, Select, message } from "antd";
 import {
   FiAlertTriangle,
+  FiArrowUp,
+  FiCheck,
   FiCheckCircle,
   FiClock,
   FiFileText,
-  FiLifeBuoy,
+  FiMail,
   FiMoreVertical,
   FiPaperclip,
+  FiPhone,
   FiRefreshCw,
-  FiSend,
+  FiSearch,
   FiXCircle,
 } from "react-icons/fi";
 import {
@@ -29,6 +32,7 @@ import {
   resolveSupportTicket,
   updateSupportTicketPriority,
 } from "../src/api/support";
+import "./SupportPage.css";
 
 const normalizeList = (raw) => {
   if (Array.isArray(raw)) return raw;
@@ -50,6 +54,13 @@ const formatDateTime = (value) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString();
+};
+
+const formatShortDate = (value) => {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 
 const PRIORITY_OPTIONS = ["low", "normal", "high", "urgent"];
@@ -120,19 +131,16 @@ const extractTicketFromMutation = (raw) => {
   return candidates.find(isTicketLike) || null;
 };
 
-const getStatusColor = (status) => {
-  const key = String(status || "").toLowerCase();
-  if (key === "waiting_for_staff") return "gold";
-  if (key === "waiting_for_customer") return "blue";
-  if (key === "resolved") return "green";
-  if (key === "closed") return "default";
-  return "default";
-};
+const getStatusLabel = (status) =>
+  String(status || "open").replaceAll("_", " ");
 
 const field = (obj, ...keys) => {
   for (const key of keys) {
     const value = obj?.[key];
     if (value !== undefined && value !== null && String(value).trim() !== "") {
+      if (typeof value === "object") {
+        return value.name || value.full_name || value.email || value.username || "—";
+      }
       return value;
     }
   }
@@ -185,6 +193,7 @@ export default function SupportPage() {
   const qc = useQueryClient();
 
   const [queueSearch, setQueueSearch] = useState("");
+  const [queueStatus, setQueueStatus] = useState("");
   const [activeTicketId, setActiveTicketId] = useState("");
   const [activeTab, setActiveTab] = useState("messages");
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
@@ -215,8 +224,9 @@ export default function SupportPage() {
   const ticketFilters = useMemo(() => {
     const base = {};
     if (queueSearch.trim()) base.search = queueSearch.trim();
+    if (queueStatus) base.status = queueStatus;
     return base;
-  }, [queueSearch]);
+  }, [queueSearch, queueStatus]);
 
   const {
     data: ticketsRaw,
@@ -760,46 +770,28 @@ export default function SupportPage() {
     );
   };
 
+  const customerName = field(ticket, "customer_name", "requester_name", "customer");
+  const customerEmail = field(ticket, "customer_email", "requester_email", "email");
+  const customerPhone = field(ticket, "customer_phone", "requester_phone", "phone");
+  const ticketCategory = field(ticket, "category", "topic", "type");
+  const createdAt = formatDateTime(ticket?.created_at);
+  const updatedAt = formatDateTime(ticket?.updated_at || ticket?.last_message_at);
+  const assigneeValue = ticket?.assignee?.id || ticket?.assignee_id || ticket?.assignee;
+
   return (
-    <div className="px-4 sm:px-6 py-5 sm:py-7" style={{ background: "#FDFAF5", minHeight: "100vh", fontFamily: "'Poppins', sans-serif" }}>
-      <div
-        className="relative overflow-hidden rounded-3xl p-5 sm:p-6 mb-5"
-        style={{
-          background: "linear-gradient(120deg, #272727 0%, #3a2e1e 62%, #5a4728 100%)",
-          boxShadow: "0 12px 34px rgba(39,39,39,0.18)",
-        }}
-      >
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: "radial-gradient(circle, rgba(187,161,79,0.18) 1px, transparent 1px)",
-            backgroundSize: "20px 20px",
-          }}
-        />
-
-        <div className="relative z-10 flex items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-11 h-11 rounded-2xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg,#BBA14F,#987554)" }}
-            >
-              <FiLifeBuoy size={20} color="#fff" />
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-widest mb-0.5" style={{ margin: 0, color: "#BBA14F", fontFamily: "'Poppins', sans-serif" }}>
-                Settings
-              </p>
-              <h1 className="text-xl sm:text-2xl leading-none" style={{ margin: 0, color: "#fff", fontFamily: "'Playfair Display', serif" }}>
-                Support
-              </h1>
-              <p className="text-xs sm:text-sm mt-1" style={{ margin: 0, color: "rgba(255,255,255,0.82)", fontFamily: "'Poppins', sans-serif" }}>
-                Chat-style ticket workspace for replies, notes, assign, priority, close, and reopen.
-              </p>
-            </div>
-          </div>
-
+    <section className="support-workspace" aria-label="Support inbox">
+      <header className="support-topbar">
+        <div>
+          <p className="support-kicker">Concierge desk</p>
+          <h1>Client support</h1>
+        </div>
+        <div className="support-topbar-actions">
+          <span className="support-live"><i /> Live queue</span>
           <button
             type="button"
+            className="support-icon-button"
+            aria-label="Refresh support workspace"
+            title="Refresh"
             onClick={() => {
               refetchTickets();
               if (activeTicketId) {
@@ -809,241 +801,302 @@ export default function SupportPage() {
                 refetchAttachments();
               }
             }}
-            className="flex items-center gap-2 px-3 py-2 rounded-full text-xs sm:text-sm"
-            style={{
-              background: "rgba(255,255,255,0.12)",
-              border: "1px solid rgba(255,255,255,0.22)",
-              color: "#fff",
-              fontFamily: "'Poppins', sans-serif",
-              cursor: "pointer",
-            }}
           >
-            <FiRefreshCw size={13} /> Refresh
+            <FiRefreshCw className={ticketsFetching ? "is-spinning" : ""} />
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-5">
-        <div
-          className="rounded-2xl p-4"
-          style={{
-            background: "#fff",
-            border: "1px solid rgba(187,161,79,0.15)",
-            boxShadow: "0 4px 14px rgba(39,39,39,0.06)",
-            minHeight: 640,
-          }}
-        >
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "#987554" }}>People</p>
+      <div className="support-shell">
+        <aside className="support-queue" aria-label="Support ticket queue">
+          <div className="support-queue-heading">
+            <div>
+              <h2>Conversations</h2>
+              <p>{ticketsRaw?.count ?? tickets.length} in this view</p>
+            </div>
+            <span className="support-count">{tickets.length}</span>
+          </div>
 
-          <Input
-            value={queueSearch}
-            onChange={(e) => setQueueSearch(e.target.value)}
-            placeholder="Search by subject, ref, customer"
-            style={{ marginBottom: 10 }}
-          />
+          <label className="support-search">
+            <FiSearch />
+            <input
+              value={queueSearch}
+              onChange={(event) => setQueueSearch(event.target.value)}
+              placeholder="Search clients or tickets"
+              aria-label="Search support tickets"
+            />
+          </label>
 
-          <div className="space-y-2" style={{ maxHeight: 470, overflow: "auto", paddingRight: 2 }}>
+          <div className="support-filter-row" aria-label="Filter conversations">
+            {[
+              ["", "All"],
+              ["waiting_for_staff", "Needs reply"],
+              ["resolved", "Resolved"],
+              ["closed", "Closed"],
+            ].map(([value, label]) => (
+              <button
+                key={label}
+                type="button"
+                className={queueStatus === value ? "is-active" : ""}
+                onClick={() => setQueueStatus(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="support-ticket-list">
             {ticketsLoading || ticketsFetching ? (
-              <p className="text-sm" style={{ color: "#987554" }}>Loading queue...</p>
+              <div className="support-list-state"><FiClock /> Loading conversations</div>
             ) : tickets.length ? (
               tickets.map((queueTicket) => {
                 const id = getTicketPublicId(queueTicket);
+                const name = field(queueTicket, "customer_name", "requester_name", "customer");
                 const isActive = id === activeTicketId;
+                const ticketStatus = String(queueTicket.status || "open").toLowerCase();
                 return (
                   <button
                     key={id}
                     type="button"
+                    className={`support-ticket ${isActive ? "is-active" : ""}`}
                     onClick={() => {
                       setActiveTicketId(id);
                       setActiveTab("messages");
                     }}
-                    className="w-full text-left p-3 rounded-xl"
-                    style={{
-                      background: isActive ? "linear-gradient(135deg, rgba(187,161,79,0.2), rgba(152,117,84,0.1))" : "#fff",
-                      border: isActive ? "1px solid rgba(187,161,79,0.45)" : "1px solid rgba(187,161,79,0.18)",
-                      cursor: "pointer",
-                    }}
+                    aria-current={isActive ? "true" : undefined}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold m-0" style={{ color: "#2f2f2f" }}>
-                          {field(queueTicket, "customer_name", "customer", "requester_name")}
-                        </p>
-                        <Tag color={getStatusColor(queueTicket.status)} style={{ marginInlineEnd: 0 }}>
-                          {String(queueTicket.status || "unknown").replaceAll("_", " ")}
-                        </Tag>
-                      </div>
-                      <p className="text-xs mt-1 mb-0" style={{ color: "#7a664f" }}>{getTicketReference(queueTicket)}</p>
-                      <p className="text-xs mt-1 mb-1" style={{ color: "#6f5a42" }}>
-                        {getTicketSubject(queueTicket)}
-                      </p>
-                      <div className="flex justify-end">
-                        <Tag
-                          color={String(queueTicket.priority || "normal").toLowerCase() === "urgent" ? "red" : "orange"}
-                          style={{ marginInlineEnd: 0 }}
-                        >
-                          {String(queueTicket.priority || "normal")}
-                        </Tag>
-                      </div>
+                    <span className="support-avatar support-avatar--small">
+                      {getAuthorInitials(name)}
+                    </span>
+                    <span className="support-ticket-copy">
+                      <span className="support-ticket-line">
+                        <strong>{name}</strong>
+                        <time>{formatShortDate(queueTicket.updated_at || queueTicket.last_message_at || queueTicket.created_at)}</time>
+                      </span>
+                      <span className="support-ticket-subject">{getTicketSubject(queueTicket)}</span>
+                      <span className="support-ticket-meta">
+                        <span className={`support-status support-status--${ticketStatus}`}>{getStatusLabel(ticketStatus)}</span>
+                        <span>{getTicketReference(queueTicket)}</span>
+                      </span>
+                    </span>
                   </button>
                 );
               })
             ) : (
-              <Empty description="No support conversations" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <div className="support-empty-queue">
+                <FiSearch />
+                <strong>No conversations found</strong>
+                <span>Try a different search or queue.</span>
+              </div>
             )}
           </div>
-        </div>
+        </aside>
 
-        <div
-          className="rounded-2xl p-5"
-          style={{
-            background: "#fff",
-            border: "1px solid rgba(187,161,79,0.2)",
-            boxShadow: "0 4px 14px rgba(39,39,39,0.06)",
-            minHeight: 640,
-          }}
-        >
+        <main className="support-conversation">
           {!activeTicketId ? (
-            <Empty description="Select a ticket from the queue" />
+            <div className="support-blank-state">
+              <FiMail />
+              <h2>Choose a conversation</h2>
+              <p>Select a client from the queue to view their support history.</p>
+            </div>
           ) : !canViewWorkspace ? (
-            <Empty description="You do not have permission to view ticket details." />
+            <div className="support-blank-state">
+              <FiAlertTriangle />
+              <h2>Conversation unavailable</h2>
+              <p>You do not have permission to view this ticket.</p>
+            </div>
           ) : (
             <>
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
-                <div>
-                  <p className="text-xs m-0" style={{ color: "#987554" }}>
-                    {ticketLoading ? "Loading ticket..." : getTicketReference(ticket)}
-                  </p>
-                  <h2 className="text-lg m-0" style={{ color: "#272727", fontFamily: "'Playfair Display', serif" }}>
-                    {ticketLoading ? "Support Ticket" : getTicketSubject(ticket)}
-                  </h2>
+              <header className="support-conversation-header">
+                <div className="support-person">
+                  <span className="support-avatar">{getAuthorInitials(customerName)}</span>
+                  <div>
+                    <div className="support-person-name">
+                      <h2>{ticketLoading ? "Loading conversation" : customerName}</h2>
+                      <span className={`support-status support-status--${status || "open"}`}>
+                        {getStatusLabel(status)}
+                      </span>
+                    </div>
+                    <p>{getTicketReference(ticket)} · {getTicketSubject(ticket)}</p>
+                  </div>
                 </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    className={BROWN_BTN_CLASS}
-                    style={BROWN_BTN_STYLE}
-                    icon={<FiMoreVertical size={14} />}
+                <div className="support-header-actions">
+                  {canResolveNow ? (
+                    <button type="button" className="support-resolve-button" onClick={() => setResolveOpen(true)}>
+                      <FiCheck /> Resolve
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="support-icon-button support-icon-button--dark"
+                    aria-label="More ticket actions"
                     onClick={() => setMoreOptionsOpen(true)}
                   >
-                    More Options
-                  </Button>
+                    <FiMoreVertical />
+                  </button>
                 </div>
+              </header>
+
+              <nav className="support-view-tabs" aria-label="Conversation views">
+                {[
+                  ["messages", "Conversation", messagesList.length],
+                  ["notes", "Internal notes", notesList.length],
+                  ["attachments", "Files", attachmentsList.length],
+                ].map(([value, label, count]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={activeTab === value ? "is-active" : ""}
+                    onClick={() => setActiveTab(value)}
+                  >
+                    {label}<span>{count}</span>
+                  </button>
+                ))}
+              </nav>
+
+              <div className="support-thread" aria-live="polite">
+                {activeTab === "messages" ? (
+                  messagesLoading ? (
+                    <div className="support-list-state support-list-state--dark"><FiClock /> Loading conversation</div>
+                  ) : messagesList.length ? (
+                    messagesList.map((item, idx) => renderConversationBlock(item, idx, "public"))
+                  ) : (
+                    <div className="support-thread-empty"><FiMail /><p>No public messages yet.</p></div>
+                  )
+                ) : activeTab === "notes" ? (
+                  notesLoading ? (
+                    <div className="support-list-state support-list-state--dark"><FiClock /> Loading notes</div>
+                  ) : notesList.length ? (
+                    <div className="support-notes-list">
+                      {notesList.map((item, idx) => renderConversationBlock(item, idx, "note"))}
+                    </div>
+                  ) : (
+                    <div className="support-thread-empty"><FiFileText /><p>No internal notes yet.</p></div>
+                  )
+                ) : attachmentsLoading ? (
+                  <div className="support-list-state support-list-state--dark"><FiClock /> Loading files</div>
+                ) : attachmentsList.length ? (
+                  <div className="support-files">
+                    {attachmentsList.map((fileItem, idx) => {
+                      const name = getAttachmentName(fileItem, idx);
+                      const attachmentId = fileItem.id || fileItem.public_id;
+                      const isDownloading = String(downloadingAttachmentId) === String(attachmentId);
+                      return (
+                        <button
+                          key={attachmentId || `${name}-${idx}`}
+                          type="button"
+                          onClick={() => handlePreviewAttachment(fileItem, idx)}
+                          disabled={!attachmentId || isDownloading || !can(PERMISSION_KEYS.attachments)}
+                        >
+                          <span><FiPaperclip /><strong>{isDownloading ? `Opening ${name}...` : name}</strong></span>
+                          <small>Preview</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="support-thread-empty"><FiPaperclip /><p>No files attached.</p></div>
+                )}
               </div>
 
-              {(isResolved || isClosed) && (
-                <div className="p-3 rounded-xl mb-4" style={{ border: "1px solid rgba(187,161,79,0.32)", background: "rgba(187,161,79,0.1)" }}>
-                  <p className="text-[11px] uppercase tracking-widest m-0" style={{ color: "#8d6f2c" }}>Resolution Summary</p>
-                  <p className="text-sm mt-1 mb-0" style={{ color: "#6f5a42" }}>Code: {resolutionCode}</p>
-                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Resolved At: {resolvedAt}</p>
-                  <p className="text-xs mt-1 mb-0" style={{ color: "#6f5a42" }}>Reopen Deadline: {reopenDeadline}</p>
+              {activeTab !== "attachments" ? (
+                <div className={`support-composer ${activeTab === "notes" ? "support-composer--note" : ""}`}>
+                  <div className="support-composer-label">
+                    <span>{activeTab === "notes" ? "Private note" : "Reply to client"}</span>
+                    <small>{activeTab === "notes" ? "Only your team can see this" : "Visible to the client"}</small>
+                  </div>
+                  <textarea
+                    rows="3"
+                    value={activeTab === "notes" ? noteBody : replyBody}
+                    disabled={activeTab === "notes" ? !canNoteAction : !canReplyAction}
+                    onChange={(event) => activeTab === "notes" ? setNoteBody(event.target.value) : setReplyBody(event.target.value)}
+                    placeholder={activeTab === "notes" ? "Add context for your team" : isResolved || isClosed ? "Reopen this ticket before replying" : "Write a thoughtful reply…"}
+                  />
+                  <div className="support-composer-footer">
+                    <button type="button" className="support-attach-button" onClick={() => setActiveTab("attachments")}>
+                      <FiPaperclip /> View files
+                    </button>
+                    <button
+                      type="button"
+                      className="support-send-button"
+                      disabled={activeTab === "notes" ? !canNoteAction || noteMutation.isPending : !canReplyAction || replyMutation.isPending}
+                      onClick={activeTab === "notes" ? handleAddNote : handleSendReply}
+                    >
+                      {activeTab === "notes" ? <FiFileText /> : <FiArrowUp />}
+                      {activeTab === "notes" ? "Add note" : "Send reply"}
+                    </button>
+                  </div>
                 </div>
-              )}
-
-              <Tabs
-                activeKey={activeTab}
-                onChange={setActiveTab}
-                items={[
-                  {
-                    key: "messages",
-                    label: "Public Conversation",
-                    children: (
-                      <div className="space-y-3">
-                        {messagesLoading ? (
-                          <p className="text-sm" style={{ color: "#987554" }}>Loading messages...</p>
-                        ) : messagesList.length ? (
-                          <div
-                            className="space-y-3 rounded-2xl p-3"
-                            style={{
-                              background: "rgba(187,161,79,0.06)",
-                              border: "1px solid rgba(187,161,79,0.18)",
-                              maxHeight: 380,
-                              overflowY: "auto",
-                            }}
-                          >
-                            {messagesList.map((item, idx) => renderConversationBlock(item, idx, "public"))}
-                          </div>
-                        ) : (
-                          <Empty description="No public messages" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                        )}
-
-                        <div className="p-3 rounded-xl" style={{ border: "1px solid rgba(187,161,79,0.18)", background: "#fff" }}>
-                          <p className="text-sm font-semibold mb-2" style={{ color: "#6f5a42" }}>Public Reply</p>
-                          <Input.TextArea
-                            rows={4}
-                            value={replyBody}
-                            disabled={!can(PERMISSION_KEYS.reply) || isResolved || isClosed}
-                            onChange={(e) => setReplyBody(e.target.value)}
-                            placeholder={
-                              isResolved || isClosed
-                                ? "Reopen this ticket before replying"
-                                : "Reply to the customer"
-                            }
-                          />
-                          <Button
-                            className={`mt-3 ${BROWN_BTN_CLASS}`}
-                            style={getActionButtonStyle(BROWN_BTN_STYLE, !canReplyAction)}
-                            icon={<FiSend size={14} />}
-                            loading={replyMutation.isPending}
-                            disabled={!canReplyAction}
-                            onClick={handleSendReply}
-                          >
-                            Send Reply
-                          </Button>
-                        </div>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "attachments",
-                    label: "Attachments",
-                    children: attachmentsLoading ? (
-                      <p className="text-sm" style={{ color: "#987554" }}>Loading attachments...</p>
-                    ) : attachmentsList.length ? (
-                      <div className="space-y-2">
-                        {attachmentsList.map((fileItem, idx) => {
-                          const name = getAttachmentName(fileItem, idx);
-                          const attachmentId = fileItem.id || fileItem.public_id;
-                          const isDownloading = String(downloadingAttachmentId) === String(attachmentId);
-                          return (
-                            <button
-                              key={fileItem.id || `${name}-${idx}`}
-                              type="button"
-                              onClick={() => handlePreviewAttachment(fileItem, idx)}
-                              disabled={!attachmentId || isDownloading}
-                              className="block p-3 rounded-xl"
-                              style={{
-                                width: "100%",
-                                textAlign: "left",
-                                cursor: !attachmentId || isDownloading ? "not-allowed" : "pointer",
-                                border: "1px solid rgba(187,161,79,0.24)",
-                                background: "rgba(187,161,79,0.08)",
-                                color: "#6f5a42",
-                                textDecoration: "none",
-                                opacity: !attachmentId ? 0.65 : 1,
-                              }}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2 min-w-0">
-                                <FiPaperclip size={14} />
-                                  <span className="truncate">{isDownloading ? `Opening ${name}...` : name}</span>
-                                </div>
-                                <span style={{ fontSize: 11, color: "#987554", whiteSpace: "nowrap" }}>Preview</span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <Empty description="No attachments" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                    ),
-                  },
-                ]}
-              />
+              ) : null}
             </>
           )}
-        </div>
-      </div>
+        </main>
 
+        {activeTicketId && canViewWorkspace ? (
+          <aside className="support-details" aria-label="Client and ticket details">
+            <div className="support-client-card">
+              <span className="support-avatar support-avatar--profile">{getAuthorInitials(customerName)}</span>
+              <h2>{customerName}</h2>
+              <p>{getTicketReference(ticket)}</p>
+            </div>
+
+            <div className="support-contact-list">
+              <div><FiMail /><span><small>Email</small>{customerEmail}</span></div>
+              <div><FiPhone /><span><small>Phone</small>{customerPhone}</span></div>
+            </div>
+
+            <div className="support-detail-section">
+              <h3>Routing</h3>
+              <label>
+                <span>Assigned to</span>
+                <Select
+                  className="support-select"
+                  options={assigneeOptions}
+                  value={assigneeValue}
+                  placeholder="Unassigned"
+                  disabled={!canAssignAction || assignMutation.isPending}
+                  onChange={(value) => assignMutation.mutate({ ticketId: activeTicketId, assignee: value })}
+                  allowClear
+                />
+              </label>
+              <label>
+                <span>Priority</span>
+                <Select
+                  className="support-select"
+                  options={PRIORITY_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+                  value={ticketPriority}
+                  disabled={!canPriorityAction || priorityMutation.isPending}
+                  onChange={(value) => priorityMutation.mutate({ ticketId: activeTicketId, priority: value })}
+                />
+              </label>
+            </div>
+
+            <div className="support-detail-section">
+              <h3>Ticket details</h3>
+              <dl>
+                <div><dt>Category</dt><dd>{ticketCategory}</dd></div>
+                <div><dt>Created</dt><dd>{createdAt || "—"}</dd></div>
+                <div><dt>Last activity</dt><dd>{updatedAt || "—"}</dd></div>
+              </dl>
+            </div>
+
+            {(isResolved || isClosed) ? (
+              <div className="support-resolution">
+                <FiCheckCircle />
+                <div>
+                  <strong>{isClosed ? "Closed" : "Resolved"}</strong>
+                  <span>{resolutionCode}{resolvedAt !== "—" ? ` · ${formatShortDate(resolvedAt)}` : ""}</span>
+                  {reopenDeadline !== "—" ? <span>Reopen by {formatShortDate(reopenDeadline)}</span> : null}
+                </div>
+              </div>
+            ) : null}
+
+            <button type="button" className="support-manage-button" onClick={() => setMoreOptionsOpen(true)}>
+              Manage ticket <FiMoreVertical />
+            </button>
+          </aside>
+        ) : null}
+      </div>
       <Modal
         title="More Options"
         open={moreOptionsOpen}
@@ -1171,7 +1224,7 @@ export default function SupportPage() {
         footer={null}
         width={960}
         centered
-        destroyOnClose
+        destroyOnHidden
       >
         {previewAttachment ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1278,6 +1331,6 @@ export default function SupportPage() {
           </div>
         </div>
       </Modal>
-    </div>
+    </section>
   );
 }

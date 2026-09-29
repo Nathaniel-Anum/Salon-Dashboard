@@ -548,37 +548,6 @@ export default function CustomersPage() {
                     <FiExternalLink size={12} />
                     View Profile
                   </button>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleEdit(customer)}
-                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80"
-                      style={{
-                        color: "#987554",
-                        background: "rgba(152,117,84,0.1)",
-                        fontFamily: "'Poppins', sans-serif",
-                        border: "none",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <FiEdit2 size={12} />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(customer.id, name)}
-                      disabled={deleteCustomer.isPending}
-                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200 hover:opacity-80 disabled:opacity-50"
-                      style={{
-                        color: "#c43232",
-                        background: "rgba(196,50,50,0.08)",
-                        fontFamily: "'Poppins', sans-serif",
-                        border: "none",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <FiTrash2 size={12} />
-                      Remove
-                    </button>
-                  </div>
                 </div>
               </div>
             );
