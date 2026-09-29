@@ -1,22 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregatePaymentMethods, buildMetricComparisonOption, buildRevenueComparisonOption, comparisonLabel, comparisonSentiment, periodLabel, sumDecimalStrings } from "./insightUtils.js";
+import { buildMetricComparisonOption, buildMoneyTrendOption, buildRevenueComparisonOption, comparisonLabel, comparisonSentiment, periodLabel, sumDecimalStrings } from "./insightUtils.js";
 import { APPOINTMENT_METRICS, reportPeriod, reportPeriodLabel } from "./portalReports.js";
 
-test("payment methods are combined exactly across money sources", () => {
-  const data = {
-    breakdowns: {
-      by_source: [
-        { currency: "GHS", payment_methods: [{ payment_method_label: "Cash", received_amount: "0.10" }] },
-        { currency: "GHS", payment_methods: [{ payment_method_label: "Cash", received_amount: "0.20" }] },
-        { currency: "USD", payment_methods: [{ payment_method_label: "Cash", received_amount: "99.00" }] },
-      ],
-    },
-  };
+test("money charts keep Paystack and on-site receipts separate", () => {
+  const data = { series: {
+    week_comparison: { currencies: [{ currency: "GHS", points: [{ label: "Mon", position: 1, active_week: { paystack_received_amount: "10.00", on_site_received_amount: "20.00" }, previous_week: { paystack_received_amount: "8.00", on_site_received_amount: "16.00" } }] }] },
+    last_30_days: { currencies: [{ currency: "GHS", points: [{ date_from: "2026-09-01", paystack_received_amount: "30.00", on_site_received_amount: "40.00" }] }] },
+  } };
 
-  assert.deepEqual(aggregatePaymentMethods(data, "GHS").map(({ name, amount }) => ({ name, amount })), [
-    { name: "Cash", amount: "0.30" },
-  ]);
+  assert.deepEqual(buildMoneyTrendOption(data, "GHS", "week").series.map(({ data: values }) => values), [[10], [8], [20], [16]]);
+  assert.deepEqual(buildMoneyTrendOption(data, "GHS", "30").series.map(({ data: values }) => values.map(({ value }) => value)), [[30], [40]]);
 });
 
 test("a missing comparison base is described without a false zero percent", () => {

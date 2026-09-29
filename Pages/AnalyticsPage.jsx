@@ -6,7 +6,7 @@ import EChart from "../Components/EChart";
 import { getAnalyticsBookings, getAnalyticsRevenue, getAppointmentsCreatedInsight, getMoneyReceivedInsight } from "../src/api/analytics";
 import { PORTAL_METRICS, reportPeriodLabel } from "../src/analytics/portalReports";
 import { permissionState } from "../src/auth/permissions";
-import { PALETTE, aggregatePaymentMethods, buildDonutOption, comparisonDirection, comparisonLabel, comparisonSentiment, formatCurrency, formatNumber, periodLabel } from "../src/analytics/insightUtils";
+import { MONEY_SOURCES, PALETTE, buildDonutOption, comparisonDirection, comparisonLabel, comparisonSentiment, formatCurrency, formatNumber, periodLabel } from "../src/analytics/insightUtils";
 import "./Insights.css";
 
 const querySettings = { staleTime: 60_000, refetchOnWindowFocus: true, retry: 1 };
@@ -18,12 +18,13 @@ function ChangePill({ comparison, lowerIsBetter = false }) {
   return <span className={`change-pill change-pill--${sentiment}`}><span aria-hidden="true">{symbol}</span> {comparisonLabel(comparison)}</span>;
 }
 
-function MetricCard({ title, period, value, comparison, icon, accent, loading, onClick, lowerIsBetter = false }) {
+function MetricCard({ title, period, value, detail, comparison, icon, accent, loading, onClick, lowerIsBetter = false }) {
   const CardIcon = icon;
   return <button type="button" className={`analytics-metric-card analytics-metric-card--${accent}`} onClick={onClick} aria-haspopup="dialog">
     <span className="analytics-metric-card__top"><span className="analytics-metric-card__icon"><CardIcon aria-hidden="true" /></span><span>{period}</span></span>
     <span className="analytics-metric-card__title">{title}</span>
     {loading ? <span className="text-skeleton" aria-label={`Loading ${title}`} /> : <strong>{value}</strong>}
+    {!loading && detail && <small className="analytics-metric-card__detail">{detail}</small>}
     {!loading && <ChangePill comparison={comparison} lowerIsBetter={lowerIsBetter} />}
     <span className="analytics-metric-card__action">View details <FiArrowUpRight aria-hidden="true" /></span>
   </button>;
@@ -45,8 +46,7 @@ export default function AnalyticsPage() {
   const appointments = appointmentsQuery.data;
   const currency = money?.summary?.currencies?.[0]?.currency;
   const moneySummary = money?.summary?.currencies?.find((row) => row.currency === currency);
-  const moneyComparison = money?.comparison?.currencies?.find((row) => row.currency === currency)?.received_amount;
-  const primaryMethod = useMemo(() => aggregatePaymentMethods(money, currency)[0], [money, currency]);
+  const moneyComparison = money?.comparison?.currencies?.find((row) => row.currency === currency);
   const primaryBookingSource = appointments?.breakdowns?.by_booking_source?.[0];
   const portalBookingSources = useMemo(() => (appointments?.breakdowns?.by_booking_source ?? []).filter((row) => {
     const key = String(row.booking_source ?? row.label ?? "").toLowerCase().replaceAll("_", "-");
@@ -76,7 +76,7 @@ export default function AnalyticsPage() {
     <div className="analytics-card-heading"><div><h2>This week at a glance</h2><p>Each card opens its detailed report.</p></div><span>{periodLabel(money?.summary?.period || appointments?.summary?.period)}</span></div>
 
     <section className="analytics-metric-grid" aria-label="This week's headline reports">
-      <MetricCard title="Money received" period="This week" value={moneySummary ? formatCurrency(moneySummary.received_amount, currency) : "—"} comparison={moneyComparison} icon={FiCreditCard} accent="gold" loading={moneyQuery.isLoading} onClick={() => setActiveMetric("money")} />
+      {MONEY_SOURCES.filter((source) => source.key !== "other" || Boolean(Number(moneySummary?.[source.field]))).map((source) => <MetricCard key={source.key} title={source.cardTitle} period="This week" value={moneySummary ? formatCurrency(moneySummary[source.field], currency) : "—"} detail={moneySummary ? `${formatNumber(moneySummary[source.countField])} transactions` : undefined} comparison={moneyComparison?.[source.field]} icon={FiCreditCard} accent={source.key === "paystack" ? "gold" : source.key === "on_site" ? "sage" : "rose"} loading={moneyQuery.isLoading} onClick={() => setActiveMetric("money")} />)}
       <MetricCard title="Appointments created" period="This week" value={formatNumber(appointments?.summary?.appointments_created)} comparison={appointments?.comparison?.appointments_created} icon={FiCalendar} accent="sage" loading={appointmentsQuery.isLoading} onClick={() => setActiveMetric("created")} />
       {PORTAL_METRICS.map((metric) => {
         const query = metric.revenue ? revenueQuery : bookingsQuery;
@@ -88,9 +88,9 @@ export default function AnalyticsPage() {
 
     <section className="analytics-context-grid" aria-label="This week's supporting analytics">
       <article>
-        <span>Leading payment method</span>
-        <strong>{primaryMethod?.name || "No payments yet"}</strong>
-        <small>{primaryMethod ? formatCurrency(primaryMethod.amount, currency) : "Payment mix will appear after receipts are recorded."}</small>
+        <span>Payment reporting</span>
+        <strong>Sources stay separate</strong>
+        <small>Paystack and on-site collections are reported independently.</small>
       </article>
       <article>
         <span>Leading booking source</span>

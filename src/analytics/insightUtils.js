@@ -1,5 +1,11 @@
 const PALETTE = ["#b99a45", "#6f7d66", "#885e6b", "#c97b63", "#496f79", "#d2b778"];
 
+export const MONEY_SOURCES = [
+  { key: "paystack", label: "Paystack processed", chartLabel: "Paystack", cardTitle: "Received via Paystack", field: "paystack_received_amount", countField: "paystack_received_transaction_count", reversedField: "paystack_reversed_amount", afterReversalsField: "paystack_received_after_reversals_amount", color: "#b99a45" },
+  { key: "on_site", label: "Collected on-site", chartLabel: "On-site", cardTitle: "Collected On-site", field: "on_site_received_amount", countField: "on_site_received_transaction_count", reversedField: "on_site_reversed_amount", afterReversalsField: "on_site_received_after_reversals_amount", color: "#6f7d66" },
+  { key: "other", label: "Other/unclassified", cardTitle: "Uncategorized Receipts", field: "other_received_amount", countField: "other_received_transaction_count", color: "#885e6b" },
+];
+
 export function formatCurrency(value, currency = "GHS", compact = false) {
   if (value === null || value === undefined || value === "") return "—";
   const amount = Number(value);
@@ -61,28 +67,6 @@ function minorToDecimal(value) {
   return `${negative ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
 }
 
-export function aggregatePaymentMethods(data, currency) {
-  const totals = new Map();
-  (data?.breakdowns?.by_source ?? [])
-    .filter((source) => source.currency === currency)
-    .forEach((source) => {
-      (source.payment_methods ?? []).forEach((method) => {
-        const label = method.payment_method_label || "Not captured";
-        const current = totals.get(label) ?? 0n;
-        totals.set(label, current + decimalToMinor(method.received_amount));
-      });
-    });
-
-  return [...totals.entries()]
-    .map(([name, minor], index) => ({
-      name,
-      amount: minorToDecimal(minor),
-      value: Number(minor) / 100,
-      itemStyle: { color: PALETTE[index % PALETTE.length] },
-    }))
-    .sort((a, b) => b.value - a.value);
-}
-
 export function sumDecimalStrings(values) {
   return minorToDecimal(values.reduce((total, value) => total + decimalToMinor(value), 0n));
 }
@@ -138,15 +122,17 @@ export function buildMoneyTrendOption(data, currency, periodKey = "week") {
     const points = [...(data.series?.week_comparison?.currencies?.find((row) => row.currency === currency)?.points ?? [])].sort((a, b) => Number(a.position) - Number(b.position));
     return {
       animationDuration: 550,
-      color: ["#b99a45", "#b7ada0"],
+      color: ["#b99a45", "#d2bd83", "#6f7d66", "#aeb8a8"],
       tooltip: baseTooltip((value) => formatCurrency(value, currency)),
-      legend: { top: 0, left: 0, itemWidth: 18, itemHeight: 8, textStyle: axisLabel },
+      legend: { type: "scroll", top: 0, left: 0, itemWidth: 18, itemHeight: 8, textStyle: axisLabel },
       grid: { left: 8, right: 12, top: 44, bottom: 8, containLabel: true },
       xAxis: { type: "category", boundaryGap: false, data: points.map((point) => point.label), axisLabel, axisTick: { show: false }, axisLine: { lineStyle: { color: "#ddd3c6" } } },
       yAxis: { type: "value", axisLabel: { ...axisLabel, formatter: (value) => formatCurrency(value, currency, true) }, axisLine: { show: false }, axisTick: { show: false }, splitLine },
       series: [
-        { name: "This week", type: "line", smooth: 0.35, symbol: "circle", symbolSize: 7, lineStyle: { width: 3 }, data: points.map((point) => Number(point.active_week?.received_amount ?? 0)), areaStyle: { color: "rgba(185,154,69,.11)" } },
-        { name: "Same days last week", type: "line", smooth: 0.35, symbol: "none", lineStyle: { width: 2, type: "dashed" }, data: points.map((point) => Number(point.previous_week?.received_amount ?? 0)) },
+        ...MONEY_SOURCES.slice(0, 2).flatMap((source) => [
+          { name: `${source.chartLabel} (this week)`, type: "line", smooth: 0.35, symbol: "circle", symbolSize: 7, lineStyle: { width: 3 }, data: points.map((point) => Number(point.active_week?.[source.field] ?? 0)) },
+          { name: `${source.chartLabel} (last week)`, type: "line", smooth: 0.35, symbol: "none", lineStyle: { width: 2, type: "dashed" }, data: points.map((point) => Number(point.previous_week?.[source.field] ?? 0)) },
+        ]),
       ],
     };
   }
@@ -155,12 +141,21 @@ export function buildMoneyTrendOption(data, currency, periodKey = "week") {
   const points = history?.currencies?.find((row) => row.currency === currency)?.points ?? [];
   return {
     animationDuration: 550,
-    color: ["#b99a45"],
+    color: MONEY_SOURCES.slice(0, 2).map((source) => source.color),
     tooltip: baseTooltip((value) => formatCurrency(value, currency)),
-    grid: { left: 8, right: 12, top: 20, bottom: 8, containLabel: true },
+    legend: { top: 0, left: 0, itemWidth: 18, itemHeight: 8, textStyle: axisLabel },
+    grid: { left: 8, right: 12, top: 44, bottom: 8, containLabel: true },
     xAxis: { type: "category", boundaryGap: false, data: points.map((point) => formatDate(point.date_from)), axisLabel: { ...axisLabel, hideOverlap: true }, axisTick: { show: false }, axisLine: { lineStyle: { color: "#ddd3c6" } } },
     yAxis: { type: "value", axisLabel: { ...axisLabel, formatter: (value) => formatCurrency(value, currency, true) }, axisLine: { show: false }, axisTick: { show: false }, splitLine },
-    series: [{ name: "Money received", type: "line", smooth: 0.3, showSymbol: points.length < 15, symbolSize: 6, lineStyle: { width: 3 }, data: points.map((point) => ({ value: Number(point.received_amount ?? 0), itemStyle: point.is_partial ? { opacity: 0.45 } : undefined })), areaStyle: { color: "rgba(185,154,69,.12)" } }],
+    series: MONEY_SOURCES.slice(0, 2).map((source) => ({
+      name: source.label,
+      type: "line",
+      smooth: 0.3,
+      showSymbol: points.length < 15,
+      symbolSize: 6,
+      lineStyle: { width: 3 },
+      data: points.map((point) => ({ value: Number(point[source.field] ?? 0), itemStyle: point.is_partial ? { opacity: 0.45 } : undefined })),
+    })),
   };
 }
 
