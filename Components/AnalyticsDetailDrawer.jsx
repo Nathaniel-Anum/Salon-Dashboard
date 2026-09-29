@@ -8,8 +8,8 @@ import { APPOINTMENT_METRICS, PORTAL_METRICS, REVENUE_METRICS, reportPeriod, rep
 import { permissionState } from "../src/auth/permissions";
 import { isoDate, reportingRange, subtractDays } from "../src/analytics/dateRanges";
 import {
+  MONEY_SOURCES,
   PALETTE,
-  aggregatePaymentMethods,
   buildAppointmentsTrendOption,
   buildDonutOption,
   buildHorizontalBarOption,
@@ -36,7 +36,7 @@ const PERIODS = [
 ];
 
 const METRICS = {
-  money: { title: "Money received", description: "Payments recorded by the salon", icon: FiCreditCard, accent: "gold" },
+  money: { title: "Receipt streams", description: "Paystack and on-site reporting", icon: FiCreditCard, accent: "gold" },
   created: { title: "Appointments created", description: "New appointment records", icon: FiCalendar, accent: "sage" },
 };
 
@@ -114,9 +114,12 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
   const currencies = money?.summary?.currencies?.map((row) => row.currency) ?? [];
   const effectiveCurrency = currencies.includes(selectedCurrency) ? selectedCurrency : currency || currencies[0];
   const moneySummary = money?.summary?.currencies?.find((row) => row.currency === effectiveCurrency);
-  const moneyComparison = money?.comparison?.currencies?.find((row) => row.currency === effectiveCurrency)?.received_amount;
+  const moneyComparison = money?.comparison?.currencies?.find((row) => row.currency === effectiveCurrency);
   const selectedMoneyPoints = period === "week" ? [] : moneyPeriodPoints(money, effectiveCurrency, period);
-  const selectedMoneyTotal = period === "week" ? moneySummary?.received_amount : sumDecimalStrings(selectedMoneyPoints.map((point) => point.received_amount));
+  const selectedMoneyStreams = MONEY_SOURCES.map((source) => ({
+    ...source,
+    amount: period === "week" ? moneySummary?.[source.field] : sumDecimalStrings(selectedMoneyPoints.map((point) => point[source.field])),
+  })).filter((source) => source.key !== "other" || Boolean(Number(source.amount)));
   const selectedAppointmentPoints = period === "30" ? appointments?.series?.last_30_days?.points ?? [] : appointments?.series?.last_90_days?.points ?? [];
   const selectedAppointmentTotal = period === "week" ? appointments?.summary?.appointments_created ?? 0 : selectedAppointmentPoints.reduce((total, point) => total + Number(point.appointments_created || 0), 0);
 
@@ -138,16 +141,11 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
     });
   })();
 
-  const paymentMethods = aggregatePaymentMethods(money, effectiveCurrency);
-  const paymentOption = buildDonutOption(paymentMethods, { valueFormatter: (value) => formatCurrency(value, effectiveCurrency, true), centerLabel: "Received" });
-  const moneyDomains = (money?.breakdowns?.by_domain ?? []).filter((row) => row.currency === effectiveCurrency).map((row, index) => ({
+  const moneyDomains = (money?.breakdowns?.by_domain ?? []).filter((row) => row.currency === effectiveCurrency).map((row) => ({
     name: row.domain === "booking" ? "Appointment payments" : row.domain === "commerce" ? "Shop payments" : row.domain || "Not captured",
-    value: Number(row.received_amount || 0),
-    amount: row.received_amount,
-    itemStyle: { color: PALETTE[index % PALETTE.length] },
+    streams: MONEY_SOURCES.filter((source) => source.key !== "other" || Boolean(Number(row[source.field]))).map((source) => ({ ...source, amount: row[source.field] })),
   }));
-  const domainOption = buildDonutOption(moneyDomains, { valueFormatter: (value) => formatCurrency(value, effectiveCurrency, true), centerLabel: "Received" });
-  const moneySources = (money?.breakdowns?.by_source ?? []).filter((row) => row.currency === effectiveCurrency).map((row, index) => ({ ...row, clientLabel: row.label || "Not captured", key: `${row.source ?? "unknown"}-${row.currency}-${index}` }));
+  const moneySources = (money?.breakdowns?.by_source ?? []).filter((row) => row.currency === effectiveCurrency).map((row, index) => ({ ...row, clientLabel: MONEY_SOURCES.find((source) => source.key === String(row.source ?? "").replaceAll("-", "_"))?.label || row.label || "Other/unclassified", key: `${row.source ?? "unknown"}-${row.currency}-${index}` }));
   const activeSource = moneySources.find((source) => source.key === selectedSourceKey) || moneySources[0];
 
   const bookingSources = (appointments?.breakdowns?.by_booking_source ?? []).map((row) => ({ name: row.label, value: row.appointments_created }));
@@ -159,9 +157,9 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
     if (metric === "money") {
       if (period === "week") {
         const points = [...(money?.series?.week_comparison?.currencies?.find((row) => row.currency === effectiveCurrency)?.points ?? [])].sort((a, b) => Number(a.position) - Number(b.position));
-        return { headers: ["Day", "This week", "Last week"], rows: points.map((point) => [point.label, formatCurrency(point.active_week?.received_amount, effectiveCurrency), formatCurrency(point.previous_week?.received_amount, effectiveCurrency)]) };
+        return { headers: ["Day", "Paystack this week", "Paystack last week", "On-site this week", "On-site last week"], rows: points.map((point) => [point.label, formatCurrency(point.active_week?.paystack_received_amount, effectiveCurrency), formatCurrency(point.previous_week?.paystack_received_amount, effectiveCurrency), formatCurrency(point.active_week?.on_site_received_amount, effectiveCurrency), formatCurrency(point.previous_week?.on_site_received_amount, effectiveCurrency)]) };
       }
-      return { headers: ["Period", "Money received"], rows: selectedMoneyPoints.map((point) => [formatDate(point.date_from, { year: period === "90" }), formatCurrency(point.received_amount, effectiveCurrency)]) };
+      return { headers: ["Period", "Paystack processed", "Collected on-site"], rows: selectedMoneyPoints.map((point) => [formatDate(point.date_from, { year: period === "90" }), formatCurrency(point.paystack_received_amount, effectiveCurrency), formatCurrency(point.on_site_received_amount, effectiveCurrency)]) };
     }
     if (metric === "created") {
       if (period === "week") {
@@ -181,8 +179,8 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
 
   const loading = portalMetric ? reportQuery.isLoading : metric === "money" ? moneyLoading : appointmentsLoading;
   const failed = portalMetric ? reportQuery.isError : metric === "money" ? Boolean(moneyError) : Boolean(appointmentsError);
-  const headline = metric === "money" ? formatCurrency(selectedMoneyTotal, effectiveCurrency) : metric === "created" ? formatNumber(selectedAppointmentTotal) : formatReportValue(reportValue);
-  const comparison = metric === "money" ? moneyComparison : metric === "created" ? appointments?.comparison?.appointments_created : reportComparison;
+  const headline = metric === "created" ? formatNumber(selectedAppointmentTotal) : formatReportValue(reportValue);
+  const comparison = metric === "created" ? appointments?.comparison?.appointments_created : reportComparison;
   const showComparison = period === "week";
   const Icon = config.icon || (portalMetric?.revenue ? FiCreditCard : FiCalendar);
   const customAllowed = Boolean(portalMetric);
@@ -216,23 +214,21 @@ export default function AnalyticsDetailDrawer({ metric, onClose, money, appointm
     {!validDates ? <DrawerError message="Choose a valid start and end date, ending no later than today." /> : failed ? <DrawerError message={portalMetric && reportQuery.error?.response?.status === 403 ? "You do not have permission to view this report." : undefined} retry={portalMetric && reportQuery.error?.response?.status !== 403 ? reportQuery.refetch : undefined} /> : loading ? <DrawerLoading /> : <>
       <section className="drawer-portfolio">
         <p>{selectedLabel}</p>
-        <strong>{headline}</strong>
-        {showComparison && <ChangeBadge comparison={comparison} lowerIsBetter={portalMetric?.lowerIsBetter} />}
+        {metric === "money" ? <div className="drawer-money-streams">{selectedMoneyStreams.map((source) => <div key={source.key}><span>{source.label}</span><strong>{formatCurrency(source.amount, effectiveCurrency)}</strong>{showComparison && <ChangeBadge comparison={moneyComparison?.[source.field]} />}</div>)}</div> : <><strong>{headline}</strong>{showComparison && <ChangeBadge comparison={comparison} lowerIsBetter={portalMetric?.lowerIsBetter} />}</>}
         <small>{portalMetric ? reportPeriodLabel(selectedReport) : metric === "money" && period === "week" ? periodLabel(money?.summary?.period) : metric === "created" && period === "week" ? periodLabel(appointments?.summary?.period) : `${range.current.date_from} to ${range.current.date_to}`}</small>
         {portalMetric && period === "previous_week" && <small>Same elapsed weekdays from the previous week.</small>}
         {portalMetric && showComparison && <small>Change: {formatReportValue(comparison?.absolute_change)} · Previous: {formatReportValue(previousValue)}</small>}
       </section>
 
       {(!portalMetric || period === "week") && <section className="drawer-chart-card">
-        <div><h3>{portalMetric ? "Weekly comparison" : `${config.title} over time`}</h3><p>{period === "week" ? "Compared with the same elapsed days last week." : "Rolling history supplied by the report."}</p></div>
+        <div><h3>{portalMetric ? "Weekly comparison" : metric === "money" ? "Paystack and on-site over time" : `${config.title} over time`}</h3><p>{period === "week" ? "Compared with the same elapsed days last week." : "Rolling history supplied by the report."}</p></div>
         <EChart option={trendOption} height={260} ariaLabel={`${config.title} for ${selectedLabel}`} />
         <ChartDataTable caption={`${config.title} chart values`} headers={trendTable.headers} rows={trendTable.rows} />
       </section>}
 
       {metric === "money" && <>
-        <section className="drawer-breakdown"><h3>This week’s payment activity</h3><p>Recorded payments, reversals, and the amount retained after reversals.</p><div className="drawer-supporting-metrics drawer-supporting-metrics--four"><div><span>Payments recorded</span><b>{formatNumber(moneySummary?.received_transaction_count)}</b></div><div><span>Payments reversed</span><b>{formatNumber(moneySummary?.reversed_transaction_count)}</b></div><div><span>Recorded reversals</span><b>{formatCurrency(moneySummary?.reversed_amount, effectiveCurrency)}</b></div><div><span>After reversals</span><b>{formatCurrency(moneySummary?.received_after_reversals_amount, effectiveCurrency)}</b></div></div></section>
-        <section className="drawer-breakdown"><h3>Money by business area this week</h3><p>Appointment payments and shop payments are kept separate.</p>{moneyDomains.length ? <><EChart option={domainOption} height={225} ariaLabel={`Money received by business area in ${effectiveCurrency}`} /><ul>{moneyDomains.map((domain) => <li key={domain.name}><span><i style={{ background: domain.itemStyle.color }} />{domain.name}</span><b>{formatCurrency(domain.amount, effectiveCurrency)}</b></li>)}</ul></> : <p>No business-area breakdown is available.</p>}</section>
-        <section className="drawer-breakdown"><h3>How clients paid this week</h3>{paymentMethods.length ? <><EChart option={paymentOption} height={230} ariaLabel={`Money received by payment method in ${effectiveCurrency}`} /><ul>{paymentMethods.map((method) => <li key={method.name}><span><i style={{ background: method.itemStyle.color }} />{method.name}</span><b>{formatCurrency(method.amount, effectiveCurrency)}</b></li>)}</ul></> : <p>No payment method details are available.</p>}</section>
+        <section className="drawer-breakdown"><h3>This week’s receipt activity</h3><p>Transaction counts, reversals, and retained amounts stay with their source.</p><div className="drawer-receipt-activity">{MONEY_SOURCES.slice(0, 2).map((source) => <article key={source.key}><h4><i style={{ background: source.color }} />{source.label}</h4><div><span>Transactions<b>{formatNumber(moneySummary?.[source.countField])}</b></span><span>Reversed<b>{formatCurrency(moneySummary?.[source.reversedField], effectiveCurrency)}</b></span><span>After reversals<b>{formatCurrency(moneySummary?.[source.afterReversalsField], effectiveCurrency)}</b></span></div></article>)}{Boolean(Number(moneySummary?.other_received_amount)) && <article><h4><i style={{ background: MONEY_SOURCES[2].color }} />Other/unclassified</h4><div><span>Transactions<b>{formatNumber(moneySummary?.other_received_transaction_count)}</b></span><span>Received<b>{formatCurrency(moneySummary?.other_received_amount, effectiveCurrency)}</b></span></div></article>}</div></section>
+        <section className="drawer-breakdown"><h3>Receipts by business area this week</h3><p>Each business area keeps Paystack and on-site collections separate.</p>{moneyDomains.length ? <ul className="drawer-domain-streams">{moneyDomains.map((domain) => <li key={domain.name}><strong>{domain.name}</strong><div>{domain.streams.map((source) => <span key={source.key}><i style={{ background: source.color }} />{source.label}<b>{formatCurrency(source.amount, effectiveCurrency)}</b></span>)}</div></li>)}</ul> : <p>No business-area breakdown is available.</p>}</section>
         <section className="drawer-breakdown"><h3>Payment sources this week</h3><p>Select a source to see how those clients paid.</p>{moneySources.length ? <><div className="source-list drawer-source-list">{moneySources.map((source) => <button type="button" key={source.key} className={activeSource?.key === source.key ? "active" : ""} onClick={() => setSelectedSourceKey(source.key)}><span><b>{source.clientLabel}</b><small>{formatNumber(source.received_transaction_count)} recorded payments</small></span><strong>{formatCurrency(source.received_amount, effectiveCurrency)}</strong></button>)}</div>{activeSource && <div className="source-detail"><p>{activeSource.clientLabel} payment methods</p>{activeSource.payment_methods?.length ? <ul>{activeSource.payment_methods.map((method, index) => <li key={`${activeSource.key}-${method.business_source ?? "source"}-${method.processor ?? "processor"}-${method.payment_method ?? index}`}><span>{method.payment_method_label || "Not captured"}</span><b>{formatCurrency(method.received_amount, effectiveCurrency)}</b></li>)}</ul> : <span className="muted-copy">No payment method detail is available for this source.</span>}</div>}</> : <p>No payment source details are available.</p>}</section>
         <DataQuality meta={money?.meta} />
       </>}

@@ -7,7 +7,7 @@ import { getAnalyticsBookings, getAnalyticsRevenue, getAppointmentsCreatedInsigh
 import { APPOINTMENT_METRICS, REVENUE_METRICS, reportPeriodLabel } from "../src/analytics/portalReports";
 import { permissionState } from "../src/auth/permissions";
 import {
-  PALETTE, aggregatePaymentMethods, buildAppointmentsTrendOption, buildDonutOption,
+  MONEY_SOURCES, buildAppointmentsTrendOption,
   buildMoneyTrendOption, buildRevenueComparisonOption, comparisonDirection, comparisonLabel, comparisonSentiment, formatCurrency,
   formatNumber, periodLabel,
 } from "../src/analytics/insightUtils";
@@ -48,22 +48,20 @@ export default function DashboardPage() {
   const appointments = appointmentsQuery.data;
   const currency = money?.summary?.currencies?.[0]?.currency;
   const moneySummary = money?.summary?.currencies?.find((row) => row.currency === currency);
-  const moneyComparison = money?.comparison?.currencies?.find((row) => row.currency === currency)?.received_amount;
+  const moneyComparison = money?.comparison?.currencies?.find((row) => row.currency === currency);
   const moneyOption = useMemo(() => buildMoneyTrendOption(money, currency, "week"), [money, currency]);
   const appointmentsOption = useMemo(() => buildAppointmentsTrendOption(appointments, "week"), [appointments]);
-  const methods = useMemo(() => aggregatePaymentMethods(money, currency).slice(0, 6), [money, currency]);
-  const methodsOption = useMemo(() => buildDonutOption(methods, { valueFormatter: (value) => formatCurrency(value, currency, true), centerLabel: "Received" }), [methods, currency]);
   const revenueOption = useMemo(() => buildRevenueComparisonOption(revenue), [revenue]);
+  const moneySources = useMemo(() => (money?.breakdowns?.by_source ?? [])
+    .filter((row) => row.currency === currency)
+    .map((row) => ({ ...row, clientLabel: MONEY_SOURCES.find((source) => source.key === String(row.source ?? "").replaceAll("-", "_"))?.label || row.label || "Other/unclassified" })), [money, currency]);
   const salesMix = useMemo(() => (money?.breakdowns?.by_domain ?? [])
     .filter((row) => row.currency === currency && ["booking", "commerce"].includes(row.domain))
-    .map((row, index) => ({
+    .map((row) => ({
       name: row.domain === "booking" ? "Appointments" : "Commerce",
       description: row.domain === "booking" ? "Payments received from appointments" : "Payments received from shop orders",
-      amount: row.received_amount,
-      value: Number(row.received_amount ?? 0),
-      itemStyle: { color: PALETTE[index % 2] },
+      streams: MONEY_SOURCES.filter((source) => source.key !== "other" || Boolean(Number(row[source.field]))).map((source) => ({ ...source, amount: row[source.field] })),
     })), [money, currency]);
-  const salesMixOption = useMemo(() => buildDonutOption(salesMix, { valueFormatter: (value) => formatCurrency(value, currency, true), centerLabel: "Sales" }), [salesMix, currency]);
 
   return (
     <main className="insights-page dashboard-insights">
@@ -77,10 +75,10 @@ export default function DashboardPage() {
           <article className="summary-feature summary-feature--money">
             <div className="summary-feature__topline"><span className="summary-icon"><FiCreditCard aria-hidden="true" /></span><span>{money?.summary?.period?.label || "This week"}</span></div>
             {moneyQuery.isLoading ? <LoadingBlock /> : moneyQuery.isError ? <ErrorState error={moneyQuery.error} retry={moneyQuery.refetch} /> : !moneySummary ? <div className="summary-empty">No payment receipts were recorded in the available 90-day period.</div> : <>
-              <p className="summary-label">Money received</p><p className="summary-value">{formatCurrency(moneySummary.received_amount, currency)}</p><ChangePill comparison={moneyComparison} />
-              <p className="summary-footnote">{formatNumber(moneySummary.received_transaction_count)} recorded payments · {periodLabel(money.summary.period)}</p>
+              <div className="summary-streams">{MONEY_SOURCES.filter((source) => source.key !== "other" || Boolean(Number(moneySummary[source.field]))).map((source) => <div key={source.key}><p className="summary-label">{source.label}</p><p className="summary-value">{formatCurrency(moneySummary[source.field], currency)}</p><ChangePill comparison={moneyComparison?.[source.field]} /><small>{formatNumber(moneySummary[source.countField])} transactions</small></div>)}</div>
+              <p className="summary-footnote">{periodLabel(money.summary.period)}</p>
             </>}
-            <button type="button" className="summary-link" onClick={() => navigate("/analytics#money")}>Explore money received <FiArrowRight aria-hidden="true" /></button>
+            <button type="button" className="summary-link" onClick={() => navigate("/analytics#money")}>Explore receipt streams <FiArrowRight aria-hidden="true" /></button>
           </article>
 
           <article className="summary-feature summary-feature--appointments">
@@ -115,26 +113,19 @@ export default function DashboardPage() {
         </section>
 
         <article className="insight-panel dashboard-sales-mix">
-          <div className="panel-heading"><div><h2>Sales from appointments and commerce</h2><p>Money received this week by business area</p></div>{currency && <span className="panel-chip">{currency}</span>}</div>
-          {moneyQuery.isLoading ? <LoadingBlock tall /> : moneyQuery.isError ? <ErrorState error={moneyQuery.error} retry={moneyQuery.refetch} /> : salesMix.length ? <div className="dashboard-sales-mix__layout">
-            <EChart option={salesMixOption} height={250} ariaLabel={`Sales received from appointments and commerce in ${currency}`} />
-            <ul className="dashboard-sales-mix__list">{salesMix.map((row) => <li key={row.name}>
-              <i style={{ background: row.itemStyle.color }} aria-hidden="true" />
-              <span><b>{row.name}</b><small>{row.description}</small></span>
-              <strong>{formatCurrency(row.amount, currency)}</strong>
-            </li>)}</ul>
-          </div> : <div className="chart-empty">Appointment and commerce sales will appear after payments are recorded.</div>}
+          <div className="panel-heading"><div><h2>Sales from appointments and commerce</h2><p>Receipt streams stay separate in every business area</p></div>{currency && <span className="panel-chip">{currency}</span>}</div>
+          {moneyQuery.isLoading ? <LoadingBlock tall /> : moneyQuery.isError ? <ErrorState error={moneyQuery.error} retry={moneyQuery.refetch} /> : salesMix.length ? <ul className="dashboard-domain-streams">{salesMix.map((row) => <li key={row.name}><span><b>{row.name}</b><small>{row.description}</small></span><div>{row.streams.map((source) => <p key={source.key}><span><i style={{ background: source.color }} />{source.label}</span><strong>{formatCurrency(source.amount, currency)}</strong></p>)}</div></li>)}</ul> : <div className="chart-empty">Appointment and commerce sales will appear after payments are recorded.</div>}
         </article>
 
         <section className="dashboard-chart-grid">
           <article className="insight-panel insight-panel--wide">
             <div className="panel-heading"><div><h2>Weekly pace</h2><p>Money received, compared day for day</p></div>{currency && <span className="panel-chip">{currency}</span>}</div>
-            {moneyQuery.isLoading ? <LoadingBlock tall /> : moneyQuery.isError || !moneySummary ? <div className="chart-empty">Money trend will appear here when data is available.</div> : <EChart option={moneyOption} height={255} ariaLabel={`Money received in ${currency}, this week compared with the same days last week`} />}
+            {moneyQuery.isLoading ? <LoadingBlock tall /> : moneyQuery.isError || !moneySummary ? <div className="chart-empty">Money trend will appear here when data is available.</div> : <EChart option={moneyOption} height={255} ariaLabel={`Paystack and on-site receipts in ${currency}, this week compared with the same days last week`} />}
           </article>
 
           <article className="insight-panel">
-            <div className="panel-heading"><div><h2>How clients paid</h2><p>Money received by payment method</p></div></div>
-            {moneyQuery.isLoading ? <LoadingBlock tall /> : methods.length ? <><EChart option={methodsOption} height={220} ariaLabel={`Money received by payment method in ${currency}`} /><ul className="compact-legend">{methods.slice(0, 4).map((method) => <li key={method.name}><span style={{ background: method.itemStyle.color }} />{method.name}<strong>{formatCurrency(method.amount, currency)}</strong></li>)}</ul></> : <div className="chart-empty">Payment methods will appear once receipts are recorded.</div>}
+            <div className="panel-heading"><div><h2>How clients paid</h2><p>Payment methods grouped by receipt source</p></div></div>
+            {moneyQuery.isLoading ? <LoadingBlock tall /> : moneySources.length ? <div className="dashboard-source-methods">{moneySources.map((source, sourceIndex) => <section key={`${source.source ?? "source"}-${sourceIndex}`}><header><span>{source.clientLabel}</span><strong>{formatCurrency(source.received_amount, currency)}</strong></header>{source.payment_methods?.length ? <ul>{source.payment_methods.map((method, index) => <li key={`${method.payment_method ?? "method"}-${index}`}><span>{method.payment_method_label || "Not captured"}</span><b>{formatCurrency(method.received_amount, currency)}</b></li>)}</ul> : <small>No payment-method detail.</small>}</section>)}</div> : <div className="chart-empty">Payment methods will appear once receipts are recorded.</div>}
           </article>
 
           <article className="insight-panel insight-panel--wide">

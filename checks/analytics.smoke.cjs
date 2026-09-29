@@ -32,7 +32,18 @@ async (page) => {
         custom_period: period(isRevenue ? revenue("11000.00", "4200.00") : bookings(180, 16, 24, 205), url.params.date_from || "2026-08-27", url.params.date_to || "2026-09-25"),
       } });
     }
-    if (url.pathname.endsWith("/money-received/")) return route.fulfill({ json: { summary: { currencies: [{ currency: "GHS", received_amount: "3400.00" }], period: period({}, "2026-09-21", "2026-09-26") } } });
+    if (url.pathname.endsWith("/money-received/")) return route.fulfill({ json: {
+      summary: { currencies: [{ currency: "GHS", paystack_received_amount: "2400.00", paystack_received_transaction_count: 18, paystack_reversed_amount: "100.00", paystack_received_after_reversals_amount: "2300.00", on_site_received_amount: "1000.00", on_site_received_transaction_count: 9, on_site_reversed_amount: "50.00", on_site_received_after_reversals_amount: "950.00", other_received_amount: "0.00", other_received_transaction_count: 0 }], period: period({}, "2026-09-21", "2026-09-26") },
+      comparison: { currencies: [{ currency: "GHS", paystack_received_amount: { current: "2400.00", previous: "2000.00", percentage_change: "20.00", reason: null }, on_site_received_amount: { current: "1000.00", previous: "800.00", percentage_change: "25.00", reason: null }, other_received_amount: { current: "0.00", previous: "0.00", percentage_change: null, reason: "NO_PREVIOUS_BASE" } }] },
+      series: { week_comparison: { currencies: [{ currency: "GHS", points: [
+        { label: "Mon", position: 1, active_week: { paystack_received_amount: "900.00", on_site_received_amount: "300.00" }, previous_week: { paystack_received_amount: "750.00", on_site_received_amount: "250.00" } },
+        { label: "Tue", position: 2, active_week: { paystack_received_amount: "1500.00", on_site_received_amount: "700.00" }, previous_week: { paystack_received_amount: "1250.00", on_site_received_amount: "550.00" } },
+      ] }] } },
+      breakdowns: {
+        by_domain: [{ currency: "GHS", domain: "booking", paystack_received_amount: "1800.00", on_site_received_amount: "750.00", other_received_amount: "0.00" }, { currency: "GHS", domain: "commerce", paystack_received_amount: "600.00", on_site_received_amount: "250.00", other_received_amount: "0.00" }],
+        by_source: [{ currency: "GHS", source: "paystack", received_amount: "2400.00", received_transaction_count: 18, payment_methods: [{ payment_method: "mobile_money", payment_method_label: "Mobile money", received_amount: "2400.00" }] }, { currency: "GHS", source: "on_site", received_amount: "1000.00", received_transaction_count: 9, payment_methods: [{ payment_method: "cash", payment_method_label: "Cash", received_amount: "1000.00" }] }],
+      },
+    } });
     if (url.pathname.endsWith("/appointments-created/")) return route.fulfill({ json: { summary: { appointments_created: 60, period: period({}, "2026-09-21", "2026-09-26") } } });
     return route.fulfill({ json: {} });
   });
