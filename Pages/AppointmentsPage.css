@@ -1,6 +1,10 @@
 .appointments-page {
+  display: flex;
   width: 100%;
   max-width: 1500px;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
   margin: 0 auto;
   color: #272727;
   font-family: "Poppins", sans-serif;
@@ -162,6 +166,10 @@
 }
 
 .appointments-ledger {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid rgba(187, 161, 79, 0.2);
   border-radius: 16px;
@@ -203,7 +211,7 @@
   font: 600 11px "Poppins", sans-serif;
 }
 
-.appointments-table-wrap { max-height: min(60vh, 480px); overflow: auto; }
+.appointments-table-wrap { min-height: 0; flex: 1; overflow: auto; }
 .appointments-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .appointments-table th:nth-child(1) { width: 15%; }
 .appointments-table th:nth-child(2) { width: 17%; }
