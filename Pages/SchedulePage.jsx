@@ -569,12 +569,12 @@ function RosterView({ staffList, rosterMap, onAdd, onEdit, onDelete, deleting })
   }
 
   return (
-    <div style={{ borderRadius: 18, border: `1px solid ${BORDER}`, overflow: "hidden", boxShadow: "0 4px 24px rgba(39,39,39,0.07)", overflowX: "auto" }}>
+    <div style={{ borderRadius: 18, border: `1px solid ${BORDER}`, overflow: "auto", maxHeight: "min(55vh, 480px)", boxShadow: "0 4px 24px rgba(39,39,39,0.07)" }}>
       <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 760 }}>
         {/* ── Header ── */}
         <thead>
           <tr>
-            <th style={{ width: 190, padding: "14px 16px", textAlign: "left", background: "linear-gradient(135deg,#1c1a15 0%,#272727 100%)", borderBottom: "1px solid rgba(187,161,79,0.18)", position: "sticky", left: 0, zIndex: 3 }}>
+            <th style={{ width: 190, padding: "14px 16px", textAlign: "left", background: "linear-gradient(135deg,#1c1a15 0%,#272727 100%)", borderBottom: "1px solid rgba(187,161,79,0.18)", position: "sticky", top: 0, left: 0, zIndex: 3 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <FiUser size={12} color="rgba(187,161,79,0.5)" />
                 <span style={{ fontSize: 10, color: "rgba(187,161,79,0.55)", fontFamily: "'Poppins', sans-serif", textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}>Team Member</span>
@@ -583,7 +583,7 @@ function RosterView({ staffList, rosterMap, onAdd, onEdit, onDelete, deleting })
             {DAYS.map((day) => {
               const isWeekend = day.value >= 5;
               return (
-                <th key={day.value} style={{ padding: "14px 10px", textAlign: "center", minWidth: 118, background: isWeekend ? "linear-gradient(135deg,#26200e,#3a2a14)" : "linear-gradient(135deg,#1c1a15 0%,#272727 100%)", borderBottom: "1px solid rgba(187,161,79,0.18)", borderLeft: "1px solid rgba(187,161,79,0.1)" }}>
+                <th key={day.value} style={{ padding: "14px 10px", textAlign: "center", minWidth: 118, background: isWeekend ? "linear-gradient(135deg,#26200e,#3a2a14)" : "linear-gradient(135deg,#1c1a15 0%,#272727 100%)", borderBottom: "1px solid rgba(187,161,79,0.18)", borderLeft: "1px solid rgba(187,161,79,0.1)", position: "sticky", top: 0, zIndex: 2 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: isWeekend ? GOLD : "#fff", fontFamily: "'Poppins', sans-serif", letterSpacing: "0.02em" }}>{day.short}</div>
                   <div style={{ fontSize: 9, color: isWeekend ? "rgba(187,161,79,0.55)" : "rgba(255,255,255,0.3)", fontFamily: "'Poppins', sans-serif", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: 1 }}>{day.full}</div>
                 </th>
