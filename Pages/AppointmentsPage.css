@@ -203,7 +203,7 @@
   font: 600 11px "Poppins", sans-serif;
 }
 
-.appointments-table-wrap { overflow-x: auto; }
+.appointments-table-wrap { max-height: min(55vh, 480px); overflow: auto; }
 .appointments-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .appointments-table th:nth-child(1) { width: 15%; }
 .appointments-table th:nth-child(2) { width: 17%; }
@@ -214,8 +214,12 @@
 .appointments-table th:nth-child(7) { width: 9%; }
 
 .appointments-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 10px 13px;
   color: #987554;
+  background: #fdfaf5;
   text-align: left;
   font-size: 10px;
   font-weight: 700;
