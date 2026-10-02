@@ -101,3 +101,5 @@ button.shift-block.repeating:hover,button.shift-block.repeating:focus-visible { 
   .shift-repeat-day__name { gap: 0; }
   .shift-repeat-day__times { grid-template-columns: 1fr 12px 1fr; gap: 2px; }
 }
+
+.shift-rules__grid { max-height: 640px; overflow-y: auto; }
