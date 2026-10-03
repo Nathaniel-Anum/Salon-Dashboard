@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Spin } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { FiCheck, FiMail, FiPhone, FiSearch, FiUser, FiUserPlus, FiUsers } from "react-icons/fi";
@@ -6,6 +6,7 @@ import _axios from "../src/api/_axios.js";
 import { firstApiErrorMessage } from "../src/api/apiErrors.js";
 import { searchGuestCustomers } from "../src/api/guestCustomers.js";
 import { permissionState } from "../src/auth/permissions.js";
+import { filterCustomers } from "../src/booking/customerSearch.js";
 import "./BookingIdentityPicker.css";
 
 const MODES = [
@@ -60,9 +61,8 @@ export default function BookingIdentityPicker({ value, onChange, initialKind = "
   const canViewGuests = permissionState("customers.view") !== false;
 
   const registeredQuery = useQuery({
-    queryKey: ["booking-registered-customers", debouncedRegisteredSearch],
+    queryKey: ["booking-registered-customers"],
     queryFn: ({ signal }) => _axios.get("/api/portal/v1/accounts/customers/", {
-      params: debouncedRegisteredSearch.trim() ? { search: debouncedRegisteredSearch.trim() } : {},
       signal,
       portalMessage: false,
     }).then((response) => Array.isArray(response.data) ? response.data : (response.data?.results ?? [])),
@@ -80,7 +80,10 @@ export default function BookingIdentityPicker({ value, onChange, initialKind = "
     retry: false,
   });
 
-  const registeredCustomers = registeredQuery.data ?? [];
+  const registeredCustomers = useMemo(
+    () => filterCustomers(registeredQuery.data, debouncedRegisteredSearch),
+    [debouncedRegisteredSearch, registeredQuery.data],
+  );
   const savedGuests = guestQuery.data ?? [];
 
   const switchMode = (nextMode) => {
