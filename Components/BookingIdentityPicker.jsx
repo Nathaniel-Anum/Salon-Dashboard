@@ -77,7 +77,7 @@ export default function BookingIdentityPicker({ value, onChange, initialKind = "
   const guestQuery = useQuery({
     queryKey: ["booking-guest-customers", trimmedGuestSearch],
     queryFn: ({ signal }) => searchGuestCustomers(trimmedGuestSearch, signal),
-    enabled: mode === "guest" && canViewGuests && trimmedGuestSearch.length >= 2,
+    enabled: mode === "guest" && canViewGuests,
     staleTime: 0,
     gcTime: 0,
     retry: false,
@@ -174,10 +174,8 @@ export default function BookingIdentityPicker({ value, onChange, initialKind = "
                 />
               </label>
               <div className="identity-results" aria-live="polite">
-                {trimmedGuestSearch.length < 2 ? (
-                  <div className="identity-feedback">Enter at least 2 characters to search saved guests.</div>
-                ) : guestQuery.isFetching ? (
-                  <div className="identity-feedback"><Spin size="small" /> Searching guests…</div>
+                {guestQuery.isFetching ? (
+                  <div className="identity-feedback"><Spin size="small" /> Loading guests…</div>
                 ) : guestQuery.isError ? (
                   <div className="identity-feedback is-error">{firstApiErrorMessage(guestQuery.error, "Saved guests could not be loaded.")}</div>
                 ) : savedGuests.length ? <>
@@ -203,7 +201,7 @@ export default function BookingIdentityPicker({ value, onChange, initialKind = "
                   </div>
                 </> : (
                   <div className="identity-feedback">
-                    <span>No saved guest matches this search.</span>
+                    <span>{trimmedGuestSearch ? "No saved guest matches this search." : "No saved guests found."}</span>
                     <button type="button" onClick={() => switchMode("new_guest")}>Enter a new guest</button>
                   </div>
                 )}
