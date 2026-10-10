@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import _axios from "./_axios.js";
-import { searchGuestCustomers } from "./guestCustomers.js";
+import { guestHistoryLabel, searchGuestCustomers } from "./guestCustomers.js";
 
 test("searches the read-only guest directory as a plain array with cancellation support", async () => {
   const originalGet = _axios.get;
@@ -24,12 +24,18 @@ test("searches the read-only guest directory as a plain array with cancellation 
   }
 });
 
-test("does not accept a paginated guest-directory envelope", async () => {
+test("accepts a paginated guest-directory response", async () => {
   const originalGet = _axios.get;
   _axios.get = async () => ({ data: { results: [{ id: 184 }] } });
   try {
-    assert.deepEqual(await searchGuestCustomers("ama"), []);
+    assert.deepEqual(await searchGuestCustomers("ama"), [{ id: 184 }]);
   } finally {
     _axios.get = originalGet;
   }
+});
+
+test("summarizes saved-guest booking history", () => {
+  assert.equal(guestHistoryLabel({ appointment_count: 2, last_appointment_date: "2026-10-01" }), "2 previous appointments · Last visit 1 Oct 2026");
+  assert.equal(guestHistoryLabel({ booking_count: 0 }), "No appointment history");
+  assert.equal(guestHistoryLabel({}), null);
 });

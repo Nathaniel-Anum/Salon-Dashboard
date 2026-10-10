@@ -79,6 +79,14 @@ import {
 } from "../src/api/bookingV2.js";
 import { useBookingV2 } from "../src/hooks/useBookingV2.js";
 import { isStaffEligibleForService } from "../src/api/providerEligibility.js";
+import { getAppointmentFinancialSummary } from "../src/api/appointmentCheckout.js";
+import {
+  appointmentStaffId,
+  buildAppointmentServiceSegments,
+  calendarCustomerName,
+  calendarStaffId,
+  UNASSIGNED_STAFF_ID,
+} from "../src/booking/calendarAppointmentSegments.js";
 import { permissionState } from "../src/auth/permissions.js";
 import "./CalendarPage.css";
 
@@ -94,6 +102,12 @@ const TOTAL_SLOTS = ((CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60) / SLOT_MINS
 const SLOT_HEIGHT_PX = 18;      // four compact quarter-hour rows = 72px per hour
 const COLUMN_W = 220;           // px width per person column
 const CALENDAR_PREFERENCES_KEY = "portal.calendar.preferences.v1";
+const UNASSIGNED_STAFF = Object.freeze({
+  id: UNASSIGNED_STAFF_ID,
+  full_name: "Unassigned",
+  role: "Needs assignment",
+  is_unassigned: true,
+});
 
 function loadCalendarPreferences() {
   try {
@@ -1669,9 +1683,17 @@ function BookingCard({ booking, isPast, isMoving, colOffset, colCount, onDragSta
    BOOKING DETAIL MODAL
 ───────────────────────────────────────────── */
 function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorrections, canCorrect, canAdjustPrice }) {
+  const raw = booking?.raw || {};
+  const canViewFinancials = permissionState("booking_settlements.view", raw) !== false;
+  const financialQ = useQuery({
+    queryKey: ["appointment-financial-summary", booking?.appointmentId ?? booking?.id],
+    queryFn: () => getAppointmentFinancialSummary(booking.appointmentId ?? booking.id),
+    enabled: Boolean(booking && canViewFinancials),
+    staleTime: 5_000,
+  });
   if (!booking) return null;
 
-  const raw = booking.raw || {};
+  const financial = financialQ.data ?? raw.financial_summary ?? raw;
   const cfg = getStatusCfg(booking.status);
   const [from, to] = avatarGradient(staff?.full_name || "");
   const startMins = timeToMins(booking.startTime);
@@ -1680,20 +1702,26 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorre
   const durLabel = booking.durationMins >= 60
     ? `${Math.floor(booking.durationMins / 60)}h${booking.durationMins % 60 ? ` ${booking.durationMins % 60}m` : ""}`
     : `${booking.durationMins}m`;
+  const currency = financial.currency || raw.currency || "GHS";
   const formatMoney = (value) => {
-    const amount = parseFloat(value ?? 0);
-    if (Number.isNaN(amount)) return "GHS 0.00";
+    if (value == null || value === "") return "—";
+    const amount = parseFloat(value);
+    if (Number.isNaN(amount)) return "—";
     return new Intl.NumberFormat("en-GH", {
       style: "currency",
-      currency: "GHS",
+      currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount);
   };
-  const hasBillingSummary =
-    raw.subtotal_amount != null ||
-    raw.deposit_amount != null ||
-    raw.remaining_balance_amount != null;
+  const billingItems = [
+    { label: "Total", value: financial.total_amount_due ?? financial.original_net_total ?? raw.subtotal_amount ?? raw.total_price },
+    { label: "Deposit paid", value: financial.deposit_amount_paid ?? raw.deposit_amount ?? financial.online_amount_paid },
+    { label: "Balance", value: financial.remaining_amount_due ?? raw.remaining_balance_amount ?? raw.outstanding_balance },
+  ];
+  const hasBillingSummary = canViewFinancials && (
+    financialQ.isLoading || financialQ.isError || billingItems.some((item) => item.value != null)
+  );
 
   return (
     <div
@@ -1726,14 +1754,14 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorre
               className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white shrink-0"
               style={{ background: `linear-gradient(135deg, ${from}, ${to})`, fontSize: 15, fontFamily: "'Poppins', sans-serif" }}
             >
-              {initials(staff?.full_name)}
+                {initials(staff?.full_name || "Unassigned")}
             </div>
             <div>
               <p className="text-sm font-semibold text-[#272727]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
-                {staff?.full_name || "Staff"}
+                {staff?.full_name || "Unassigned"}
               </p>
               <p className="text-xs text-[#987554]" style={{ fontFamily: "'Poppins', sans-serif", margin: 0 }}>
-                {staff?.role}
+                {staff?.role || (!staff ? "Needs assignment" : null)}
               </p>
             </div>
           </div>
@@ -1808,17 +1836,18 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorre
                     Payment Summary
                   </p>
                   <p style={{ margin: 0, fontSize: 12, color: "#6f5a42", fontFamily: "'Poppins', sans-serif" }}>
-                    All amounts shown in GHS
+                    All amounts shown in {currency}
                   </p>
                 </div>
               </div>
 
+              {financialQ.isLoading && !billingItems.some((item) => item.value != null) ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#6f5a42", fontSize: 12 }}><Spin size="small" /> Loading payment summary…</div>
+              ) : financialQ.isError && !billingItems.some((item) => item.value != null) ? (
+                <button type="button" onClick={() => financialQ.refetch()} style={{ border: 0, padding: 0, color: "#80691f", background: "transparent", cursor: "pointer", font: "600 11px 'Poppins', sans-serif" }}>Payment summary unavailable. Try again</button>
+              ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
-                {[
-                  { label: "Subtotal", value: raw.subtotal_amount },
-                  { label: "Deposit", value: raw.deposit_amount },
-                  { label: "Balance", value: raw.remaining_balance_amount },
-                ].map((item) => (
+                {billingItems.map((item) => (
                   <div
                     key={item.label}
                     style={{
@@ -1837,6 +1866,7 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorre
                   </div>
                 ))}
               </div>
+              )}
             </div>
           )}
 
@@ -1847,7 +1877,7 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorre
               onClick={() => onOpenCorrections(booking)}
               className="calendar-booking-correct"
               style={{ gridColumn: "1 / -1" }}
-            ><FiScissors size={14} /> {canAdjustPrice ? "Correct services and price" : "Correct services"}</button>}
+            ><FiScissors size={14} /> {canAdjustPrice ? "Edit booking" : "Edit services"}</button>}
             <button
               onClick={onClose}
               style={{
@@ -1878,7 +1908,7 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorre
                 cursor: "pointer",
               }}
             >
-              Update Status
+              Manage visit
             </button>
           </div>
         </div>
@@ -1917,7 +1947,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
   const grouped = staff.map((s) => ({
     staff: s,
     bookings: dayBookings
-      .filter((b) => b.staffId === s.id)
+      .filter((b) => String(b.staffId) === String(s.id))
       .sort((a, b) => a.startTime.localeCompare(b.startTime)),
   }));
 
@@ -1989,7 +2019,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
               All · {dayBookings.length}
             </button>
             {staff.map((s) => {
-              const count = dayBookings.filter((b) => b.staffId === s.id).length;
+              const count = dayBookings.filter((b) => String(b.staffId) === String(s.id)).length;
               const isActive = activeStaff === s.id;
               const [from] = avatarGradient(s.full_name);
               return (
@@ -2155,7 +2185,7 @@ function AppointmentsCardView({ dayBookings, staff, onCardClick, isMobile }) {
         <div style={{ padding: "0 14px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
           {staff.map((s) => {
             const [from, to] = avatarGradient(s.full_name);
-            const count = dayBookings.filter((b) => b.staffId === s.id).length;
+            const count = dayBookings.filter((b) => String(b.staffId) === String(s.id)).length;
             const isActive = activeStaff === s.id;
             const nameMatch = q ? s.full_name.toLowerCase().includes(q) : true;
             const hasBookings = count > 0;
@@ -2752,15 +2782,7 @@ export default function CalendarPage() {
     return raw.flatMap((apt) => {
       const services = apt.services ?? apt.booking_services ?? [];
       const firstService = services[0];
-      const client =
-        apt.customer_name ||
-        apt.customer_full_name ||
-        apt.guest_name ||
-        apt.guest?.full_name ||
-        (apt.customer_details
-          ? `${apt.customer_details.first_name ?? ""} ${apt.customer_details.last_name ?? ""}`.trim()
-          : null) ||
-        (apt.customer ? `Client #${apt.customer}` : "Walk-in");
+      const client = calendarCustomerName(apt);
       const phone =
         apt.guest_customer?.phone_number ||
         apt.phone_number ||
@@ -2770,58 +2792,11 @@ export default function CalendarPage() {
         apt.guest_phone ||
         null;
 
-      const orderedServiceLines = services
-        .map((service, originalIndex) => {
-          const rawStaff = service.staff_id ?? service.staff;
-          const staffId = typeof rawStaff === "object" ? rawStaff?.id : rawStaff;
-          const startMs = Date.parse(service.scheduled_start);
-          const endMs = Date.parse(service.scheduled_end);
-          const sequence = Number(service.sequence);
-          return {
-            service,
-            originalIndex,
-            staffId: staffId != null ? Number(staffId) : null,
-            startMs,
-            endMs,
-            sequence: Number.isFinite(sequence) ? sequence : originalIndex + 1,
-          };
-        })
-        .sort((a, b) => a.sequence - b.sequence || a.originalIndex - b.originalIndex);
-
-      const canSplitByService =
-        orderedServiceLines.length > 0 &&
-        orderedServiceLines.every(
-          (line) =>
-            Number.isFinite(line.staffId) &&
-            Number.isFinite(line.startMs) &&
-            Number.isFinite(line.endMs) &&
-            line.endMs > line.startMs
-        );
-
-      if (canSplitByService) {
-        const groups = [];
-        orderedServiceLines.forEach((line) => {
-          const previous = groups.at(-1);
-          if (
-            previous &&
-            previous.staffId === line.staffId &&
-            previous.endMs === line.startMs
-          ) {
-            previous.lines.push(line);
-            previous.endMs = line.endMs;
-            return;
-          }
-          groups.push({
-            staffId: line.staffId,
-            startMs: line.startMs,
-            endMs: line.endMs,
-            lines: [line],
-          });
-        });
-
+      const groups = buildAppointmentServiceSegments(services, apt.scheduled_start);
+      if (groups.length) {
         return groups.map((group, groupIndex) => {
           const groupServices = group.lines.map((line) => line.service);
-          const startIso = group.lines[0].service.scheduled_start;
+          const startIso = group.lines[0].service.scheduled_start || new Date(group.startMs).toISOString();
           const segmentServiceIds = groupServices.map(
             (service, index) => service.id ?? service.service_id ?? index
           );
@@ -2829,7 +2804,7 @@ export default function CalendarPage() {
             id: apt.id,
             appointmentId: apt.id,
             calendarId: `${apt.id}:${segmentServiceIds.join("-")}`,
-            staffId: group.staffId,
+            staffId: calendarStaffId(group.staffId, visibleStaff),
             client,
             service: groupServices
               .map((service) => service.service_name || service.name || "Service")
@@ -2856,9 +2831,7 @@ export default function CalendarPage() {
         ? apt.scheduled_start.slice(11, 16)
         : apt.start_time?.slice(0, 5) || "09:00";
       let staffId =
-        (typeof apt.staff === "object" && apt.staff !== null
-          ? apt.staff.id
-          : apt.staff_details?.id ?? (apt.staff != null ? apt.staff : undefined)) ??
+        appointmentStaffId(apt) ??
         firstService?.staff_id ??
         (typeof firstService?.staff === "object" ? firstService.staff?.id : firstService?.staff) ??
         null;
@@ -2876,7 +2849,7 @@ export default function CalendarPage() {
         const match = visibleStaff.find((staff) =>
           assignedIds.includes(staff.id) || assignedIds.includes(String(staff.id))
         );
-        staffId = match?.id ?? visibleStaff[0]?.id ?? null;
+        staffId = match?.id ?? null;
       }
 
       const service =
@@ -2901,7 +2874,7 @@ export default function CalendarPage() {
         id: apt.id,
         appointmentId: apt.id,
         calendarId: String(apt.id),
-        staffId: staffId != null ? Number(staffId) : null,
+        staffId: calendarStaffId(staffId, visibleStaff),
         client,
         service,
         appointmentServiceSummary: apt.service_summary || apt.service_name || service,
@@ -2918,6 +2891,22 @@ export default function CalendarPage() {
       }];
     });
   }, [aptsRaw, serviceLookup, dateStr, visibleStaff]);
+  const unassignedBookings = useMemo(() => dayBookings.filter(
+    (booking) => booking.staffId === UNASSIGNED_STAFF_ID,
+  ), [dayBookings]);
+  const displayedCalendarStaff = useMemo(() => {
+    if (staffFilter.startsWith("staff:")) return calendarStaff;
+    const shown = new Set(calendarStaff.map((staff) => String(staff.id)));
+    const assigned = [
+      ...calendarStaff,
+      ...visibleStaff.filter((staff) => !shown.has(String(staff.id)) && dayBookings.some((booking) => String(booking.staffId) === String(staff.id))),
+    ];
+    return unassignedBookings.length ? [...assigned, UNASSIGNED_STAFF] : assigned;
+  }, [calendarStaff, dayBookings, staffFilter, unassignedBookings.length, visibleStaff]);
+  const cardViewStaff = useMemo(
+    () => unassignedBookings.length ? [...visibleStaff, UNASSIGNED_STAFF] : visibleStaff,
+    [unassignedBookings.length, visibleStaff],
+  );
 
   /* Keep every selected day anchored at its finite midnight start. */
   useEffect(() => {
@@ -3843,7 +3832,7 @@ export default function CalendarPage() {
             />
             {!isMobile && (
               <span style={{ marginLeft: "auto", color: "rgba(111,90,66,0.72)", fontSize: 10, fontFamily: "'Poppins',sans-serif" }}>
-                {calendarStaff.length} column{calendarStaff.length !== 1 ? "s" : ""}
+                {displayedCalendarStaff.length} column{displayedCalendarStaff.length !== 1 ? "s" : ""}
               </span>
             )}
           </div>
@@ -3881,11 +3870,41 @@ export default function CalendarPage() {
           </div>
         )}
 
+        {unassignedBookings.length > 0 && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
+            padding: isMobile ? "10px 16px" : "11px 28px",
+            background: "#fff4e3",
+            borderBottom: "1px solid rgba(173,105,27,0.24)",
+            flexShrink: 0,
+          }}>
+            <FiAlertCircle size={15} color="#9a5b16" style={{ flexShrink: 0 }} />
+            <p style={{ margin: 0, color: "#714514", font: "600 11px/1.5 'Poppins', sans-serif" }}>
+              {unassignedBookings.length} booking{unassignedBookings.length === 1 ? "" : "s"} need{unassignedBookings.length === 1 ? "s" : ""} a staff assignment.
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {unassignedBookings.slice(0, 3).map((booking) => (
+                <button
+                  key={booking.calendarId ?? booking.id}
+                  type="button"
+                  onClick={() => setSelectedBooking(booking)}
+                  style={{ border: "1px solid rgba(154,91,22,.24)", borderRadius: 8, padding: "5px 8px", color: "#714514", background: "#fffaf2", cursor: "pointer", font: "600 10px 'Poppins', sans-serif" }}
+                >
+                  {booking.client} · {formatDisplayTime(booking.startTime)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Cards view ── */}
         {view === "cards" && (
           <AppointmentsCardView
             dayBookings={dayBookings}
-            staff={visibleStaff}
+            staff={cardViewStaff}
             onCardClick={setSelectedBooking}
             isMobile={isMobile}
           />
@@ -3929,7 +3948,7 @@ export default function CalendarPage() {
               className="flex"
               style={{ width: "max-content", minWidth: "100%" }}
             >
-              {calendarStaff.length === 0 && (
+              {displayedCalendarStaff.length === 0 && (
                 <div
                   style={{
                     width: "100%",
@@ -3954,9 +3973,9 @@ export default function CalendarPage() {
                     : "No staff match this filter."}
                 </div>
               )}
-              {calendarStaff.map((staff, i) => {
+              {displayedCalendarStaff.map((staff, i) => {
                 const [from, to] = avatarGradient(staff.full_name);
-                const staffBookings = dayBookings.filter((b) => b.staffId === staff.id);
+                const staffBookings = dayBookings.filter((b) => String(b.staffId) === String(staff.id));
                 const staffAppointmentCount = new Set(
                   staffBookings.map((booking) => booking.appointmentId ?? booking.id)
                 ).size;
@@ -3972,7 +3991,7 @@ export default function CalendarPage() {
                       gap: isMobile ? 6 : 10,
                       padding: isMobile ? "8px 10px" : "10px 16px",
                       borderRight:
-                        i < calendarStaff.length - 1
+                        i < displayedCalendarStaff.length - 1
                           ? "1px solid rgba(92,74,52,0.2)"
                           : "none",
                     }}
@@ -4167,8 +4186,8 @@ export default function CalendarPage() {
               )}
 
               {/* Staff columns */}
-              {calendarStaff.map((staff, i) => {
-                const colBookings = dayBookings.filter((b) => b.staffId === staff.id);
+              {displayedCalendarStaff.map((staff, i) => {
+                const colBookings = dayBookings.filter((b) => String(b.staffId) === String(staff.id));
                 const isDropTarget = dragOverCol === staff.id;
                 const staffSchedule = schedulesByStaff.get(String(staff.id)) ?? [];
 
@@ -4183,7 +4202,7 @@ export default function CalendarPage() {
                       flexGrow: 1,
                       height: TOTAL_SLOTS * SLOT_HEIGHT_PX,
                       borderRight:
-                        i < calendarStaff.length - 1
+                        i < displayedCalendarStaff.length - 1
                           ? "1px solid rgba(92,74,52,0.22)"
                           : "none",
                       background: isDropTarget
@@ -4359,7 +4378,7 @@ export default function CalendarPage() {
         <BookingModal
           key={selectedBooking.calendarId ?? selectedBooking.id}
           booking={selectedBooking}
-          staff={visibleStaff.find((s) => s.id === selectedBooking.staffId)}
+          staff={visibleStaff.find((s) => String(s.id) === String(selectedBooking.staffId))}
           onClose={() => setSelectedBooking(null)}
           canCorrect={bookingV2.enabled && ["confirmed", "arrived"].includes(String(selectedBooking.status || "").replaceAll("_", "-").toLowerCase()) && permissionState("appointments.edit", selectedBooking.raw) !== false}
           canAdjustPrice={permissionState("booking_price_adjustments.create", selectedBooking.raw) !== false}
@@ -4375,7 +4394,7 @@ export default function CalendarPage() {
         <AppointmentCheckoutDrawer
           key={statusDrawerBooking.id}
           booking={statusDrawerBooking}
-          staff={visibleStaff.find((s) => s.id === statusDrawerBooking.staffId)}
+          staff={visibleStaff.find((s) => String(s.id) === String(statusDrawerBooking.staffId))}
           allServices={servicesData}
           allStaff={visibleStaff}
           onClose={() => setStatusDrawerBooking(null)}

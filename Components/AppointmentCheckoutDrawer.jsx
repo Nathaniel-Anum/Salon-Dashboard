@@ -798,7 +798,7 @@ export default function AppointmentCheckoutDrawer({
               <section className="checkout-section">
                 <div className="checkout-section-heading">
                   <div><span>Service sheet</span><h3>What was delivered</h3></div>
-                  {canAdd && <button className="checkout-text-button" onClick={() => { setShowAddonForm((value) => !value); setShowPayment(false); }}><FiPlus /> Add service</button>}
+                  {canAdd ? <button className="checkout-text-button" onClick={() => { setShowAddonForm((value) => !value); setShowPayment(false); }}><FiPlus /> Add delivered service</button> : canCheckIn ? <small className="checkout-service-hint">Check in to add delivered services</small> : null}
                 </div>
 
                 <div className="checkout-lines">
@@ -952,7 +952,7 @@ export default function AppointmentCheckoutDrawer({
                 <MoneyRow label="Original services" value={summary?.original_net_total} currency={currency} />
                 <MoneyRow label="Add-ons" value={summary?.active_addon_total} currency={currency} />
                 <MoneyRow label="Total due" value={summary?.total_amount_due} strong currency={currency} />
-                <MoneyRow label="Paid online" value={summary?.online_amount_paid} muted currency={currency} />
+                <MoneyRow label="Deposit paid" value={summary?.deposit_amount_paid ?? summary?.online_amount_paid} muted currency={currency} />
                 <MoneyRow label="Paid on-site" value={summary?.salon_payments_received} muted currency={currency} />
                 {amount(summary?.salon_payment_reversals) > 0 && <MoneyRow label="Reversals" value={summary?.salon_payment_reversals} muted currency={currency} />}
               </div>

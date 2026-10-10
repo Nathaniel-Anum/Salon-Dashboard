@@ -32,34 +32,65 @@ export async function moveAppointment(appointmentId, update, { v2 = false } = {}
   return response.data;
 }
 
-export function buildServiceCorrections(rows, draft) {
-  return rows.filter((row) => row.canReassign).flatMap((row) => {
-    const changes = draft[String(row.id)] ?? {};
-    const patch = { appointment_item_id: row.id };
-    if (changes.service_id !== undefined && String(changes.service_id) !== String(row.serviceId)) {
-      patch.service_id = changes.service_id;
-      patch.service_option_id = changes.service_option_id ?? null;
-    } else if (changes.service_option_id !== undefined && String(changes.service_option_id) !== String(row.optionId ?? null)) {
-      patch.service_option_id = changes.service_option_id;
+export function buildServiceOperations(rows, draftRows) {
+  const originals = new Map(rows.filter((row) => row.canReassign).map((row) => [String(row.id), row]));
+  const retained = new Set();
+  const operations = [];
+
+  for (const row of draftRows) {
+    if (row.appointmentItemId == null) {
+      operations.push({
+        operation: "add",
+        service_id: row.serviceId,
+        service_option_id: row.optionId ?? null,
+        staff_id: row.staffId ?? null,
+      });
+      continue;
     }
-    if (changes.staff_id !== undefined && String(changes.staff_id) !== String(row.providerId)) patch.staff_id = changes.staff_id;
-    return Object.keys(patch).length > 1 ? [patch] : [];
-  });
+
+    const id = String(row.appointmentItemId);
+    const original = originals.get(id);
+    retained.add(id);
+    if (!original) continue;
+    const operation = { operation: "update", appointment_item_id: original.id };
+    if (String(row.serviceId) !== String(original.serviceId)) {
+      operation.service_id = row.serviceId;
+      operation.service_option_id = row.optionId ?? null;
+    } else if (String(row.optionId ?? null) !== String(original.optionId ?? null)) {
+      operation.service_option_id = row.optionId ?? null;
+    }
+    if (String(row.staffId ?? null) !== String(original.providerId ?? null)) operation.staff_id = row.staffId ?? null;
+    if (Object.keys(operation).length > 2) operations.push(operation);
+  }
+
+  for (const [id, row] of originals) {
+    if (!retained.has(id)) operations.push({ operation: "remove", appointment_item_id: row.id });
+  }
+  return operations;
 }
 
 export function buildAppointmentEdit(update = {}, currentTotal) {
-  if (Object.keys(update).some((key) => !["services", "price_adjustment", "reason"].includes(key))) throw new Error("Unsupported appointment edit field.");
+  if (Object.keys(update).some((key) => !["services", "price_adjustment", "reason", "confirm_provider_override"].includes(key))) throw new Error("Unsupported appointment edit field.");
   const payload = {};
   if (update.services !== undefined) {
     if (!Array.isArray(update.services) || !update.services.length) throw new Error("Change at least one service or provider.");
     const ids = new Set();
     payload.services = update.services.map((row) => {
-      if (!row || row.appointment_item_id == null || ids.has(String(row.appointment_item_id))) throw new Error("Each appointment item must appear once.");
-      ids.add(String(row.appointment_item_id));
-      const fields = Object.keys(row).filter((key) => key !== "appointment_item_id");
-      if (!fields.length || fields.some((key) => !["service_id", "service_option_id", "staff_id"].includes(key))) throw new Error("Choose a service, option, or provider for each edit.");
-      if (fields.some((key) => row[key] === undefined || (key !== "service_option_id" && row[key] == null))) throw new Error("Service and staff selections cannot be empty.");
-      return { ...row };
+      if (!row || typeof row !== "object") throw new Error("Choose a valid service operation.");
+      const operation = row.operation ?? "update";
+      if (!["update", "add", "remove"].includes(operation) || Object.keys(row).some((key) => !["operation", "appointment_item_id", "service_id", "service_option_id", "staff_id"].includes(key))) throw new Error("Choose a valid service operation.");
+      const id = row.appointment_item_id;
+      if (operation === "add") {
+        if (id != null || row.service_id == null) throw new Error("Choose a service to add.");
+      } else {
+        if (id == null || ids.has(String(id))) throw new Error("Each appointment item must appear once.");
+        ids.add(String(id));
+      }
+      if (operation === "remove" && Object.keys(row).some((key) => !["operation", "appointment_item_id"].includes(key))) throw new Error("Removed services cannot include replacement fields.");
+      if (operation === "update" && !["service_id", "service_option_id", "staff_id"].some((key) => key in row)) throw new Error("Choose a service, option, or provider for each edit.");
+      if ("service_id" in row && row.service_id == null) throw new Error("Choose a service.");
+      if (["service_id", "service_option_id", "staff_id"].some((key) => key in row && row[key] === undefined)) throw new Error("Service selections cannot be undefined.");
+      return { ...row, operation };
     });
   }
   if (update.price_adjustment !== undefined) {
@@ -68,7 +99,24 @@ export function buildAppointmentEdit(update = {}, currentTotal) {
   }
   if (!payload.services && !payload.price_adjustment) throw new Error("Include a service edit or price adjustment.");
   if (update.reason?.trim()) payload.reason = update.reason.trim();
+  if (update.confirm_provider_override === true) {
+    if (!payload.reason) throw new Error("Enter a reason before confirming the provider override.");
+    payload.confirm_provider_override = true;
+  }
   return payload;
+}
+
+export const hasStructuralServiceOperations = (payload = {}) =>
+  Array.isArray(payload.services) && payload.services.some((row) => ["add", "remove"].includes(row.operation));
+
+export function getAppointmentEditConfirmation(error) {
+  const data = error?.response?.data;
+  if (error?.response?.status !== 409 || data?.code !== "APPOINTMENT_EDIT_CONFIRMATION_REQUIRED") return null;
+  return {
+    detail: data.detail || "Review the provider conflicts before saving.",
+    canProceed: data.can_proceed !== false,
+    conflicts: Array.isArray(data.conflicts) ? data.conflicts : [],
+  };
 }
 
 export const editAppointment = (appointmentId, update, currentTotal) =>

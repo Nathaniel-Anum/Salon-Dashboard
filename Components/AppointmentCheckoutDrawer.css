@@ -266,6 +266,13 @@
   margin-bottom: 14px;
 }
 
+.checkout-service-hint {
+  max-width: 150px;
+  color: var(--checkout-muted);
+  text-align: right;
+  font: 500 10px/1.4 "Poppins", sans-serif;
+}
+
 .checkout-text-button,
 .checkout-retry {
   display: inline-flex;

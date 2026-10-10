@@ -35,7 +35,7 @@ const menuItems = [
   { name: "Appointments", icon: <FiClipboard />, path: "/appointments" },
   { name: "Services",     icon: <FiScissors />,  path: "/services" },
   { name: "Waitlist",     icon: <FiList />,      path: "/waitlist" },
-  { name: "Schedules",    icon: <FaClock size={14} />, path: "/schedules" },
+  { name: "Staff hours",  icon: <FaClock size={14} />, path: "/schedules" },
   { name: "Analytics",    icon: <FiBarChart2 />, path: "/analytics" },
   { name: "Blocked Days", icon: <FiSlash />,     path: "/blocked-days" },
   { name: "Settings",     icon: <FiSettings />,  path: "/settings" },

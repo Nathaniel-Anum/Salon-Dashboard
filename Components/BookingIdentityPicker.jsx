@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FiCheck, FiMail, FiPhone, FiSearch, FiUser, FiUserPlus, FiUsers } from "react-icons/fi";
 import _axios from "../src/api/_axios.js";
 import { firstApiErrorMessage } from "../src/api/apiErrors.js";
-import { searchGuestCustomers } from "../src/api/guestCustomers.js";
+import { guestHistoryLabel, searchGuestCustomers } from "../src/api/guestCustomers.js";
 import { permissionState } from "../src/auth/permissions.js";
 import "./BookingIdentityPicker.css";
 
@@ -58,6 +58,9 @@ export default function BookingIdentityPicker({ value, onChange, initialKind = "
   const debouncedRegisteredSearch = useDebouncedValue(registeredSearch);
   const debouncedGuestSearch = useDebouncedValue(guestSearch);
   const canViewGuests = permissionState("customers.view") !== false;
+  const availableModes = MODES.filter(({ key }) =>
+    key !== "new_guest" || !canViewGuests || mode === "new_guest",
+  );
 
   const registeredQuery = useQuery({
     queryKey: ["booking-registered-customers", debouncedRegisteredSearch],
@@ -103,7 +106,7 @@ export default function BookingIdentityPicker({ value, onChange, initialKind = "
   return (
     <section className="booking-identity-picker" aria-label="Customer identity">
       <div className="identity-mode-tabs" role="tablist" aria-label="Customer type">
-        {MODES.map(({ key, label, icon }) => (
+        {availableModes.map(({ key, label, icon }) => (
           <button
             type="button"
             key={key}
@@ -174,24 +177,28 @@ export default function BookingIdentityPicker({ value, onChange, initialKind = "
                   <div className="identity-feedback"><Spin size="small" /> Searching guests…</div>
                 ) : guestQuery.isError ? (
                   <div className="identity-feedback is-error">{firstApiErrorMessage(guestQuery.error, "Saved guests could not be loaded.")}</div>
-                ) : savedGuests.length ? savedGuests.map((guest) => (
-                  <ResultButton
-                    key={`guest-${guest.id}`}
-                    active={value?.kind === "guest" && String(value.id) === String(guest.id)}
-                    badge="Guest"
-                    name={guest.full_name || `Guest #${guest.id}`}
-                    contact={contactLine(guest)}
-                    meta={guest.appointment_count
-                      ? `${guest.appointment_count} previous appointment${guest.appointment_count === 1 ? "" : "s"}`
-                      : "No appointment history"}
-                    onClick={() => onChange({
-                      kind: "guest",
-                      id: Number(guest.id),
-                      label: guest.full_name || `Guest #${guest.id}`,
-                      guest,
-                    })}
-                  />
-                )) : (
+                ) : savedGuests.length ? <>
+                  {savedGuests.map((guest) => (
+                    <ResultButton
+                      key={`guest-${guest.id}`}
+                      active={value?.kind === "guest" && String(value.id) === String(guest.id)}
+                      badge="Guest"
+                      name={guest.full_name || `Guest #${guest.id}`}
+                      contact={contactLine(guest)}
+                      meta={guestHistoryLabel(guest)}
+                      onClick={() => onChange({
+                        kind: "guest",
+                        id: Number(guest.id),
+                        label: guest.full_name || `Guest #${guest.id}`,
+                        guest,
+                      })}
+                    />
+                  ))}
+                  <div className="identity-feedback">
+                    <span>None of these guests?</span>
+                    <button type="button" onClick={() => switchMode("new_guest")}>Enter a new guest</button>
+                  </div>
+                </> : (
                   <div className="identity-feedback">
                     <span>No saved guest matches this search.</span>
                     <button type="button" onClick={() => switchMode("new_guest")}>Enter a new guest</button>

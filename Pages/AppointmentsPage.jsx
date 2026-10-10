@@ -10,10 +10,12 @@ import {
   FiClock,
   FiCreditCard,
   FiDollarSign,
+  FiPlus,
   FiRefreshCw,
   FiSearch,
   FiUser,
   FiUsers,
+  FiTrash2,
   FiX,
 } from "react-icons/fi";
 import _axios from "../src/api/_axios";
@@ -24,10 +26,12 @@ import {
 import { firstApiErrorMessage } from "../src/api/apiErrors";
 import {
   buildAppointmentEdit,
-  buildServiceCorrections,
+  buildServiceOperations,
   editAppointment,
+  getAppointmentEditConfirmation,
+  hasStructuralServiceOperations,
 } from "../src/api/appointmentSchedule.js";
-import { isActiveRole, isStaffEligibleForCorrection } from "../src/api/providerEligibility.js";
+import { isActiveRole } from "../src/api/providerEligibility.js";
 import { permissionState } from "../src/auth/permissions";
 import CorrectNoShowModal from "../Components/CorrectNoShowModal";
 import { bookingV2Keys, createIdempotencyKey, listAppointmentsV2 } from "../src/api/bookingV2.js";
@@ -137,7 +141,7 @@ function appointmentServiceRows(appointment = {}) {
   if (serviceRows.length) {
     return serviceRows
       .slice()
-      .sort((a, b) => numeric(a?.sort_order) - numeric(b?.sort_order))
+      .sort((a, b) => numeric(a?.sort_order ?? a?.sequence) - numeric(b?.sort_order ?? b?.sequence))
       .map((service) => ({
       id: service.appointment_item_id ?? service.item_id ?? service.id ?? service.service_id,
       name: serviceLineName(service) || "Service details unavailable",
@@ -191,6 +195,15 @@ function staffName(appointment = {}) {
   );
 }
 
+function appointmentStaffNames(appointment = {}) {
+  const names = [...new Set(
+    appointmentServiceRows(appointment)
+      .map((service) => service.provider)
+      .filter((name) => name && name !== "Provider unavailable" && name !== "Unassigned"),
+  )];
+  return names.length ? names.join(", ") : staffName(appointment);
+}
+
 function appointmentStart(appointment = {}) {
   const direct = appointment.scheduled_start || appointment.start_at || appointment.starts_at;
   if (direct && dayjs(direct).isValid()) return dayjs(direct);
@@ -211,14 +224,14 @@ function numeric(value) {
 
 function appointmentTotal(appointment = {}) {
   return numeric(
-    appointment.total_amount_due ?? appointment.subtotal_amount ?? appointment.service_price ??
+    appointment.financial_summary?.total_amount_due ?? appointment.total_amount_due ?? appointment.subtotal_amount ?? appointment.service_price ??
     appointment.total_price ?? appointment.total ?? appointment.amount_due,
   );
 }
 
 function appointmentBalance(appointment = {}) {
   return numeric(
-    appointment.remaining_amount_due ?? appointment.remaining_balance_amount ?? appointment.outstanding_balance,
+    appointment.financial_summary?.remaining_amount_due ?? appointment.remaining_amount_due ?? appointment.remaining_balance_amount ?? appointment.outstanding_balance,
   );
 }
 
@@ -230,18 +243,28 @@ function originalBookingPaid(appointment = {}) {
   return completed || numeric(appointment.deposit_amount);
 }
 
+function appointmentDeposit(appointment = {}) {
+  const payments = normalizeList(appointment.payments).filter(
+    (payment) => payment?.is_deposit && ["completed", "paid", "received", "success", "succeeded"].includes(String(payment.status || "").toLowerCase()),
+  );
+  if (payments.length) return payments.reduce((sum, payment) => sum + numeric(payment.amount), 0);
+  const value = appointment.financial_summary?.deposit_amount_paid ?? appointment.deposit_amount_paid ?? appointment.deposit_amount;
+  return value == null || value === "" ? null : numeric(value);
+}
+
 function settlementCategory(appointment = {}) {
   if (appointment.is_settled === true || appointment.balance_settled === true) return "settled";
   if (appointment.is_settled === false || appointment.balance_settled === false) return "unsettled";
 
   const rawStatus = String(
-    appointment.settlement_status || appointment.appointment_payment_status ||
+    appointment.financial_summary?.settlement_status || appointment.settlement_status || appointment.appointment_payment_status ||
     appointment.payment_status || "",
   ).toLowerCase().replaceAll("_", "-");
   if (["paid", "settled", "no-payment-required", "waived"].includes(rawStatus)) return "settled";
   if (["unpaid", "partially-paid", "partial", "payment-due", "overpaid"].includes(rawStatus)) return "unsettled";
 
   const balanceFields = [
+    appointment.financial_summary?.remaining_amount_due,
     appointment.remaining_amount_due,
     appointment.remaining_balance_amount,
     appointment.outstanding_balance,
@@ -257,6 +280,9 @@ function money(value, currency = "GHS") {
     maximumFractionDigits: 2,
   })}`;
 }
+
+const appointmentCurrency = (appointment = {}) =>
+  appointment.financial_summary?.currency || appointment.currency || "GHS";
 
 function signedMoney(value, currency = "GHS") {
   const amount = numeric(value);
@@ -313,9 +339,10 @@ export function AppointmentDetailDrawer({ appointmentId, listAppointment, onClos
   const bookingV2 = useBookingV2();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [serviceDraft, setServiceDraft] = useState({});
+  const [serviceDraft, setServiceDraft] = useState([]);
   const [editReason, setEditReason] = useState("");
   const [editRequest, setEditRequest] = useState(null);
+  const [overrideConflict, setOverrideConflict] = useState(null);
   const [editingPrice, setEditingPrice] = useState(false);
   const [finalTotal, setFinalTotal] = useState("");
   const [priceReason, setPriceReason] = useState("");
@@ -343,17 +370,13 @@ export function AppointmentDetailDrawer({ appointmentId, listAppointment, onClos
     enabled: editing,
     staleTime: 300_000,
   });
-  const categoriesQ = useQuery({
-    queryKey: ["service-categories"],
-    queryFn: () => _axios.get("/api/portal/v1/booking/service-categories/").then((response) => normalizeList(response.data)),
-    enabled: editing,
-    staleTime: 300_000,
-  });
   const appointment = detailQ.data || listAppointment || {};
-  const summary = summaryQ.data;
+  const summary = summaryQ.data || appointment.financial_summary
+    ? { ...(summaryQ.data || {}), ...(appointment.financial_summary || {}) }
+    : null;
   const start = appointmentStart(appointment);
   const status = normalizeStatus(appointment.status);
-  const currency = summary?.currency || appointment.currency || "GHS";
+  const currency = summary?.currency || appointment.financial_summary?.currency || appointment.currency || "GHS";
   const remaining = numeric(summary?.remaining_amount_due ?? appointmentBalance(appointment));
   const fallbackPaid = originalBookingPaid(appointment);
   const financial = summary ?? {
@@ -376,8 +399,17 @@ export function AppointmentDetailDrawer({ appointmentId, listAppointment, onClos
   const activeServices = normalizeList(servicesQ.data).filter(isActiveRole);
   const currentTotal = numeric(financial?.total_amount_due ?? appointmentTotal(appointment));
   const overpayment = numeric(financial?.overpayment_amount ?? Math.max(0, numeric(financial?.total_amount_paid) - currentTotal));
-  const priceDelta = numeric(finalTotal) - currentTotal;
-  const changedServices = buildServiceCorrections(serviceRows, serviceDraft);
+  const changedServices = buildServiceOperations(serviceRows, serviceDraft);
+  const originalServiceTotal = serviceRows.reduce((total, row) => total + numeric(row.lineTotal), 0);
+  const draftServiceTotal = serviceDraft.reduce((total, row) => {
+    const original = serviceRows.find((item) => String(item.id) === String(row.appointmentItemId));
+    if (original && String(original.serviceId) === String(row.serviceId) && String(original.optionId ?? null) === String(row.optionId ?? null)) return total + numeric(original.lineTotal);
+    const service = activeServices.find((item) => String(item.id) === String(row.serviceId));
+    const option = normalizeList(service?.service_options ?? service?.options).find((item) => String(item.id) === String(row.optionId));
+    return total + numeric(option?.price ?? service?.price);
+  }, 0);
+  const calculatedTotal = Math.max(0, currentTotal + draftServiceTotal - originalServiceTotal);
+  const priceDelta = numeric(finalTotal) - calculatedTotal;
   const originalPayments = normalizeList(appointment.payments);
   const statusHistory = normalizeList(appointment.status_history).slice().reverse();
   const correctionEvidence = appointment.correction_evidence;
@@ -396,47 +428,105 @@ export function AppointmentDetailDrawer({ appointmentId, listAppointment, onClos
     mutationFn: (payload) => editAppointment(appointmentId, payload),
     onSuccess: async (updated) => {
       queryClient.setQueryData(bookingV2Keys.appointment(appointmentId), updated);
+      if (updated?.financial_summary) {
+        queryClient.setQueryData(["appointment-financial-summary", appointmentId], (current) => ({ ...current, ...updated.financial_summary }));
+      }
       setEditing(false);
       setEditingPrice(false);
       setEditRequest(null);
+      setOverrideConflict(null);
       await refreshAppointment();
-      message.success("Appointment corrections saved.");
+      message.success("Appointment changes saved.");
     },
-    onError: (error) => message.error(firstApiErrorMessage(error, "The appointment corrections could not be saved.")),
   });
 
   function openEditor() {
-    setServiceDraft({});
+    setServiceDraft(serviceRows.map((row) => ({
+      clientId: `appointment-${row.id}`,
+      appointmentItemId: row.id,
+      serviceId: row.serviceId,
+      optionId: row.optionId ?? null,
+      staffId: row.providerId ?? null,
+    })));
     setEditReason("");
     setEditRequest(null);
+    setOverrideConflict(null);
     setFinalTotal(currentTotal.toFixed(2));
     setPriceReason("");
     setEditingPrice(false);
     setEditing(true);
   }
 
-  function changeServiceDraft(id, changes) {
-    setServiceDraft((current) => ({ ...current, [String(id)]: { ...current[String(id)], ...changes } }));
+  function changeServiceDraft(clientId, changes) {
+    setServiceDraft((current) => current.map((row) => row.clientId === clientId ? { ...row, ...changes } : row));
     setEditRequest(null);
+    setOverrideConflict(null);
+  }
+
+  function addServiceDraft() {
+    setServiceDraft((current) => [...current, {
+      clientId: createIdempotencyKey("appointment-service"),
+      appointmentItemId: null,
+      serviceId: null,
+      optionId: null,
+      staffId: null,
+    }]);
+    setEditRequest(null);
+    setOverrideConflict(null);
+  }
+
+  function removeServiceDraft(clientId) {
+    setServiceDraft((current) => current.filter((row) => row.clientId !== clientId));
+    setEditRequest(null);
+    setOverrideConflict(null);
+  }
+
+  async function sendEdit(payload) {
+    try {
+      await editMutation.mutateAsync(payload);
+    } catch (error) {
+      const confirmation = getAppointmentEditConfirmation(error);
+      if (confirmation?.canProceed) {
+        setOverrideConflict(confirmation);
+        message.warning(confirmation.detail);
+        return;
+      }
+      if (hasStructuralServiceOperations(payload) && !error?.response) {
+        await refreshAppointment();
+        setEditing(false);
+        setEditingPrice(false);
+        setEditRequest(null);
+        setOverrideConflict(null);
+        message.warning("The save result was uncertain, so the appointment was refreshed. Review it before trying again.");
+        return;
+      }
+      message.error(firstApiErrorMessage(error, "The appointment changes could not be saved."));
+    }
   }
 
   function submitEdit() {
     try {
       if (!canEdit || (editingPrice && !canAdjustPrice)) throw new Error("You cannot edit this appointment.");
+      if (overrideConflict) {
+        if (!editReason.trim()) throw new Error("Enter a reason before confirming the provider override.");
+        const confirmed = buildAppointmentEdit({ ...editRequest, reason: editReason, confirm_provider_override: true });
+        setEditRequest(confirmed);
+        sendEdit(confirmed);
+        return;
+      }
       if (!editRequest) {
-        for (const patch of changedServices) {
-          const row = serviceRows.find((service) => String(service.id) === String(patch.appointment_item_id));
-          const service = activeServices.find((service) => String(service.id) === String(patch.service_id ?? row.serviceId));
-          if (patch.service_id !== undefined || patch.service_option_id !== undefined) {
-            if (!service) throw new Error("Choose an active service.");
-            const optionId = patch.service_option_id !== undefined ? patch.service_option_id : row.optionId;
-            const option = normalizeList(service.service_options ?? service.options).find((option) => String(option.id) === String(optionId));
-            if ((service.price_type === "from" && optionId == null) || (optionId != null && (!option || !isActiveRole(option) || option.price == null || !Number.isFinite(Number(option.price))))) throw new Error("Choose an active priced option for the service.");
-          }
-          if (patch.staff_id !== undefined || patch.service_id !== undefined) {
-            const staff = activeStaff.find((person) => String(personId(person)) === String(patch.staff_id ?? row.providerId));
-            if (!staff || !service || !isStaffEligibleForCorrection(service, staff, normalizeList(categoriesQ.data))) throw new Error("Choose an eligible active provider for the service.");
-          }
+        if (!serviceDraft.length) throw new Error("Keep at least one service on the appointment.");
+        const selectedIds = serviceDraft.map((row) => String(row.serviceId));
+        if (selectedIds.some((id) => id === "null") || new Set(selectedIds).size !== selectedIds.length) throw new Error("Choose each service once.");
+        for (const row of serviceDraft) {
+          const original = serviceRows.find((service) => String(service.id) === String(row.appointmentItemId));
+          const service = activeServices.find((item) => String(item.id) === String(row.serviceId));
+          const catalogChanged = !original || String(original.serviceId) !== String(row.serviceId) || String(original.optionId ?? null) !== String(row.optionId ?? null);
+          if (catalogChanged && !service) throw new Error("Choose an active service.");
+          const option = normalizeList(service?.service_options ?? service?.options).find((item) => String(item.id) === String(row.optionId));
+          if (catalogChanged && ((service?.price_type === "from" && row.optionId == null) || (row.optionId != null && (!option || !isActiveRole(option) || option.price == null || !Number.isFinite(Number(option.price)))))) throw new Error("Choose an active priced option for the service.");
+          const staffChanged = !original || String(original.providerId ?? null) !== String(row.staffId ?? null);
+          if (staffChanged && row.staffId != null && !activeStaff.some((person) => String(personId(person)) === String(row.staffId))) throw new Error("Choose an active provider or leave the service unassigned.");
         }
       }
       const payload = editRequest ?? buildAppointmentEdit({
@@ -447,9 +537,9 @@ export function AppointmentDetailDrawer({ appointmentId, listAppointment, onClos
           idempotency_key: createIdempotencyKey("portal-appointment-edit"),
         } } : {}),
         reason: editReason,
-      }, currentTotal);
+      }, changedServices.length ? undefined : currentTotal);
       setEditRequest(payload);
-      editMutation.mutate(payload);
+      sendEdit(payload);
     } catch (error) {
       message.error(error.message);
     }
@@ -459,6 +549,7 @@ export function AppointmentDetailDrawer({ appointmentId, listAppointment, onClos
     setEditing(false);
     setEditRequest(null);
     setEditingPrice(false);
+    setOverrideConflict(null);
     onClose();
   }
 
@@ -505,95 +596,107 @@ export function AppointmentDetailDrawer({ appointmentId, listAppointment, onClos
               <DetailItem icon={<FiCalendar />} label="Date">{start?.format("D MMM YYYY")}</DetailItem>
               <DetailItem icon={<FiClock />} label="Time">{start?.format("h:mm A")}</DetailItem>
               <DetailItem icon={<FiUser />} label="Customer">{customerName(appointment)}</DetailItem>
-              <DetailItem icon={<FiUsers />} label="Staff">{staffName(appointment)}</DetailItem>
+              <DetailItem icon={<FiUsers />} label="Staff">{appointmentStaffNames(appointment)}</DetailItem>
             </div>
             <div className="appointment-service-block">
               <div className="appointment-service-heading"><span className="appointment-service-label">Services provided</span>{canEdit && !editing && <button onClick={openEditor}><FiUsers /> Edit appointment</button>}</div>
               <div className="appointment-service-list">
-                {serviceRows.map((service, index) => {
-                  const draft = serviceDraft[String(service.id)] ?? {};
-                  const selectedId = draft.service_id ?? service.serviceId;
+                {(editing ? serviceDraft : serviceRows).map((row, index) => {
+                  const original = editing ? serviceRows.find((service) => String(service.id) === String(row.appointmentItemId)) : row;
+                  const selectedId = row.serviceId;
                   const catalogService = activeServices.find((row) => String(row.id) === String(selectedId));
                   const options = normalizeList(catalogService?.service_options ?? catalogService?.options).filter((option) => isActiveRole(option) && option.price != null && Number.isFinite(Number(option.price)));
                   const fromPriced = catalogService?.price_type === "from";
-                  const providers = catalogService ? activeStaff.filter((person) => isStaffEligibleForCorrection(catalogService, person, normalizeList(categoriesQ.data))) : [];
+                  const option = options.find((item) => String(item.id) === String(row.optionId));
+                  const catalogChanged = editing && (!original || String(original.serviceId) !== String(row.serviceId) || String(original.optionId ?? null) !== String(row.optionId ?? null));
+                  const lineTotal = editing && catalogChanged ? option?.price ?? catalogService?.price : original?.lineTotal;
+                  const duration = editing && catalogChanged ? option?.duration ?? catalogService?.duration : original?.duration;
+                  const extraTime = editing && catalogChanged ? catalogService?.extra_time ?? 0 : original?.extraTime;
+                  const serviceName = catalogService?.name || catalogService?.service_name || original?.name || "Choose a service";
+                  const providerName = editing
+                    ? row.staffId == null ? "Unassigned" : personName(activeStaff.find((person) => String(personId(person)) === String(row.staffId))) || original?.provider || `Staff #${row.staffId}`
+                    : original?.provider;
                   return (
-                  <div className="appointment-service-line" key={service.id ?? `${service.name}-${index}`}>
+                  <div className="appointment-service-line" key={editing ? row.clientId : original.id ?? `${original.name}-${index}`}>
                     <div className="appointment-service-main">
                       <div>
                         <strong>
-                          {service.name}
-                          {service.quantity > 1 && <small> × {service.quantity}</small>}
+                          {serviceName}
+                          {!editing && original.quantity > 1 && <small> × {original.quantity}</small>}
                         </strong>
-                        {editing && service.canReassign && <>
+                        {editing && <div className="appointment-service-fields">
                           <Select
                             showSearch
                             optionFilterProp="label"
                             loading={servicesQ.isLoading}
                             disabled={editMutation.isPending || servicesQ.isError}
-                            aria-label={`Service for ${service.name}`}
-                            value={selectedId}
-                            onChange={(serviceId) => changeServiceDraft(service.id, { service_id: serviceId, service_option_id: null })}
+                            aria-label={`Service ${index + 1}`}
+                            value={selectedId ?? undefined}
+                            placeholder="Choose service"
+                            onChange={(serviceId) => changeServiceDraft(row.clientId, { serviceId, optionId: null })}
                             options={[
-                              ...activeServices.map((row) => ({ value: row.id, label: row.name || row.service_name, disabled: serviceRows.some((other) => String(other.id) !== String(service.id) && (String(other.serviceId) === String(row.id) || String(serviceDraft[String(other.id)]?.service_id ?? other.serviceId) === String(row.id))) })),
-                              ...(!catalogService ? [{ value: selectedId, label: service.name, disabled: true }] : []),
+                              ...activeServices.map((service) => ({ value: service.id, label: service.name || service.service_name, disabled: serviceDraft.some((other) => other.clientId !== row.clientId && String(other.serviceId) === String(service.id)) })),
+                              ...(!catalogService && selectedId != null ? [{ value: selectedId, label: original?.name || "Recorded service", disabled: true }] : []),
                             ]}
                           />
                           <Select
-                            aria-label={`Option for ${service.name}`}
+                            aria-label={`Option for service ${index + 1}`}
                             disabled={editMutation.isPending || !catalogService}
-                            value={(draft.service_option_id !== undefined ? draft.service_option_id : service.optionId) ?? "none"}
-                            onChange={(optionId) => changeServiceDraft(service.id, { service_option_id: optionId === "none" ? null : optionId })}
+                            value={row.optionId ?? "none"}
+                            onChange={(optionId) => changeServiceDraft(row.clientId, { optionId: optionId === "none" ? null : optionId })}
                             options={[
                               { value: "none", label: fromPriced ? "Choose a priced option" : "No option", disabled: fromPriced },
-                              ...options.map((option) => ({ value: option.id, label: option.name })),
-                              ...(String(selectedId) === String(service.serviceId) && service.optionId != null && !options.some((option) => String(option.id) === String(service.optionId)) ? [{ value: service.optionId, label: "Recorded option", disabled: true }] : []),
+                              ...options.map((item) => ({ value: item.id, label: `${item.name} · ${money(item.price, currency)}` })),
+                              ...(String(selectedId) === String(original?.serviceId) && original?.optionId != null && !options.some((item) => String(item.id) === String(original.optionId)) ? [{ value: original.optionId, label: "Recorded option", disabled: true }] : []),
                             ]}
                           />
-                        </>}
-                        {editing && service.canReassign ? <Select
+                        </div>}
+                        {editing ? <Select
                           showSearch
                           optionFilterProp="label"
                           loading={staffQ.isLoading}
                           disabled={editMutation.isPending || staffQ.isError}
-                          value={draft.staff_id ?? service.providerId ?? undefined}
-                          placeholder="Choose staff"
-                          aria-label={`Staff for ${service.name}`}
-                          onChange={(staffId) => changeServiceDraft(service.id, { staff_id: staffId })}
+                          value={row.staffId ?? "unassigned"}
+                          aria-label={`Provider for service ${index + 1}`}
+                          onChange={(staffId) => changeServiceDraft(row.clientId, { staffId: staffId === "unassigned" ? null : staffId })}
                           options={[
-                            ...providers.map((person) => ({ value: personId(person), label: personName(person) || `Staff #${personId(person)}` })),
-                            ...(service.providerId != null && !providers.some((person) => String(personId(person)) === String(service.providerId)) ? [{ value: service.providerId, label: service.provider, disabled: true }] : []),
+                            { value: "unassigned", label: "Unassigned" },
+                            ...activeStaff.map((person) => ({ value: personId(person), label: personName(person) || `Staff #${personId(person)}` })),
+                            ...(row.staffId != null && !activeStaff.some((person) => String(personId(person)) === String(row.staffId)) ? [{ value: row.staffId, label: original?.provider || "Recorded provider", disabled: true }] : []),
                           ]}
-                        /> : <span>Provided by {service.provider}</span>}
+                        /> : <span>Provided by {providerName}</span>}
                       </div>
-                      {service.lineTotal != null && (
-                        <b>{money(service.lineTotal, currency)}</b>
-                      )}
+                      <div className="appointment-service-actions">
+                        {lineTotal != null && <b>{money(lineTotal, currency)}</b>}
+                        {editing && <button type="button" onClick={() => removeServiceDraft(row.clientId)} disabled={editMutation.isPending || serviceDraft.length === 1} aria-label={`Remove ${serviceName}`}><FiTrash2 /></button>}
+                      </div>
                     </div>
                     <div className="appointment-service-meta">
-                      {serviceWindow(service) && <span><FiClock /> {serviceWindow(service)}</span>}
-                      {durationLabel(service.duration, service.extraTime) && (
-                        <span>{durationLabel(service.duration, service.extraTime)}</span>
+                      {!editing && serviceWindow(original) && <span><FiClock /> {serviceWindow(original)}</span>}
+                      {durationLabel(duration, extraTime) && (
+                        <span>{durationLabel(duration, extraTime)}</span>
                       )}
-                      {service.quantity > 1 && service.price != null && (
-                        <span>{money(service.price, currency)} each</span>
+                      {!editing && original.quantity > 1 && original.price != null && (
+                        <span>{money(original.price, currency)} each</span>
                       )}
                     </div>
                   </div>
                 ); })}
               </div>
+              {editing && <button type="button" className="appointment-add-service" onClick={addServiceDraft} disabled={editMutation.isPending || servicesQ.isError}><FiPlus /> Add service</button>}
               {editing && <div className="appointment-change-panel">
-                {(servicesQ.isError || staffQ.isError || categoriesQ.isError) && <p>Some service or staff selections could not be loaded. <Button size="small" onClick={() => { servicesQ.refetch(); staffQ.refetch(); categoriesQ.refetch(); }}>Try again</Button></p>}
-                <label><span>Reason for correction (optional)</span><Input.TextArea rows={2} maxLength={2000} disabled={editMutation.isPending} value={editReason} onChange={(event) => { setEditReason(event.target.value); setEditRequest(null); }} /></label>
-                <p>Only changed rows are saved. Booked times, durations, prices, and deposits stay unchanged. Use the calendar to move an appointment.</p>
-                {canAdjustPrice && summaryQ.isSuccess && <Checkbox disabled={editMutation.isPending} checked={editingPrice} onChange={(event) => { setEditingPrice(event.target.checked); setEditRequest(null); }}>Include a price correction</Checkbox>}
+                {(servicesQ.isError || staffQ.isError) && <p>Some service or staff selections could not be loaded. <Button size="small" onClick={() => { servicesQ.refetch(); staffQ.refetch(); }}>Try again</Button></p>}
+                {overrideConflict && <div className="appointment-override-conflict" role="alert"><strong>Provider confirmation required</strong><span>{overrideConflict.detail}</span>{overrideConflict.conflicts.map((conflict, index) => <small key={`${conflict.appointment_item_id ?? "new"}-${index}`}>{humanizeLabel(conflict.reason, "Provider conflict")}{conflict.staff_id ? ` · Staff #${conflict.staff_id}` : ""}</small>)}</div>}
+                <label><span>Reason for change{overrideConflict ? " (required)" : " (optional)"}</span><Input.TextArea rows={2} maxLength={2000} disabled={editMutation.isPending} value={editReason} onChange={(event) => { setEditReason(event.target.value); if (!overrideConflict) setEditRequest(null); }} /></label>
+                <div className="appointment-price-preview"><span>Updated appointment total</span><strong>{money(calculatedTotal, currency)}</strong><small>Service prices, duration, and times are finalized by the server when saved. Existing deposits are preserved.</small></div>
+                {canAdjustPrice && Boolean(summary) && <Checkbox disabled={editMutation.isPending} checked={editingPrice} onChange={(event) => { setEditingPrice(event.target.checked); if (event.target.checked) setFinalTotal(calculatedTotal.toFixed(2)); setEditRequest(null); setOverrideConflict(null); }}>Set a different final total</Checkbox>}
                 {editingPrice && <>
                   <label><span>Final appointment total ({currency})</span><Input disabled={editMutation.isPending} inputMode="decimal" value={finalTotal} onChange={(event) => { setFinalTotal(event.target.value); setEditRequest(null); }} prefix={currency} /></label>
-                  <small>{Math.abs(priceDelta) < .005 ? "Enter a different final total" : `${priceDelta > 0 ? "Increase" : "Decrease"} of ${money(Math.abs(priceDelta), currency)}`}</small>
+                  <small>{Math.abs(priceDelta) < .005 ? "Enter a total different from the calculated amount" : `${priceDelta > 0 ? "Increase" : "Decrease"} of ${money(Math.abs(priceDelta), currency)}`}</small>
                   <label><span>Reason for price change</span><Input.TextArea disabled={editMutation.isPending} rows={2} maxLength={2000} value={priceReason} onChange={(event) => { setPriceReason(event.target.value); setEditRequest(null); }} /></label>
                   {numeric(finalTotal) < numeric(summary?.total_amount_paid) && <p>This total creates an overpayment. No refund or store credit will be issued automatically.</p>}
                 </>}
-                <div><Button disabled={editMutation.isPending} onClick={() => { setEditing(false); setEditingPrice(false); setEditRequest(null); }}>Cancel</Button><Button type="primary" loading={editMutation.isPending} disabled={!canEdit || (!changedServices.length && !editingPrice) || (editingPrice && (!canAdjustPrice || !summaryQ.isSuccess || !/^\d+(\.\d{1,2})?$/.test(finalTotal) || Math.abs(priceDelta) < .005 || priceReason.trim().length < 3))} onClick={submitEdit}>Save corrections</Button></div>
+                <div><Button disabled={editMutation.isPending} onClick={() => { setEditing(false); setEditingPrice(false); setEditRequest(null); setOverrideConflict(null); }}>Cancel</Button><Button type="primary" loading={editMutation.isPending} disabled={!canEdit || !serviceDraft.length || (!changedServices.length && !editingPrice) || (overrideConflict && !editReason.trim()) || (editingPrice && (!canAdjustPrice || !summary || !/^\d+(\.\d{1,2})?$/.test(finalTotal) || Math.abs(priceDelta) < .005 || priceReason.trim().length < 3))} onClick={submitEdit}>{overrideConflict ? "Confirm provider override" : "Save changes"}</Button></div>
               </div>}
             </div>
           </section>
@@ -619,7 +722,7 @@ export function AppointmentDetailDrawer({ appointmentId, listAppointment, onClos
                   {numeric(financial?.price_adjustment_total) !== 0 && (
                     <div><span>Price adjustment</span><strong>{money(financial.price_adjustment_total, currency)}</strong></div>
                   )}
-                  <div><span>Paid online</span><strong>{money(financial?.online_amount_paid ?? fallbackPaid, currency)}</strong></div>
+                  <div><span>Deposit paid</span><strong>{money(financial?.deposit_amount_paid ?? financial?.online_amount_paid ?? fallbackPaid, currency)}</strong></div>
                   {numeric(financial?.salon_payments_received) !== 0 && (
                     <div><span>Paid in salon</span><strong>{money(financial.salon_payments_received, currency)}</strong></div>
                   )}
@@ -783,7 +886,7 @@ export default function AppointmentsPage() {
           appointmentReference(appointment),
           customerName(appointment),
           serviceNames(appointment),
-          staffName(appointment),
+          appointmentStaffNames(appointment),
         ].some((value) => String(value || "").toLowerCase().includes(needle));
       })
       .sort((a, b) => (appointmentStart(b)?.valueOf() || 0) - (appointmentStart(a)?.valueOf() || 0));
@@ -958,9 +1061,9 @@ export default function AppointmentsPage() {
                         <td><strong>{start?.format("D MMM YYYY") || "Date unavailable"}</strong><span>{start?.format("h:mm A") || appointmentReference(appointment)}</span></td>
                         <td><strong>{customerName(appointment)}</strong><span>{appointmentReference(appointment)}</span></td>
                         <td className="appointments-service-cell">{serviceNames(appointment)}</td>
-                        <td>{staffName(appointment)}</td>
+                        <td>{appointmentStaffNames(appointment)}</td>
                         <td><StatusPill status={status} /></td>
-                        <td><strong>{money(appointmentTotal(appointment), appointment.currency || "GHS")}</strong></td>
+                        <td><strong>{money(appointmentTotal(appointment), appointmentCurrency(appointment))}</strong>{appointmentDeposit(appointment) != null && <span>Deposit {money(appointmentDeposit(appointment), appointmentCurrency(appointment))}</span>}</td>
                         <td>
                           {canCorrect ? (
                             <button className="appointments-row-correct" aria-label={`Correct attendance for ${appointmentReference(appointment)}`} onClick={(event) => { event.stopPropagation(); setSelectedId(appointment.id); setCorrectionAppointment(appointment); }}>
@@ -991,7 +1094,7 @@ export default function AppointmentsPage() {
                     <p>{serviceNames(appointment)}</p>
                     <div className="appointment-mobile-meta"><span><FiCalendar /> {start?.format("D MMM YYYY") || "—"}</span><span><FiClock /> {start?.format("h:mm A") || "—"}</span></div>
                     <div className="appointment-mobile-footer">
-                      <span>{staffName(appointment)}</span>
+                      <span>{appointmentStaffNames(appointment)}{appointmentDeposit(appointment) != null ? ` · Deposit ${money(appointmentDeposit(appointment), appointmentCurrency(appointment))}` : ""}</span>
                       {canCorrect ? (
                         <button onClick={(event) => { event.stopPropagation(); setSelectedId(appointment.id); setCorrectionAppointment(appointment); }}>Correct attendance</button>
                       ) : <FiArrowRight />}
@@ -1008,6 +1111,7 @@ export default function AppointmentsPage() {
         key={selectedId ?? "closed"}
         appointmentId={selectedId}
         listAppointment={selectedListAppointment}
+        enableCorrections
         onClose={() => setSelectedId(null)}
         onCorrect={setCorrectionAppointment}
       />

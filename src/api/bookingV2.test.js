@@ -119,7 +119,13 @@ test("uses the returned timezone and ordered V2 staff windows before creating a 
   assert.deepEqual(rows.map((row) => row.staff[0].id), [7, 19]);
   assert.equal(rows[1].scheduled_start, slot.items[1].scheduled_start);
   assert.ok(normalizeBookingStaffOptions({ ...slot, is_bookable: false }, services).every((row) => !row.available));
-  const payload = { services, scheduled_start: "2026-09-18T09:00:00Z", timezone: "Africa/Accra" };
+  const payload = {
+    idempotency_key: "unique-checkout-key",
+    guest_customer_id: 442,
+    services,
+    scheduled_start: "2026-09-18T09:00:00Z",
+    timezone: "Africa/Accra",
+  };
   const calls = [];
   let currentSlot = slot;
   const post = mock.method(_axios, "post", async (url, body) => {
@@ -135,6 +141,7 @@ test("uses the returned timezone and ordered V2 staff windows before creating a 
       "/api/portal/v2/booking/checkout-holds/",
       "/api/portal/v2/booking/checkout-holds/hold-1/confirm/",
     ]);
+    assert.deepEqual(calls[1].body, payload);
     assert.deepEqual(calls[0].body, {
       services: [{ service_id: 12, service_option_id: null }, { service_id: 27, service_option_id: 41 }],
       scheduled_start: payload.scheduled_start,

@@ -6,9 +6,11 @@ import {
   buildPriceAdjustment,
   buildScheduleUpdate,
   buildAppointmentEdit,
-  buildServiceCorrections,
+  buildServiceOperations,
   editAppointment,
+  getAppointmentEditConfirmation,
   getStaffServiceOverride,
+  hasStructuralServiceOperations,
 } from "./appointmentSchedule.js";
 
 test("builds the portal schedule payload without empty optional fields", () => {
@@ -76,20 +78,31 @@ test("builds an idempotent standalone price adjustment", () => {
   });
 });
 
-test("patches existing items and sends service, provider, and price corrections together", async () => {
+test("recognizes appointment edit confirmation conflicts", () => {
+  const confirmation = getAppointmentEditConfirmation({ response: { status: 409, data: {
+    code: "APPOINTMENT_EDIT_CONFIRMATION_REQUIRED",
+    detail: "Provider is unavailable.",
+    can_proceed: true,
+    conflicts: [{ appointment_item_id: 101, staff_id: 19, reason: "provider_unavailable" }],
+  } } });
+  assert.equal(confirmation.canProceed, true);
+  assert.equal(confirmation.conflicts[0].reason, "provider_unavailable");
+  assert.equal(getAppointmentEditConfirmation({ response: { status: 409, data: { code: "OTHER" } } }), null);
+});
+
+test("builds update, add, remove, unassigned, and price operations together", async () => {
   const rows = [
     { id: 101, serviceId: 12, optionId: 41, providerId: 7, canReassign: true },
     { id: 102, serviceId: 13, optionId: null, providerId: 19, canReassign: true },
     { id: 103, serviceId: 14, optionId: null, providerId: 20, canReassign: true },
   ];
-  assert.deepEqual(buildServiceCorrections(rows, {}), []);
-  assert.deepEqual(buildServiceCorrections(rows, { 101: { staff_id: 19 } }), [{ appointment_item_id: 101, staff_id: 19 }]);
-  assert.deepEqual(buildServiceCorrections(rows, { 101: { service_option_id: null } }), [{ appointment_item_id: 101, service_option_id: null }]);
-  const services = buildServiceCorrections(rows, {
-    101: { service_id: 27, service_option_id: null, staff_id: 19 },
-    102: { staff_id: 7 },
-    103: { service_id: 14, service_option_id: null, staff_id: 20 },
-  });
+  const unchanged = rows.map((row) => ({ appointmentItemId: row.id, serviceId: row.serviceId, optionId: row.optionId, staffId: row.providerId }));
+  assert.deepEqual(buildServiceOperations(rows, unchanged), []);
+  const services = buildServiceOperations(rows, [
+    { appointmentItemId: 101, serviceId: 27, optionId: null, staffId: 19 },
+    { appointmentItemId: 102, serviceId: 13, optionId: null, staffId: null },
+    { appointmentItemId: null, serviceId: 44, optionId: 81, staffId: null },
+  ]);
   const input = {
     services,
     price_adjustment: { final_total_amount_due: "85.00", reason: " Agreed price ", idempotency_key: "same-retry-key" },
@@ -97,14 +110,22 @@ test("patches existing items and sends service, provider, and price corrections 
   };
   const payload = buildAppointmentEdit(input, "100.00");
   assert.deepEqual(payload, {
-    services: [{ appointment_item_id: 101, service_id: 27, service_option_id: null, staff_id: 19 }, { appointment_item_id: 102, staff_id: 7 }],
+    services: [
+      { operation: "update", appointment_item_id: 101, service_id: 27, service_option_id: null, staff_id: 19 },
+      { operation: "update", appointment_item_id: 102, staff_id: null },
+      { operation: "add", service_id: 44, service_option_id: 81, staff_id: null },
+      { operation: "remove", appointment_item_id: 103 },
+    ],
     price_adjustment: { final_total_amount_due: "85.00", reason: "Agreed price", idempotency_key: "same-retry-key" },
     reason: "Correct the providers",
   });
   assert.deepEqual(buildAppointmentEdit({ services }), { services });
   assert.deepEqual(buildAppointmentEdit({ price_adjustment: input.price_adjustment }), { price_adjustment: payload.price_adjustment });
-  assert.deepEqual(buildServiceCorrections(rows, { 101: { service_id: 27 } }), [{ appointment_item_id: 101, service_id: 27, service_option_id: null }]);
-  for (const invalid of [{}, { services: [] }, { status: "completed" }, { services: [{ appointment_item_id: 101 }] }, { services: [{ appointment_item_id: 101, staff_id: null }] }, { services: [{ appointment_item_id: 101, price: "9" }] }, { services: [{ staff_id: 7 }] }, { services: [{ appointment_item_id: 101, staff_id: 7 }, { appointment_item_id: "101", staff_id: 19 }] }]) assert.throws(() => buildAppointmentEdit(invalid));
+  assert.equal(hasStructuralServiceOperations(payload), true);
+  assert.equal(hasStructuralServiceOperations({ services: [{ operation: "update", appointment_item_id: 1, staff_id: null }] }), false);
+  assert.deepEqual(buildAppointmentEdit({ services: [{ appointment_item_id: 101, staff_id: null }] }), { services: [{ appointment_item_id: 101, staff_id: null, operation: "update" }] });
+  assert.deepEqual(buildAppointmentEdit({ services: [{ operation: "remove", appointment_item_id: 101 }], reason: "  Client changed plans ", confirm_provider_override: true }), { services: [{ operation: "remove", appointment_item_id: 101 }], reason: "Client changed plans", confirm_provider_override: true });
+  for (const invalid of [{}, { services: [] }, { status: "completed" }, { services: [{ appointment_item_id: 101 }] }, { services: [{ operation: "add", staff_id: 7 }] }, { services: [{ operation: "remove", appointment_item_id: 101, staff_id: null }] }, { services: [{ appointment_item_id: 101, service_id: null }] }, { services: [{ appointment_item_id: 101, price: "9" }] }, { services: [{ operation: "add", appointment_item_id: 101, service_id: 7 }] }, { services: [{ appointment_item_id: 101, staff_id: 7 }, { appointment_item_id: "101", staff_id: 19 }] }, { services: [{ operation: "remove", appointment_item_id: 101 }], confirm_provider_override: true }]) assert.throws(() => buildAppointmentEdit(invalid));
   assert.throws(() => buildAppointmentEdit(input, "85.00"), /different final total/);
   for (const value of ["", " ", null, "-1", "1.001", "1e2", "Infinity"]) assert.throws(() => buildPriceAdjustment({ ...input.price_adjustment, final_total_amount_due: value }));
   assert.throws(() => buildPriceAdjustment({ ...input.price_adjustment, idempotency_key: "x".repeat(256) }));
