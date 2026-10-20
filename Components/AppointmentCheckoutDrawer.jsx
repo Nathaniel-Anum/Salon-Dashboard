@@ -5,6 +5,7 @@ import { Input, Modal, Spin, message } from "antd";
 import {
   FiAlertCircle,
   FiArrowRight,
+  FiCalendar,
   FiCheck,
   FiCheckCircle,
   FiChevronDown,
@@ -14,6 +15,7 @@ import {
   FiGift,
   FiPlus,
   FiRefreshCw,
+  FiSave,
   FiScissors,
   FiTrash2,
   FiUser,
@@ -40,6 +42,20 @@ import "./AppointmentCheckoutDrawer.css";
 import PortalSelect from "./PortalSelect";
 import { useBookingV2 } from "../src/hooks/useBookingV2.js";
 import { bookingV2Keys } from "../src/api/bookingV2.js";
+import {
+  buildAppointmentEdit,
+  buildServiceOperations,
+  editAppointment,
+  getAppointmentEditConfirmation,
+  hasStructuralServiceOperations,
+} from "../src/api/appointmentSchedule.js";
+import { permissionState } from "../src/auth/permissions.js";
+import {
+  appointmentPaymentTime,
+  appointmentServiceEditRows,
+  appointmentStatusOptions,
+  normalizeAppointmentStatus,
+} from "../src/booking/appointmentManagement.js";
 
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
@@ -193,7 +209,9 @@ function customerName(appointment = {}, booking = {}) {
 
 function originalServices(appointment = {}, booking = {}) {
   const rows = normalizeList(
-    appointment.services ?? appointment.appointment_services ?? booking.services ?? [],
+    appointment.services ?? appointment.appointment_services ?? appointment.booking_services ??
+    appointment.services_details ?? appointment.service_lines ?? appointment.service_items ??
+    appointment.line_items ?? appointment.items ?? booking.services ?? [],
   );
   if (rows.length) return rows;
   return booking.service ? [{ service_name: booking.service }] : [];
@@ -202,11 +220,31 @@ function originalServices(appointment = {}, booking = {}) {
 function serviceLineName(service = {}) {
   const name =
     service.service_name_snapshot || service.service_name || service.name ||
-    service.service?.name || "Service";
+    service.service_details?.name || service.service?.name || "Service";
   const option =
     service.service_option_name_snapshot || service.service_option_name ||
-    service.option_name || service.service_option?.name;
+    service.option_name || service.service_option_details?.name || service.service_option?.name;
   return option ? `${name} · ${option}` : name;
+}
+
+function appointmentStart(appointment = {}, booking = {}) {
+  const direct = appointment.scheduled_start || appointment.start_at || appointment.starts_at;
+  if (direct && dayjs(direct).isValid()) return dayjs(direct);
+  const date = appointment.appointment_date || appointment.date || booking.date;
+  const time = appointment.start_time || appointment.time || booking.startTime;
+  const combined = dayjs(`${date || ""} ${time || ""}`);
+  return combined.isValid() ? combined : null;
+}
+
+function staffName(person = {}) {
+  return person.full_name || person.name ||
+    [person.first_name, person.last_name].filter(Boolean).join(" ") ||
+    `Staff #${person.id ?? person.user_id ?? ""}`;
+}
+
+function servicePrice(service = {}, optionId) {
+  const option = serviceOptions(service).find((item) => String(item.id) === String(optionId));
+  return option?.price ?? service.price ?? service.base_price ?? 0;
 }
 
 function ProgressRail({ status, summary }) {
@@ -281,6 +319,13 @@ export default function AppointmentCheckoutDrawer({
   const [pendingPayment, setPendingPayment] = useState(null);
   const [validatingPayment, setValidatingPayment] = useState(false);
   const [pendingFinalizeKey, setPendingFinalizeKey] = useState(null);
+  const [serviceDraft, setServiceDraft] = useState(null);
+  const [editReason, setEditReason] = useState("");
+  const [editRequest, setEditRequest] = useState(null);
+  const [overrideConflict, setOverrideConflict] = useState(null);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [finalTotal, setFinalTotal] = useState("");
+  const [priceReason, setPriceReason] = useState("");
   const [showScheduleActions, setShowScheduleActions] = useState(false);
   const [rescheduleForm, setRescheduleForm] = useState({
     date:
@@ -299,6 +344,11 @@ export default function AppointmentCheckoutDrawer({
     enabled: Boolean(bookingId),
     staleTime: 10_000,
   });
+  const appointment = useMemo(
+    () => appointmentQ.data ?? booking?.raw ?? booking ?? {},
+    [appointmentQ.data, booking],
+  );
+  const canViewFinancials = permissionState("booking_settlements.view", appointment) !== false;
   const addonsQ = useQuery({
     queryKey: ["appointment-addons", bookingId],
     queryFn: () => getAppointmentAddons(bookingId),
@@ -308,20 +358,21 @@ export default function AppointmentCheckoutDrawer({
   const summaryQ = useQuery({
     queryKey: ["appointment-financial-summary", bookingId],
     queryFn: () => getAppointmentFinancialSummary(bookingId),
-    enabled: Boolean(bookingId),
+    enabled: Boolean(bookingId && canViewFinancials),
     staleTime: 5_000,
   });
 
-  const appointment = useMemo(
-    () => appointmentQ.data ?? booking?.raw ?? booking ?? {},
-    [appointmentQ.data, booking],
-  );
-  const localStatus = String(
+  const localStatus = normalizeAppointmentStatus(
     statusOverride ?? appointment?.status ?? booking?.status ?? "pending",
-  ).toLowerCase();
-  const summary = summaryQ.data;
+  );
+  const summary = canViewFinancials ? summaryQ.data ?? appointment.financial_summary : null;
   const addons = useMemo(() => normalizeList(addonsQ.data), [addonsQ.data]);
   const services = useMemo(() => originalServices(appointment, booking), [appointment, booking]);
+  const serviceRows = useMemo(() => appointmentServiceEditRows(services), [services]);
+  const payments = useMemo(() => normalizeList(appointment.payments), [appointment.payments]);
+  const start = appointmentStart(appointment, booking);
+  const bookedAtValue = appointment.created_at || appointment.booked_at || booking?.raw?.created_at;
+  const bookedAt = bookedAtValue && dayjs(bookedAtValue).isValid() ? dayjs(bookedAtValue) : null;
   const reference =
     summary?.appointment_reference || appointment.appointment_reference ||
     appointment.reference || `#${bookingId}`;
@@ -330,13 +381,19 @@ export default function AppointmentCheckoutDrawer({
   const overpaid = amount(summary?.overpaid_amount);
   const noPaymentRequired = isNoPaymentRequired(summary);
   const finalized = Boolean(summary?.is_finalized || localStatus === "completed");
-  const terminalStatus = ["completed", "no-show", "no_show", "cancelled"].includes(localStatus);
+  const terminalStatus = ["completed", "no-show", "cancelled"].includes(localStatus);
   const canCheckIn = localStatus === "confirmed";
+  const canEdit = bookingV2.enabled && ["confirmed", "arrived"].includes(localStatus) &&
+    appointmentQ.isSuccess && permissionState("appointments.edit", appointment) !== false;
+  const canAdjustPrice = canEdit && canViewFinancials &&
+    permissionState("booking_price_adjustments.create", appointment) !== false;
+  const canRecordPayment = canViewFinancials &&
+    permissionState("booking_salon_payments.create", appointment) !== false;
 
   const receiptsQ = useQuery({
     queryKey: ["appointment-receipts", bookingId],
     queryFn: () => getAppointmentReceipts(bookingId),
-    enabled: Boolean(bookingId && finalized),
+    enabled: Boolean(bookingId && finalized && canViewFinancials),
     staleTime: 30_000,
   });
   const receipts = useMemo(() => normalizeList(receiptsQ.data), [receiptsQ.data]);
@@ -356,7 +413,36 @@ export default function AppointmentCheckoutDrawer({
     return activeStaff.filter((person) => ids.some((id) => staffMatches(person, id)));
   };
   const canAdd = localStatus === "arrived" && !finalized;
-  const isLoading = appointmentQ.isLoading || summaryQ.isLoading || addonsQ.isLoading;
+  const isLoading = appointmentQ.isLoading || (canViewFinancials && summaryQ.isLoading) || addonsQ.isLoading;
+  const currentTotal = amount(summary?.total_amount_due ?? appointment.total_amount_due ?? appointment.subtotal_amount);
+  const changedServices = buildServiceOperations(serviceRows, serviceDraft ?? []);
+  const originalServiceTotal = serviceRows.reduce((total, row) => total + amount(row.lineTotal), 0);
+  const draftServiceTotal = (serviceDraft ?? []).reduce((total, row) => {
+    const original = serviceRows.find((item) => String(item.id) === String(row.appointmentItemId));
+    if (original && String(original.serviceId) === String(row.serviceId) &&
+      String(original.optionId ?? null) === String(row.optionId ?? null)) {
+      return total + amount(original.lineTotal);
+    }
+    const selectedService = catalog.find((item) => String(item.id) === String(row.serviceId));
+    return total + amount(servicePrice(selectedService, row.optionId));
+  }, 0);
+  const calculatedTotal = Math.max(0, currentTotal + draftServiceTotal - originalServiceTotal);
+  const priceDelta = amount(finalTotal) - calculatedTotal;
+  const statusOptions = appointmentStatusOptions(localStatus);
+  const validPriceAdjustment = /^\d+(\.\d{1,2})?$/.test(finalTotal) &&
+    Math.abs(priceDelta) >= 0.005 && priceReason.trim().length >= 3;
+
+  useEffect(() => {
+    if (serviceDraft !== null || !appointmentQ.isSuccess) return;
+    setServiceDraft(serviceRows.map((row) => ({
+      clientId: row.clientId,
+      appointmentItemId: row.appointmentItemId,
+      serviceId: row.serviceId ?? null,
+      optionId: row.optionId ?? null,
+      staffId: row.providerId ?? null,
+    })));
+    setFinalTotal(currentTotal.toFixed(2));
+  }, [appointmentQ.isSuccess, currentTotal, serviceDraft, serviceRows]);
 
   const addonFieldIssue = (index, field) => addonIssues.find(
     (issue) => issue.field === field && (
@@ -397,8 +483,9 @@ export default function AppointmentCheckoutDrawer({
     await Promise.all([
       appointmentQ.refetch(),
       addonsQ.refetch(),
-      summaryQ.refetch(),
+      ...(canViewFinancials ? [summaryQ.refetch()] : []),
       queryClient.invalidateQueries({ queryKey: ["appointments"] }),
+      queryClient.invalidateQueries({ queryKey: ["booking-v2", "appointments"] }),
       queryClient.invalidateQueries({ queryKey: ["appointment-transactions"] }),
     ]);
   };
@@ -413,13 +500,18 @@ export default function AppointmentCheckoutDrawer({
     message.info("Appointment services and balance refreshed. Review the preserved draft before saving again.");
   };
 
-  const checkInMutation = useMutation({
-    mutationFn: () => updateCheckoutStatus(bookingId, "arrived", { v2: bookingV2.enabled }),
-    onSuccess: async () => {
-      setStatusOverride("arrived");
+  const statusMutation = useMutation({
+    mutationFn: (status) => {
+      const apiStatus = status === "no-show" ? "no_show" : status;
+      return onStatusChange
+        ? onStatusChange(bookingId, apiStatus)
+        : updateCheckoutStatus(bookingId, apiStatus, { v2: bookingV2.enabled });
+    },
+    onSuccess: async (_, status) => {
+      setStatusOverride(normalizeAppointmentStatus(status));
       await refreshCheckout();
     },
-    onError: (error) => message.error(firstError(error, "Could not check in this customer.")),
+    onError: (error) => message.error(firstError(error, "Could not update the appointment status.")),
   });
 
   function requestCancellation() {
@@ -443,6 +535,161 @@ export default function AppointmentCheckoutDrawer({
         return onCancel?.(bookingId, reason.trim());
       },
     });
+  }
+
+  function handleStatusChange(event) {
+    const nextStatus = normalizeAppointmentStatus(event.target.value);
+    if (nextStatus === localStatus) return;
+    if (nextStatus === "completed") {
+      if (!canViewFinancials || !summary) return message.error("Payment access is required to complete this appointment.");
+      if (remaining > 0) {
+        openPaymentPanel();
+        return message.info(`Collect ${money(remaining, currency)} before completing the appointment.`);
+      }
+      return finalizeAndComplete();
+    }
+    if (nextStatus === "cancelled") return requestCancellation();
+    if (nextStatus === "no-show") {
+      return Modal.confirm({
+        title: "Mark this appointment as no-show?",
+        content: "This change is recorded in the appointment history.",
+        okText: "Mark no-show",
+        centered: true,
+        onOk: () => statusMutation.mutateAsync(nextStatus),
+      });
+    }
+    statusMutation.mutate(nextStatus);
+  }
+
+  const editMutation = useMutation({
+    mutationFn: (payload) => editAppointment(bookingId, payload),
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(bookingV2Keys.appointment(bookingId), updated);
+      if (updated?.financial_summary) {
+        queryClient.setQueryData(
+          ["appointment-financial-summary", bookingId],
+          (current) => ({ ...current, ...updated.financial_summary }),
+        );
+      }
+      setEditRequest(null);
+      setOverrideConflict(null);
+      setEditingPrice(false);
+      setEditReason("");
+      setPriceReason("");
+      await refreshCheckout();
+      setServiceDraft(null);
+      message.success("Appointment changes saved.");
+    },
+  });
+
+  function changeServiceDraft(clientId, changes) {
+    setServiceDraft((current) => (current ?? []).map((row) =>
+      row.clientId === clientId ? { ...row, ...changes } : row));
+    setEditRequest(null);
+    setOverrideConflict(null);
+  }
+
+  function addServiceDraft() {
+    setServiceDraft((current) => [...(current ?? []), {
+      clientId: `appointment-service-${makeKey()}`,
+      appointmentItemId: null,
+      serviceId: null,
+      optionId: null,
+      staffId: null,
+    }]);
+    setEditRequest(null);
+    setOverrideConflict(null);
+  }
+
+  function removeServiceDraft(clientId) {
+    setServiceDraft((current) => (current ?? []).filter((row) => row.clientId !== clientId));
+    setEditRequest(null);
+    setOverrideConflict(null);
+  }
+
+  function resetEditDraft() {
+    setServiceDraft(serviceRows.map((row) => ({
+      clientId: row.clientId,
+      appointmentItemId: row.appointmentItemId,
+      serviceId: row.serviceId ?? null,
+      optionId: row.optionId ?? null,
+      staffId: row.providerId ?? null,
+    })));
+    setEditReason("");
+    setEditRequest(null);
+    setOverrideConflict(null);
+    setEditingPrice(false);
+    setFinalTotal(currentTotal.toFixed(2));
+    setPriceReason("");
+  }
+
+  async function sendEdit(payload) {
+    try {
+      await editMutation.mutateAsync(payload);
+    } catch (error) {
+      const confirmation = getAppointmentEditConfirmation(error);
+      if (confirmation?.canProceed) {
+        setOverrideConflict(confirmation);
+        return message.warning(confirmation.detail);
+      }
+      if (hasStructuralServiceOperations(payload) && !error?.response) {
+        await refreshCheckout();
+        setServiceDraft(null);
+        setEditRequest(null);
+        setOverrideConflict(null);
+        return message.warning("The save result was uncertain. The appointment was refreshed; review it before trying again.");
+      }
+      message.error(firstError(error, "The appointment changes could not be saved."));
+    }
+  }
+
+  function submitEdit() {
+    try {
+      if (!canEdit || (editingPrice && !canAdjustPrice)) throw new Error("You cannot edit this appointment.");
+      if (overrideConflict) {
+        if (!editReason.trim()) throw new Error("Enter a reason before confirming the provider override.");
+        const confirmed = buildAppointmentEdit({ ...editRequest, reason: editReason, confirm_provider_override: true });
+        setEditRequest(confirmed);
+        sendEdit(confirmed);
+        return;
+      }
+      if (!serviceDraft?.length) throw new Error("Keep at least one service on the appointment.");
+      const selectedIds = serviceDraft.map((row) => String(row.serviceId));
+      if (selectedIds.some((id) => id === "null" || id === "undefined") || new Set(selectedIds).size !== selectedIds.length) {
+        throw new Error("Choose each service once.");
+      }
+      for (const row of serviceDraft) {
+        const original = serviceRows.find((service) => String(service.id) === String(row.appointmentItemId));
+        const selectedService = catalog.find((service) => String(service.id) === String(row.serviceId));
+        const catalogChanged = !original || String(original.serviceId) !== String(row.serviceId) ||
+          String(original.optionId ?? null) !== String(row.optionId ?? null);
+        if (catalogChanged && !selectedService) throw new Error("Choose an active service.");
+        const option = serviceOptions(selectedService).find((item) => String(item.id) === String(row.optionId));
+        if (catalogChanged && requiresServiceOption(selectedService) && !option) {
+          throw new Error("Choose a priced option for each from-price service.");
+        }
+        if (row.optionId != null && catalogChanged && (!option || option.price == null)) {
+          throw new Error("Choose an active priced service option.");
+        }
+        const staffChanged = !original || String(original.providerId ?? null) !== String(row.staffId ?? null);
+        if (staffChanged && row.staffId != null && !eligibleStaffFor(selectedService).some((person) => staffMatches(person, row.staffId))) {
+          throw new Error("Choose an eligible team member or leave the service unassigned.");
+        }
+      }
+      const payload = buildAppointmentEdit({
+        ...(changedServices.length ? { services: changedServices } : {}),
+        ...(editingPrice ? { price_adjustment: {
+          final_total_amount_due: finalTotal,
+          reason: priceReason,
+          idempotency_key: makeKey(),
+        } } : {}),
+        reason: editReason,
+      }, changedServices.length ? undefined : currentTotal);
+      setEditRequest(payload);
+      sendEdit(payload);
+    } catch (error) {
+      message.error(error.message);
+    }
   }
 
   const addonMutation = useMutation({
@@ -570,6 +817,10 @@ export default function AppointmentCheckoutDrawer({
   });
 
   function openPaymentPanel() {
+    if (!canRecordPayment) {
+      message.error("You do not have permission to record appointment payments.");
+      return;
+    }
     setShowPayment(true);
     setShowAddonForm(false);
     setPaymentForm({
@@ -706,6 +957,7 @@ export default function AppointmentCheckoutDrawer({
   }
 
   async function submitPayment() {
+    if (!canRecordPayment) return message.error("You do not have permission to record appointment payments.");
     const value = amount(paymentForm.amount);
     if (value <= 0) return message.error("Enter an amount greater than zero.");
     if (REFERENCE_METHODS.has(paymentForm.method) && !paymentForm.reference.trim()) {
@@ -759,7 +1011,7 @@ export default function AppointmentCheckoutDrawer({
       <aside className="checkout-drawer" role="dialog" aria-modal="true" aria-labelledby="checkout-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="checkout-header">
           <div className="checkout-header-copy">
-            <span className="checkout-kicker">Appointment checkout</span>
+            <span className="checkout-kicker">Appointment management</span>
             <h2 id="checkout-title">{customerName(appointment, booking)}</h2>
             <div className="checkout-meta">
               <span>{reference}</span>
@@ -777,7 +1029,7 @@ export default function AppointmentCheckoutDrawer({
         ) : (
           <div className="checkout-layout">
             <main className="checkout-main">
-              {summaryQ.isError && (
+              {canViewFinancials && summaryQ.isError && (
                 <div className="checkout-alert error">
                   <FiAlertCircle />
                   <div><b>Financial summary unavailable</b><p>{firstError(summaryQ.error, "Refresh and try again.")}</p></div>
@@ -785,12 +1037,42 @@ export default function AppointmentCheckoutDrawer({
                 </div>
               )}
 
+              <section className="checkout-visit-grid" aria-label="Appointment details">
+                <div className="checkout-visit-field">
+                  <FiCalendar />
+                  <span>Date</span>
+                  <strong>{start?.format("ddd, D MMM YYYY") || "Unavailable"}</strong>
+                </div>
+                <div className="checkout-visit-field">
+                  <FiClock />
+                  <span>Time</span>
+                  <strong>{start?.format("h:mm A") || "Unavailable"}</strong>
+                </div>
+                <label className="checkout-visit-field checkout-status-field">
+                  <FiCheckCircle />
+                  <span>Status</span>
+                  <PortalSelect
+                    aria-label="Appointment status"
+                    value={localStatus}
+                    disabled={statusMutation.isPending || finalizeMutation.isPending || terminalStatus}
+                    onChange={handleStatusChange}
+                  >
+                    {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </PortalSelect>
+                </label>
+                <div className="checkout-visit-field">
+                  <FiUser />
+                  <span>{bookedAt ? "Booked" : "Customer"}</span>
+                  <strong>{bookedAt?.format("D MMM YYYY, h:mm A") || customerName(appointment, booking)}</strong>
+                </div>
+              </section>
+
               {canCheckIn && (
                 <section className="checkout-callout">
                   <div className="checkout-callout-icon"><FiUser /></div>
                   <div><span>First step</span><h3>Check in the customer</h3><p>Add-ons and checkout unlock after arrival is confirmed.</p></div>
-                  <button className="checkout-primary compact" onClick={() => checkInMutation.mutate()} disabled={checkInMutation.isPending}>
-                    {checkInMutation.isPending ? "Checking in…" : "Check in customer"}<FiArrowRight />
+                  <button className="checkout-primary compact" onClick={() => statusMutation.mutate("arrived")} disabled={statusMutation.isPending}>
+                    {statusMutation.isPending ? "Checking in…" : "Check in customer"}<FiArrowRight />
                   </button>
                 </section>
               )}
@@ -802,11 +1084,89 @@ export default function AppointmentCheckoutDrawer({
                 </div>
 
                 <div className="checkout-lines">
-                  {services.map((service, index) => (
+                  {canEdit && serviceDraft ? serviceDraft.map((row, index) => {
+                    const original = serviceRows.find((service) => String(service.id) === String(row.appointmentItemId));
+                    const selectedService = catalog.find((service) => String(service.id) === String(row.serviceId));
+                    const options = serviceOptions(selectedService);
+                    const eligibleStaff = eligibleStaffFor(selectedService);
+                    const catalogChanged = !original || String(original.serviceId) !== String(row.serviceId) ||
+                      String(original.optionId ?? null) !== String(row.optionId ?? null);
+                    const displayedPrice = catalogChanged ? servicePrice(selectedService, row.optionId) : original?.lineTotal;
+                    const originalProvider = allStaff.find((person) => staffMatches(person, original?.providerId));
+                    return (
+                      <div className="checkout-service-editor" key={row.clientId}>
+                        <div className="checkout-service-editor-heading">
+                          <span><FiScissors /> Service {index + 1}</span>
+                          <strong>{lineAmount(displayedPrice, currency, noPaymentRequired ? "Free" : "Included")}</strong>
+                        </div>
+                        <div className="checkout-service-editor-grid">
+                          <label>
+                            Service
+                            <PortalSelect
+                              aria-label={`Service ${index + 1}`}
+                              value={row.serviceId ?? ""}
+                              disabled={editMutation.isPending}
+                              onChange={(event) => changeServiceDraft(row.clientId, { serviceId: event.target.value ? Number(event.target.value) : null, optionId: null })}
+                            >
+                              <option value="">Choose a service…</option>
+                              {catalog.map((service) => (
+                                <option
+                                  key={service.id}
+                                  value={service.id}
+                                  disabled={serviceDraft.some((other) => other.clientId !== row.clientId && String(other.serviceId) === String(service.id))}
+                                >
+                                  {service.name || service.service_name || `Service #${service.id}`}
+                                </option>
+                              ))}
+                              {!selectedService && row.serviceId != null && (
+                                <option value={row.serviceId} disabled>{serviceLineName(original?.raw)}</option>
+                              )}
+                            </PortalSelect>
+                          </label>
+                          <label>
+                            Service option
+                            <PortalSelect
+                              aria-label={`Service option ${index + 1}`}
+                              value={row.optionId ?? ""}
+                              disabled={editMutation.isPending || !selectedService}
+                              onChange={(event) => changeServiceDraft(row.clientId, { optionId: event.target.value ? Number(event.target.value) : null })}
+                            >
+                              <option value="">{requiresServiceOption(selectedService) ? "Choose a priced option…" : "Standard service"}</option>
+                              {options.map((option) => <option key={option.id} value={option.id}>{option.name || `Option #${option.id}`} · {money(option.price, currency)}</option>)}
+                            </PortalSelect>
+                          </label>
+                          <label>
+                            Team member
+                            <PortalSelect
+                              aria-label={`Team member for service ${index + 1}`}
+                              value={row.staffId ?? ""}
+                              disabled={editMutation.isPending || !selectedService}
+                              onChange={(event) => changeServiceDraft(row.clientId, { staffId: event.target.value ? Number(event.target.value) : null })}
+                            >
+                              <option value="">Unassigned</option>
+                              {eligibleStaff.map((person) => <option key={person.id ?? person.user_id} value={person.id ?? person.user_id}>{staffName(person)}</option>)}
+                              {row.staffId != null && !eligibleStaff.some((person) => staffMatches(person, row.staffId)) && (
+                                <option value={row.staffId} disabled>{staffName(originalProvider || { id: row.staffId })} · recorded</option>
+                              )}
+                            </PortalSelect>
+                          </label>
+                          <button
+                            type="button"
+                            className="checkout-remove-service"
+                            onClick={() => removeServiceDraft(row.clientId)}
+                            disabled={editMutation.isPending || serviceDraft.length === 1}
+                            aria-label={`Remove service ${index + 1}`}
+                          >
+                            <FiTrash2 /> Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }) : services.map((service, index) => (
                     <div className="checkout-service-line" key={service.id ?? service.service_id ?? index}>
                       <div className="checkout-line-icon"><FiScissors /></div>
                       <div className="checkout-line-copy"><b>{serviceLineName(service)}</b><span>Original booking{service.staff_name ? ` · ${service.staff_name}` : ""}</span></div>
-                      <strong>{lineAmount(service.total ?? service.price, currency, noPaymentRequired ? "Free" : "Included")}</strong>
+                      <strong>{lineAmount(service.line_total_amount ?? service.total ?? service.price_snapshot ?? service.price, currency, noPaymentRequired ? "Free" : "Included")}</strong>
                     </div>
                   ))}
                   {!services.length && <div className="checkout-empty">No original service lines were returned for this appointment.</div>}
@@ -819,6 +1179,83 @@ export default function AppointmentCheckoutDrawer({
                     </div>
                   ))}
                 </div>
+
+                {canEdit && serviceDraft && (
+                  <div className="checkout-edit-panel">
+                    <div className="checkout-editor-toolbar">
+                      <button type="button" className="checkout-text-button" onClick={addServiceDraft} disabled={editMutation.isPending}>
+                        <FiPlus /> Add booking service
+                      </button>
+                      <span>Changes are saved together</span>
+                    </div>
+                    {overrideConflict && (
+                      <div className="checkout-alert warning" role="alert">
+                        <FiAlertCircle />
+                        <div>
+                          <b>Provider confirmation required</b>
+                          <p>{overrideConflict.detail}</p>
+                        </div>
+                      </div>
+                    )}
+                    <label className="checkout-edit-reason">
+                      Reason for service changes {overrideConflict ? <em>Required</em> : <small>Optional</small>}
+                      <textarea
+                        rows={2}
+                        maxLength={2000}
+                        value={editReason}
+                        disabled={editMutation.isPending}
+                        onChange={(event) => { setEditReason(event.target.value); if (!overrideConflict) setEditRequest(null); }}
+                        placeholder="Add context for the appointment history"
+                      />
+                    </label>
+                    <div className="checkout-price-preview">
+                      <span>Updated appointment total</span>
+                      <b>{money(calculatedTotal, currency)}</b>
+                      <small>Service prices and timing are confirmed by the server when saved.</small>
+                    </div>
+                    {canAdjustPrice && (
+                      <label className="checkout-price-toggle">
+                        <input
+                          type="checkbox"
+                          checked={editingPrice}
+                          disabled={editMutation.isPending}
+                          onChange={(event) => {
+                            setEditingPrice(event.target.checked);
+                            setFinalTotal(calculatedTotal.toFixed(2));
+                            setEditRequest(null);
+                            setOverrideConflict(null);
+                          }}
+                        />
+                        <span><b>Set a different final total</b><small>Use this for an agreed discount or manual price correction.</small></span>
+                      </label>
+                    )}
+                    {editingPrice && (
+                      <div className="checkout-price-fields">
+                        <label>
+                          Final total ({currency})
+                          <input inputMode="decimal" value={finalTotal} disabled={editMutation.isPending} onChange={(event) => { setFinalTotal(event.target.value); setEditRequest(null); }} />
+                        </label>
+                        <label>
+                          Price-change reason
+                          <input value={priceReason} maxLength={2000} disabled={editMutation.isPending} onChange={(event) => { setPriceReason(event.target.value); setEditRequest(null); }} />
+                        </label>
+                        <small>{Math.abs(priceDelta) < 0.005 ? "Enter a total different from the calculated amount." : `${priceDelta > 0 ? "Increase" : "Decrease"} of ${money(Math.abs(priceDelta), currency)}.`}</small>
+                        {amount(finalTotal) < amount(summary?.total_amount_paid) && <p>This total creates an overpayment. No refund or store credit is issued automatically.</p>}
+                      </div>
+                    )}
+                    <div className="checkout-editor-actions">
+                      <button type="button" onClick={resetEditDraft} disabled={editMutation.isPending}>Reset</button>
+                      <button
+                        type="button"
+                        className="checkout-primary compact"
+                        onClick={submitEdit}
+                        disabled={editMutation.isPending || !serviceDraft.length || (!changedServices.length && !editingPrice) || (overrideConflict && !editReason.trim()) || (editingPrice && !validPriceAdjustment)}
+                      >
+                        <FiSave /> {editMutation.isPending ? "Saving…" : overrideConflict ? "Confirm and save" : "Save changes"}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {showAddonForm && canAdd && (
                   <div className="checkout-form-panel" ref={addonPanelRef}>
@@ -927,6 +1364,37 @@ export default function AppointmentCheckoutDrawer({
                 )}
               </section>
 
+              {canViewFinancials && (
+                <section className="checkout-section checkout-payment-history">
+                  <div className="checkout-section-heading">
+                    <div><span>Payment history</span><h3>When payments were made</h3></div>
+                  </div>
+                  {payments.length ? (
+                    <div className="checkout-payment-list">
+                      {payments.map((payment, index) => {
+                        const paidAt = appointmentPaymentTime(payment);
+                        const paidAtLabel = paidAt && dayjs(paidAt).isValid()
+                          ? dayjs(paidAt).format("D MMM YYYY, h:mm A")
+                          : "Time unavailable";
+                        return (
+                          <div className="checkout-payment-row" key={payment.public_id ?? payment.id ?? index}>
+                            <FiCreditCard />
+                            <div>
+                              <b>{readable(payment.payment_method || "Payment")}</b>
+                              <span>{payment.is_deposit ? "Deposit" : "Payment"} · {paidAtLabel}</span>
+                              {payment.external_reference && <small>{payment.external_reference}</small>}
+                            </div>
+                            <strong>{money(payment.amount, payment.currency || currency)}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="checkout-empty">No itemized payment timestamps were returned for this appointment.</p>
+                  )}
+                </section>
+              )}
+
               {!terminalStatus && <details className="checkout-secondary-actions" open={showScheduleActions} onToggle={(event) => setShowScheduleActions(event.currentTarget.open)}>
                 <summary>Schedule and appointment actions <FiChevronDown /></summary>
                 <div className="checkout-secondary-body">
@@ -938,7 +1406,6 @@ export default function AppointmentCheckoutDrawer({
                   </div>
                   <div className="checkout-secondary-buttons">
                     <button onClick={() => onReschedule?.(bookingId, rescheduleForm.date, rescheduleForm.time, Number(rescheduleForm.staffId), rescheduleForm.reason)} disabled={rescheduleLoading || !rescheduleForm.staffId}><FiClock /> {rescheduleLoading ? "Rescheduling…" : "Reschedule"}</button>
-                    <button onClick={() => { setStatusOverride("no_show"); onStatusChange?.(bookingId, "no_show"); }}><FiUser /> Mark no-show</button>
                     <button className="danger" onClick={requestCancellation} disabled={cancelLoading}><FiTrash2 /> {cancelLoading ? "Cancelling…" : "Cancel appointment"}</button>
                   </div>
                 </div>
@@ -946,6 +1413,12 @@ export default function AppointmentCheckoutDrawer({
             </main>
 
             <aside className="checkout-balance-rail">
+              {!canViewFinancials ? (
+                <div className="checkout-permission-note">
+                  <FiAlertCircle />
+                  <div><b>Payment details unavailable</b><p>Your account does not have settlement-view permission.</p></div>
+                </div>
+              ) : <>
               <div className="checkout-balance-heading"><span>Live balance</span><div className={`checkout-payment-state ${noPaymentRequired ? "state-free" : `state-${summary?.settlement_status || "unpaid"}`}`}>{noPaymentRequired ? "No payment required" : readable(summary?.settlement_status || "unpaid")}</div></div>
               <div className={`checkout-amount-due ${noPaymentRequired ? "is-free" : ""}`}><span>{noPaymentRequired ? "Complimentary appointment" : remaining > 0 ? "Amount to collect" : "Balance settled"}</span><strong>{money(remaining, currency)}</strong><small>{noPaymentRequired ? "Nothing is owed and no payment transaction will be created" : "Always calculated from the latest server summary"}</small></div>
               <div className="checkout-money-list">
@@ -955,6 +1428,7 @@ export default function AppointmentCheckoutDrawer({
                 <MoneyRow label="Deposit paid" value={summary?.deposit_amount_paid ?? summary?.online_amount_paid} muted currency={currency} />
                 <MoneyRow label="Paid on-site" value={summary?.salon_payments_received} muted currency={currency} />
                 {amount(summary?.salon_payment_reversals) > 0 && <MoneyRow label="Reversals" value={summary?.salon_payment_reversals} muted currency={currency} />}
+                <MoneyRow label="Total paid" value={summary?.total_amount_paid} strong muted currency={currency} />
               </div>
 
               {noPaymentRequired && <div className="checkout-free-state"><FiGift /><div><b>No payment required</b><p>{localStatus === "completed" ? "This complimentary appointment was completed without recording a payment transaction." : localStatus === "arrived" ? "This booking is intentionally free. Finalize it without recording a cash or electronic payment." : "This booking is intentionally free. Nothing is owed by the customer."}</p></div></div>}
@@ -976,7 +1450,7 @@ export default function AppointmentCheckoutDrawer({
                   <small className="checkout-split-note">For split tender, record each method separately. This panel stays open while a balance remains.</small>
                 </div>
               ) : remaining > 0 ? (
-                <button className="checkout-primary checkout-collect" onClick={openPaymentPanel} disabled={!summary}><FiCreditCard /> Collect {money(remaining, currency)}</button>
+                <button className="checkout-primary checkout-collect" onClick={openPaymentPanel} disabled={!summary || !canRecordPayment}><FiCreditCard /> Collect {money(remaining, currency)}</button>
               ) : (
                 <button className="checkout-primary checkout-complete" onClick={finalizeAndComplete} disabled={!summary || finalizeMutation.isPending || overpaid > 0}><FiCheckCircle /> {finalizeMutation.isPending ? "Finalizing…" : "Finalize and complete"}</button>
               )}
@@ -992,6 +1466,7 @@ export default function AppointmentCheckoutDrawer({
                   }) : <p>Receipt generation may take a moment. Refresh to check again.</p>}
                 </div>
               )}
+              </>}
             </aside>
           </div>
         )}

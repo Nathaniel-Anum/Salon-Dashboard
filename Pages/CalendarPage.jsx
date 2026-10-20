@@ -56,7 +56,6 @@ import {
   isSavedGuestSelectionMissing,
 } from "../src/api/bookingIdentity.js";
 import AppointmentCheckoutDrawer from "../Components/AppointmentCheckoutDrawer";
-import { AppointmentDetailDrawer } from "./AppointmentsPage.jsx";
 import BookingIdentityPicker from "../Components/BookingIdentityPicker";
 import PortalSelect from "../Components/PortalSelect";
 import {
@@ -81,9 +80,7 @@ import { useBookingV2 } from "../src/hooks/useBookingV2.js";
 import { isStaffEligibleForService } from "../src/api/providerEligibility.js";
 import { getAppointmentFinancialSummary } from "../src/api/appointmentCheckout.js";
 import {
-  appointmentStaffId,
   buildAppointmentServiceSegments,
-  calendarCustomerName,
   calendarStaffId,
   UNASSIGNED_STAFF_ID,
 } from "../src/booking/calendarAppointmentSegments.js";
@@ -1682,7 +1679,7 @@ function BookingCard({ booking, isPast, isMoving, colOffset, colCount, onDragSta
 /* ─────────────────────────────────────────────
    BOOKING DETAIL MODAL
 ───────────────────────────────────────────── */
-function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorrections, canCorrect, canAdjustPrice }) {
+export function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorrections, canCorrect, canAdjustPrice }) {
   const raw = booking?.raw || {};
   const canViewFinancials = permissionState("booking_settlements.view", raw) !== false;
   const financialQ = useQuery({
@@ -1918,7 +1915,7 @@ function BookingModal({ booking, staff, onClose, onOpenStatusDrawer, onOpenCorre
 }
 
 
-function DetailRow({ icon, label, value }) {
+export function DetailRow({ icon, label, value }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-2 text-[#987554]">
@@ -2467,8 +2464,6 @@ export default function CalendarPage() {
   const [dragOverSlot, setDragOverSlot] = useState(null); // slot index
   const [hoveredTimeSlot, setHoveredTimeSlot] = useState(null); // { staffId, slot }
   const [selectedBooking, setSelectedBooking] = useState(null);
-  const [correctionBooking, setCorrectionBooking] = useState(null);
-  const [statusDrawerBooking, setStatusDrawerBooking] = useState(null);
   const [scheduleOverride, setScheduleOverride] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm] = Form.useForm();
@@ -3298,7 +3293,6 @@ export default function CalendarPage() {
 
       if (operation.source === "drawer") {
         setSelectedBooking(null);
-        setStatusDrawerBooking(null);
       }
 
       const nextDate = appointmentDate(appointment) || operation.update.date;
@@ -3331,7 +3325,6 @@ export default function CalendarPage() {
         : _axios.post(`/api/portal/v1/booking/appointments/${id}/status/`, { status }),
     onSuccess: (_, { status }) => {
       setSelectedBooking((prev) => prev ? { ...prev, status } : prev);
-      setStatusDrawerBooking((prev) => prev ? { ...prev, status } : prev);
       queryClient.invalidateQueries(["appointments", dateStr]);
       refetchApts();
     },
@@ -3350,27 +3343,11 @@ export default function CalendarPage() {
       : _axios.post(`/api/portal/v1/booking/appointments/${id}/cancel/`, { reason }),
     onSuccess: () => {
       setSelectedBooking(null);
-      setStatusDrawerBooking(null);
       queryClient.invalidateQueries(["appointments", dateStr]);
       refetchApts();
     },
     onError: () => {
       message.error("Failed to cancel appointment");
-    },
-  });
-
-  /* ── DELETE mutation — permanently delete appointment ── */
-  const deleteAppointment = useMutation({
-    mutationFn: (id) =>
-      _axios.delete(`/api/portal/v1/booking/appointments/${id}/`),
-    onSuccess: () => {
-      setSelectedBooking(null);
-      setStatusDrawerBooking(null);
-      queryClient.invalidateQueries(["appointments", dateStr]);
-      refetchApts();
-    },
-    onError: () => {
-      message.error("Failed to delete appointment");
     },
   });
 
@@ -4386,32 +4363,15 @@ export default function CalendarPage() {
 
       </div>
 
-      {/* Booking detail modal */}
       {selectedBooking && (
-        <BookingModal
-          key={selectedBooking.calendarId ?? selectedBooking.id}
+        <AppointmentCheckoutDrawer
+          key={selectedBooking.appointmentId ?? selectedBooking.id}
           booking={selectedBooking}
           staff={visibleStaff.find((s) => String(s.id) === String(selectedBooking.staffId))}
-          onClose={() => setSelectedBooking(null)}
-          canCorrect={bookingV2.enabled && ["confirmed", "arrived"].includes(String(selectedBooking.status || "").replaceAll("_", "-").toLowerCase()) && permissionState("appointments.edit", selectedBooking.raw) !== false}
-          canAdjustPrice={permissionState("booking_price_adjustments.create", selectedBooking.raw) !== false}
-          onOpenCorrections={(booking) => { setSelectedBooking(null); setCorrectionBooking(booking); }}
-          onOpenStatusDrawer={(booking) => {
-            setSelectedBooking(null);
-            setStatusDrawerBooking(booking);
-          }}
-        />
-      )}
-
-      {statusDrawerBooking && (
-        <AppointmentCheckoutDrawer
-          key={statusDrawerBooking.id}
-          booking={statusDrawerBooking}
-          staff={visibleStaff.find((s) => String(s.id) === String(statusDrawerBooking.staffId))}
           allServices={servicesData}
           allStaff={visibleStaff}
-          onClose={() => setStatusDrawerBooking(null)}
-          onStatusChange={(id, status) => updateStatus.mutate({ id, status })}
+          onClose={() => setSelectedBooking(null)}
+          onStatusChange={(id, status) => updateStatus.mutateAsync({ id, status })}
           onReschedule={(id, date, time, staffId, reason) => scheduleMutation.mutate({
             id,
             update: {
@@ -4428,18 +4388,8 @@ export default function CalendarPage() {
           }
           onCancel={(id, reason) => cancelAppointment.mutate({ id, reason })}
           cancelLoading={cancelAppointment.isPending}
-          onDelete={(id) => deleteAppointment.mutate(id)}
-          deleteLoading={deleteAppointment.isPending}
         />
       )}
-
-      {correctionBooking && <AppointmentDetailDrawer
-        key={correctionBooking.appointmentId ?? correctionBooking.id}
-        appointmentId={correctionBooking.appointmentId ?? correctionBooking.id}
-        listAppointment={correctionBooking.raw}
-        enableCorrections
-        onClose={() => setCorrectionBooking(null)}
-      />}
 
       <Modal
         open={Boolean(scheduleOverride)}
